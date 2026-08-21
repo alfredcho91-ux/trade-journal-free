@@ -34,6 +34,12 @@ class ExchangeSyncRequest(BaseModel):
     symbols: List[str] = Field(default_factory=list, max_length=50)
 
 
+class ExchangeCredentialsRequest(BaseModel):
+    api_key: str = Field(min_length=1, max_length=512)
+    secret_key: str = Field(min_length=1, max_length=512)
+    passphrase: str = Field(default="", max_length=512)
+
+
 class ExchangeSyncData(BaseModel):
     exchange: ExchangeId
     inst_type: InstrumentType
@@ -59,10 +65,10 @@ class ExchangeSyncEnvelope(BaseModel):
 
 __all__ = [
     "ExchangeId",
+    "ExchangeCredentialsRequest",
     "ExchangeListEnvelope",
     "ExchangeStatus",
     "ExchangeSyncEnvelope",
     "ExchangeSyncRequest",
     "InstrumentType",
 ]
-

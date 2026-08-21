@@ -14,6 +14,9 @@
 | GET | `/api/deepcoin/status` | 자격 증명 설정 여부만 반환 |
 | POST | `/api/deepcoin/sync` | 읽기 전용 체결·종료 포지션 동기화 |
 | GET | `/api/deepcoin/trade-markers` | 실제 발동 TP 마커 조회 |
+| GET | `/api/exchanges` | 지원 거래소와 읽기 전용 연결 상태 |
+| POST | `/api/exchanges/{exchange_id}/credentials` | 연결 확인 후 로컬 읽기 전용 자격 증명 저장 |
+| POST | `/api/exchanges/{exchange_id}/sync` | 선택 거래소 체결·종료 포지션 동기화 |
 | GET | `/api/indicators/trade-report/{coin}/{interval}` | 거래 복기 캔들과 지표 |
 | GET | `/api/indicators/projection` | RSI 가격대와 VWAP |
 | GET | `/api/indicators/vpvr/{coin}/{interval}` | Binance kline 기반 VPVR |

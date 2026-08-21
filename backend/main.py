@@ -11,7 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.config.settings import (
     CORS_ORIGINS,
-    PROJECT_ROOT,
+    FRONTEND_DIST_DIR,
+    IS_FROZEN,
     get_app_environment,
     get_basic_auth_credentials,
 )
@@ -78,9 +79,11 @@ app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)
 
-frontend_dist = PROJECT_ROOT / "frontend" / "dist"
-frontend_dist.mkdir(parents=True, exist_ok=True)
-app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+if not FRONTEND_DIST_DIR.exists() and not IS_FROZEN:
+    FRONTEND_DIST_DIR.mkdir(parents=True, exist_ok=True)
+if not FRONTEND_DIST_DIR.is_dir():
+    raise RuntimeError("Trade Journal Free frontend files are missing from this installation.")
+app.mount("/", StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="frontend")
 
 
 if __name__ == "__main__":

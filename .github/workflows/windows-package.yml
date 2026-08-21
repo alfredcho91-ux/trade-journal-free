@@ -1,0 +1,56 @@
+name: Build Windows Distribution
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          architecture: x64
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          architecture: x64
+
+      - name: Install Python dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r ../packaging/requirements-build.txt
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Windows distribution
+        shell: pwsh
+        run: |
+          $ProjectDir = $env:GITHUB_WORKSPACE
+          $PythonBin = "python"
+          Push-Location "$ProjectDir/frontend"
+          npm run build
+          Pop-Location
+          Push-Location $ProjectDir
+          python -m PyInstaller --noconfirm --clean --windowed --onedir --name "Trade Journal Free" --paths $ProjectDir --add-data "$ProjectDir/frontend/dist;frontend/dist" --collect-all ccxt --collect-all diskcache --collect-all orjson --collect-all uvicorn "$ProjectDir/packaging/desktop_entry.py"
+          New-Item -ItemType Directory -Path "$ProjectDir/release" | Out-Null
+          Move-Item "$ProjectDir/dist/Trade Journal Free" "$ProjectDir/release/Trade Journal Free"
+          Compress-Archive -Path "$ProjectDir/release/Trade Journal Free" -DestinationPath "$ProjectDir/release/Trade-Journal-Free-Windows.zip"
+
+      - name: Upload Windows ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trade-Journal-Free-Windows-x64
+          path: release/Trade-Journal-Free-Windows.zip
+          if-no-files-found: error
+          retention-days: 30

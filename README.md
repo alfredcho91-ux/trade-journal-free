@@ -2,6 +2,19 @@
 
 여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 무료 오픈소스 트레이딩 저널입니다. 화면은 `매매일지`와 `매매분석` 두 개만 제공합니다.
 
+## 바로 실행 배포판
+
+사용자가 Node.js나 Python을 따로 설치하지 않아도 되는 macOS 앱은 아래처럼 빌드합니다. Apple Silicon용 배포판은 Apple Silicon Mac에서, Intel용 배포판은 Intel Mac에서 각각 빌드해야 합니다.
+
+```bash
+backend/venv/bin/python -m pip install -r packaging/requirements-build.txt
+./packaging/build_macos_app.sh
+```
+
+완성된 파일은 `release/Trade-Journal-Free-macOS.zip`입니다. 이 압축 파일에는 API 키, 매매일지 DB, 시장 데이터가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 개인 데이터와 읽기 전용 API 키는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다.
+
+Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Free-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 개인 데이터와 읽기 전용 API 키가 `%APPDATA%\Trade Journal Free`에 저장됩니다.
+
 ## 지원 거래소
 
 | 거래소 | 연동 방식 | Passphrase |
@@ -29,15 +42,13 @@
 
 ## 가장 쉬운 실행: Docker
 
-1. `.env.example`을 `.env`로 복사합니다.
-2. 사용할 거래소의 읽기 전용 API key와 secret을 `.env`에 입력합니다. Deepcoin과 OKX는 passphrase도 필요합니다.
-3. 아래 명령을 실행합니다.
+1. 아래 명령을 실행합니다.
 
 ```bash
 docker compose up --build
 ```
 
-브라우저에서 `http://localhost:8000`을 엽니다. Docker 포트는 기본적으로 `127.0.0.1`에만 열리며, 거래 DB는 `journal/`에 보존됩니다.
+브라우저에서 `http://localhost:8000`을 열고 매매일지의 `API 연결`에서 거래소를 선택합니다. 읽기 전용 권한을 확인한 키만 이 컴퓨터의 git 제외 `.env`에 권한 `600`으로 저장합니다. Docker 포트는 기본적으로 `127.0.0.1`에만 열리며, 거래 DB는 `journal/`에 보존됩니다.
 
 ## 로컬 개발 실행
 
@@ -45,7 +56,6 @@ docker compose up --build
 
 ```bash
 chmod +x bootstrap.sh dev.sh start.sh
-cp .env.example .env
 ./start.sh
 ```
 
@@ -70,7 +80,7 @@ cp .env.example .env
 | `APP_ENV` | 로컬은 `development`, 외부 공개는 `production` |
 | `DEMO_USERNAME`, `DEMO_PASSWORD` | production Basic Auth 계정 |
 
-`.env`, `journal/*.db`, 캐시와 시장 데이터는 Git에서 제외됩니다. 키를 브라우저나 GitHub에 입력하지 마세요.
+`.env`, `journal/*.db`, 캐시와 시장 데이터는 Git에서 제외됩니다. API 연결 창은 검증에 필요한 순간에만 키를 서버로 전송하며 브라우저 저장소에는 보관하지 않습니다. 키를 GitHub에 입력하지 마세요.
 
 ## 데이터 기준
 

@@ -2,11 +2,54 @@
 """Application settings and configuration"""
 
 import os
+import shlex
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SOURCE_ROOT = Path(__file__).resolve().parent.parent.parent
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", SOURCE_ROOT))
+
+
+def _default_app_data_dir() -> Path:
+    """Return the per-user writable directory for the packaged application."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Trade Journal Free"
+    if sys.platform == "win32":
+        return Path(os.getenv("APPDATA", str(Path.home()))) / "Trade Journal Free"
+    return Path(os.getenv("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))) / "trade-journal-free"
+
+
+APP_DATA_DIR = Path(os.getenv("TRADE_JOURNAL_DATA_DIR", str(_default_app_data_dir()))).expanduser()
+# Source runs keep files beside the project. Packaged runs never write into the application bundle.
+PROJECT_ROOT = APP_DATA_DIR if IS_FROZEN else SOURCE_ROOT
+FRONTEND_DIST_DIR = BUNDLE_ROOT / "frontend" / "dist" if IS_FROZEN else SOURCE_ROOT / "frontend" / "dist"
+LOCAL_ENV_PATH = PROJECT_ROOT / ".env"
+
+
+def _load_local_env() -> None:
+    """Load persisted credentials without overriding explicit environment values."""
+    if not LOCAL_ENV_PATH.is_file():
+        return
+
+    for raw_line in LOCAL_ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        try:
+            parts = shlex.split(line, comments=True, posix=True)
+        except ValueError:
+            continue
+        if len(parts) != 1 or "=" not in parts[0]:
+            continue
+        key, value = parts[0].split("=", 1)
+        if key and key.replace("_", "").isalnum():
+            os.environ.setdefault(key, value)
+
+
+_load_local_env()
 
 
 def get_app_environment() -> str:

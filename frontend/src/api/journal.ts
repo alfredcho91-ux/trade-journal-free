@@ -177,6 +177,21 @@ export async function getExchangeStatuses(): Promise<ExchangeStatus[]> {
   }
 }
 
+export async function configureExchangeCredentials(params: {
+  exchange: ExchangeId;
+  api_key: string;
+  secret_key: string;
+  passphrase?: string;
+}): Promise<ExchangeStatus[]> {
+  try {
+    const { exchange, ...body } = params;
+    const res = await api.post<ApiResponse<{ exchanges: ExchangeStatus[] }>>(`/exchanges/${exchange}/credentials`, body, { timeout: 30_000 });
+    return unwrapApiResponse(res, 'Failed to verify and save exchange credentials.').exchanges;
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to verify and save exchange credentials.');
+  }
+}
+
 export async function syncExchange(params: {
   exchange: ExchangeId;
   inst_type: 'SWAP' | 'SPOT';

@@ -12,7 +12,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ccxt
 
-from backend.config.settings import get_deepcoin_credentials
+from backend.config.settings import DeepcoinCredentials, get_deepcoin_credentials
+from backend.modules.exchanges.credentials import save_local_exchange_credentials
 from backend.modules.deepcoin.service import sync_deepcoin_fills_service
 from backend.modules.deepcoin.snapshot import build_indicator_snapshots
 from backend.modules.journal.repository import add_entries_if_new_external_ids, existing_external_ids
@@ -125,6 +126,39 @@ def exchange_status_service() -> Dict[str, Any]:
         )
         statuses.append({"id": exchange_id, "configured": configured, "mode": "read_only", **definition})
     return {"success": True, "data": {"exchanges": statuses}}
+
+
+def configure_exchange_credentials_service(
+    exchange_id: str,
+    api_key: str,
+    secret_key: str,
+    passphrase: str = "",
+) -> Dict[str, Any]:
+    """Verify read access before persisting a selected exchange's credentials."""
+    definition = SUPPORTED_EXCHANGES[exchange_id]
+    if definition["requires_passphrase"] and not passphrase.strip():
+        raise BusinessLogicError(f"{definition['name']} requires a passphrase", error_code="EXCHANGE_PASSPHRASE_REQUIRED")
+    credentials = _Credentials(api_key.strip(), secret_key.strip(), passphrase.strip())
+    try:
+        if exchange_id == "deepcoin":
+            from backend.modules.deepcoin.service import DeepcoinClient
+
+            DeepcoinClient(DeepcoinCredentials(credentials.api_key, credentials.secret_key, credentials.passphrase)).get_fills(
+                inst_type="SWAP", lookback_days=1
+            )
+        else:
+            client = _exchange_client(exchange_id, credentials, "SPOT")
+            client.fetch_balance()
+    except (ccxt.BaseError, DataLoadError, ValueError, AttributeError) as exc:
+        raise BusinessLogicError(
+            "Connection could not be verified. Check the API key, passphrase, IP allowlist, and read permission.",
+            error_code="EXCHANGE_CONNECTION_FAILED",
+        ) from exc
+    try:
+        save_local_exchange_credentials(exchange_id, credentials.api_key, credentials.secret_key, credentials.passphrase)
+    except (OSError, ValueError) as exc:
+        raise BusinessLogicError("Credentials could not be saved locally.", error_code="EXCHANGE_CREDENTIAL_SAVE_FAILED") from exc
+    return exchange_status_service()
 
 
 def _exchange_client(exchange_id: str, credentials: _Credentials, inst_type: str):
