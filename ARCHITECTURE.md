@@ -20,7 +20,7 @@ FastAPI
 
 - `frontend/src/App.tsx`: 두 화면, 코인 선택, 언어 전환만 제공
 - `frontend/src/pages/JournalPage.tsx`: 거래소 선택·동기화와 종료 거래 목록
-- `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·품질·손절·SL/TP 분석
+- `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·품질·손절·SL/TP 분석
 - `frontend/src/features/journal/`: 기간·수익률·리포트 조립
 - `frontend/src/features/tradeAnalysis/`: 브라우저 집계와 분석 UI
 - `frontend/src/components/PositionReviewChart.tsx`: Lightweight Charts 가격 차트

@@ -28,6 +28,7 @@ import StopLossAnalysis from '../features/tradeAnalysis/StopLossAnalysis';
 import StopOptimizationAnalysis from '../features/tradeAnalysis/StopOptimizationAnalysis';
 import CurrentMarketSimilarityPanel from '../features/tradeAnalysis/CurrentMarketSimilarityPanel';
 import MajorFailureAnalysis from '../features/tradeAnalysis/MajorFailureAnalysis';
+import MajorSuccessAnalysis from '../features/tradeAnalysis/MajorSuccessAnalysis';
 import StopLossExpectationTool from '../features/tradeAnalysis/StopLossExpectationTool';
 import SlTpExpectationAnalysis from '../features/tradeAnalysis/SlTpExpectationAnalysis';
 import { journalQueryKeys } from '../features/journal/journalQueryKeys';
@@ -332,6 +333,14 @@ export default function TradeAnalysisPage() {
       />
 
       <MajorFailureAnalysis
+        trades={allTrades}
+        qualityItems={qualityQuery.data?.items || []}
+        allEntries={entries}
+        isLoading={isJournalLoading || qualityQuery.isLoading}
+        isKo={isKo}
+      />
+
+      <MajorSuccessAnalysis
         trades={allTrades}
         qualityItems={qualityQuery.data?.items || []}
         allEntries={entries}

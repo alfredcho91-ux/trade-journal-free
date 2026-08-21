@@ -10,6 +10,7 @@
 - Lightweight Charts 기반 진입/청산 차트 복기
 - RSI, MACD, Stoch RSI, Slow Stochastic 3종 진입·청산 시점 비교
 - MFE/MAE, Weekly/Daily/4H Regime, 진입·청산 품질 분석
+- 투자금 순수익률 30% 또는 방향 반영 가격 수익률 3% 이상 대성공 거래 분석
 - 손절 사후 분석, Stop 최적화, N% 손절 기대값, SL/TP 조합 시뮬레이션
 - 현재 시장과 과거 거래의 유사도 비교
 
