@@ -1,10 +1,6 @@
 import type { AnalyzedTrade } from './tradeAnalysis';
-import { investedAmount, netReturnPct } from '../journal/journalReturns';
-
-export type StopLossBasis = 'margin' | 'price';
 
 export interface StopLossExpectationResult {
-  basis: StopLossBasis;
   stopPct: number;
   tradeCount: number;
   excludedTradeCount: number;
@@ -49,34 +45,21 @@ function winRate(values: number[]): number | null {
 function simulationRow(
   trade: AnalyzedTrade,
   stopPct: number,
-  basis: StopLossBasis,
 ): SimulationRow | null {
   const excursion = trade.excursion;
   if (!excursion || !finite(excursion.mae_pct) || !finite(excursion.realized_move_pct)) {
     return null;
   }
 
-  const leverage = trade.entry.leverage;
-  if (basis === 'margin' && (!finite(leverage) || leverage <= 0)) {
-    return null;
-  }
-
-  const multiplier = basis === 'margin' ? leverage as number : 1;
-  const adverseMovePct = Math.abs(excursion.mae_pct) * multiplier;
-  const actualReturnPct = basis === 'margin'
-    ? netReturnPct(trade.entry)
-    : excursion.realized_move_pct;
+  const adverseMovePct = Math.abs(excursion.mae_pct);
+  const actualReturnPct = excursion.realized_move_pct;
   if (!finite(actualReturnPct)) return null;
 
   const stopHit = adverseMovePct >= stopPct;
-  const invested = basis === 'margin' ? investedAmount(trade.entry) : null;
-  const feePct = basis === 'margin' && invested != null
-    ? (Math.abs(trade.entry.fee || 0) / invested) * 100
-    : 0;
 
   return {
     actualReturnPct,
-    simulatedReturnPct: stopHit ? -stopPct - feePct : actualReturnPct,
+    simulatedReturnPct: stopHit ? -stopPct : actualReturnPct,
     stopHit,
   };
 }
@@ -84,11 +67,10 @@ function simulationRow(
 export function calculateStopLossExpectation(
   trades: AnalyzedTrade[],
   stopPct: number,
-  basis: StopLossBasis,
 ): StopLossExpectationResult {
   const validStopPct = finite(stopPct) && stopPct > 0 ? stopPct : 0;
   const rows = validStopPct > 0
-    ? trades.flatMap((trade) => simulationRow(trade, validStopPct, basis) ?? [])
+    ? trades.flatMap((trade) => simulationRow(trade, validStopPct) ?? [])
     : [];
   const simulated = rows.map((row) => row.simulatedReturnPct);
   const baseline = rows.map((row) => row.actualReturnPct);
@@ -103,7 +85,6 @@ export function calculateStopLossExpectation(
   const baselineWinRate = winRate(baseline);
 
   return {
-    basis,
     stopPct: validStopPct,
     tradeCount: rows.length,
     excludedTradeCount: trades.length - rows.length,

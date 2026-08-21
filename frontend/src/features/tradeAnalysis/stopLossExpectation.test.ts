@@ -35,29 +35,29 @@ function trade(
 }
 
 describe('stop loss expectation', () => {
-  it('converts price excursion into invested-margin return with leverage', () => {
+  it('uses only raw coin-price movement regardless of leverage', () => {
     const result = calculateStopLossExpectation([
       trade(1, 0.5, 2, 10),
       trade(2, 1.2, 3, 10),
       trade(3, 0.2, -1, 10),
-    ], 10, 'margin');
+    ], 1);
 
     expect(result.tradeCount).toBe(3);
     expect(result.stopHitCount).toBe(1);
     expect(result.falseStopCount).toBe(1);
     expect(result.winRatePct).toBeCloseTo(100 / 3);
     expect(result.expectancyPct).toBeCloseTo(0);
-    expect(result.averageWinPct).toBe(20);
-    expect(result.averageLossPct).toBe(-10);
+    expect(result.averageWinPct).toBe(2);
+    expect(result.averageLossPct).toBe(-1);
     expect(result.profitFactor).toBe(1);
-    expect(result.baselineExpectancyPct).toBeCloseTo(40 / 3);
+    expect(result.baselineExpectancyPct).toBeCloseTo(4 / 3);
   });
 
-  it('uses raw price movement when price basis is selected', () => {
+  it('does not change when leverage changes', () => {
     const result = calculateStopLossExpectation([
       trade(1, 0.5, 2, 50),
       trade(2, 1.2, 3, 2),
-    ], 1, 'price');
+    ], 1);
 
     expect(result.stopHitCount).toBe(1);
     expect(result.expectancyPct).toBe(0.5);
@@ -65,27 +65,26 @@ describe('stop loss expectation', () => {
     expect(result.averageLossPct).toBe(-1);
   });
 
-  it('includes the stored trading-fee rate when a margin stop is triggered', () => {
+  it('does not include trading fees in a price-based stop', () => {
     const subject = trade(1, 1.2, 3, 10);
     subject.entry.fee = -2;
 
-    const result = calculateStopLossExpectation([subject], 10, 'margin');
+    const result = calculateStopLossExpectation([subject], 1);
 
-    expect(result.expectancyPct).toBe(-12);
-    expect(result.averageLossPct).toBe(-12);
-    expect(result.baselineExpectancyPct).toBe(30);
+    expect(result.expectancyPct).toBe(-1);
+    expect(result.averageLossPct).toBe(-1);
+    expect(result.baselineExpectancyPct).toBe(3);
   });
 
-  it('excludes missing leverage only from margin-based analysis', () => {
+  it('includes trades without leverage', () => {
     const trades = [trade(1, 0.5, 2, undefined)];
 
-    expect(calculateStopLossExpectation(trades, 10, 'margin').tradeCount).toBe(0);
-    expect(calculateStopLossExpectation(trades, 10, 'margin').excludedTradeCount).toBe(1);
-    expect(calculateStopLossExpectation(trades, 1, 'price').tradeCount).toBe(1);
+    expect(calculateStopLossExpectation(trades, 1).tradeCount).toBe(1);
+    expect(calculateStopLossExpectation(trades, 1).excludedTradeCount).toBe(0);
   });
 
   it('returns empty metrics for an invalid stop', () => {
-    const result = calculateStopLossExpectation([trade(1, 0.5, 2, 10)], 0, 'margin');
+    const result = calculateStopLossExpectation([trade(1, 0.5, 2, 10)], 0);
 
     expect(result.tradeCount).toBe(0);
     expect(result.expectancyPct).toBeNull();

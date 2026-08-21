@@ -2,10 +2,7 @@ import { useMemo, useState } from 'react';
 import { Calculator, Info, Loader2 } from 'lucide-react';
 
 import type { AnalyzedTrade } from './tradeAnalysis';
-import {
-  calculateStopLossExpectation,
-  type StopLossBasis,
-} from './stopLossExpectation';
+import { calculateStopLossExpectation } from './stopLossExpectation';
 
 type Props = {
   trades: AnalyzedTrade[];
@@ -35,23 +32,19 @@ function Metric({ label, value, tone = 'neutral' }: { label: string; value: stri
 }
 
 export default function StopLossExpectationTool({ trades, direction, isLoading, isKo }: Props) {
-  const [basis, setBasis] = useState<StopLossBasis>('margin');
-  const [marginStopPct, setMarginStopPct] = useState(10);
-  const [priceStopPct, setPriceStopPct] = useState(1);
-  const stopPct = basis === 'margin' ? marginStopPct : priceStopPct;
+  const [stopPct, setStopPctState] = useState(1);
   const minimum = 0.1;
-  const maximum = basis === 'margin' ? 100 : 15;
+  const maximum = 15;
   const step = 0.1;
   const result = useMemo(
-    () => calculateStopLossExpectation(trades, stopPct, basis),
-    [basis, stopPct, trades],
+    () => calculateStopLossExpectation(trades, stopPct),
+    [stopPct, trades],
   );
 
   const setStopPct = (value: number) => {
     if (!Number.isFinite(value)) return;
     const next = Math.min(maximum, Math.max(minimum, value));
-    if (basis === 'margin') setMarginStopPct(next);
-    else setPriceStopPct(next);
+    setStopPctState(next);
   };
   const changeTone = (result.expectancyDeltaPctPoints || 0) >= 0 ? 'text-bull' : 'text-bear';
 
@@ -70,23 +63,11 @@ export default function StopLossExpectationTool({ trades, direction, isLoading, 
         <span className="font-mono text-xs text-dark-400">{direction.toUpperCase()} · n={result.tradeCount}</span>
       </div>
 
-      <div className="grid gap-4 border-b border-dark-700 p-4 lg:grid-cols-[280px_minmax(0,1fr)_110px] lg:items-end">
+      <div className="grid gap-4 border-b border-dark-700 p-4 lg:grid-cols-[220px_minmax(0,1fr)_110px] lg:items-end">
         <div>
           <div className="mb-1.5 text-[10px] text-dark-500">{isKo ? '손절 기준' : 'Stop basis'}</div>
-          <div className="grid grid-cols-2 border border-dark-700 bg-dark-900/40 p-1">
-            {([
-              ['margin', isKo ? '투자금 기준' : 'Margin return'],
-              ['price', isKo ? '가격 기준' : 'Price move'],
-            ] as const).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setBasis(id)}
-                className={`min-h-8 px-2 text-xs font-medium ${basis === id ? 'bg-primary-500/20 text-primary-200' : 'text-dark-400 hover:text-white'}`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex min-h-10 items-center border border-dark-700 bg-dark-900/40 px-3 text-xs font-medium text-primary-200">
+            {isKo ? '코인 가격 변동률' : 'Coin price movement'}
           </div>
         </div>
         <label className="block min-w-0">
@@ -129,12 +110,12 @@ export default function StopLossExpectationTool({ trades, direction, isLoading, 
         </div>
       ) : result.tradeCount === 0 ? (
         <div className="px-4 py-6 text-sm text-dark-400">
-          {isKo ? '선택 방향에서 MAE·레버리지 경로가 모두 확인되는 거래가 없습니다.' : 'No trades have the required MAE and leverage data.'}
+          {isKo ? '선택 방향에서 가격 기준 MAE 경로가 확인되는 거래가 없습니다.' : 'No trades have the required price-based MAE path.'}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 border-b border-dark-700 sm:grid-cols-3 lg:grid-cols-6">
-            <Metric label={isKo ? (basis === 'margin' ? '거래당 기대 순수익률' : '거래당 기대 가격수익률') : 'Expected return / trade'} value={`${signed(result.expectancyPct)}%`} tone={(result.expectancyPct || 0) >= 0 ? 'positive' : 'negative'} />
+            <Metric label={isKo ? '거래당 기대 가격수익률' : 'Expected price return / trade'} value={`${signed(result.expectancyPct)}%`} tone={(result.expectancyPct || 0) >= 0 ? 'positive' : 'negative'} />
             <Metric label={isKo ? '평균 수익률' : 'Average win'} value={`${signed(result.averageWinPct)}%`} tone="positive" />
             <Metric label={isKo ? '평균 손실률' : 'Average loss'} value={`${signed(result.averageLossPct)}%`} tone="negative" />
             <Metric label={isKo ? '예상 승률' : 'Expected win rate'} value={`${number(result.winRatePct)}%`} />
@@ -144,7 +125,7 @@ export default function StopLossExpectationTool({ trades, direction, isLoading, 
 
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 text-xs">
             <div className="text-dark-300">
-              {isKo ? (basis === 'margin' ? '현재 실제 순수익률 평균' : '실제 가격 움직임 평균') : 'Actual-exit average'} <strong className="font-mono text-white">{signed(result.baselineExpectancyPct)}%</strong>
+              {isKo ? '실제 가격 움직임 평균' : 'Actual price-move average'} <strong className="font-mono text-white">{signed(result.baselineExpectancyPct)}%</strong>
               <span className="mx-2 text-dark-700">→</span>
               {stopPct}% Stop <strong className="font-mono text-white">{signed(result.expectancyPct)}%</strong>
               <span className={`ml-2 font-mono ${changeTone}`}>({signed(result.expectancyDeltaPctPoints)}%p)</span>
@@ -160,8 +141,8 @@ export default function StopLossExpectationTool({ trades, direction, isLoading, 
         <summary className="flex cursor-pointer items-center gap-1 text-dark-500"><Info className="h-3 w-3" />{isKo ? '계산 기준과 한계' : 'Method and limitations'}</summary>
         <p className="mt-2">
           {isKo
-            ? 'MAE가 손절률에 닿은 거래는 -N%에서 해당 거래의 투자금 대비 수수료율을 추가 차감하고, 닿지 않은 거래는 수수료·펀딩이 반영된 실제 순수익률을 유지합니다. 가격 기준은 비용 전 가격 움직임만 비교합니다. 가상 조기청산 시점의 펀딩·슬리피지와 한 15분봉 안에서의 가격 순서는 알 수 없어 반영하지 않은 과거 경로 시뮬레이션이며 미래 성과를 보장하지 않습니다.'
-            : 'A margin stop is set to -N% minus that trade’s fee rate; an untouched trade keeps its realized net return. Price mode compares pre-cost price movement. Funding at the hypothetical exit, slippage, and intrabar ordering are unavailable, so this is a historical path simulation rather than a forecast.'}
+            ? '진입가 대비 방향 반영 MAE가 N%에 닿으면 -N%, 닿지 않으면 실제 진입가 대비 청산가의 방향 반영 가격 수익률을 사용합니다. 레버리지, 투자금, 수수료, 펀딩은 계산에 넣지 않습니다. 가상 조기청산 시점의 슬리피지와 한 15분봉 안에서의 가격 순서는 알 수 없어 반영하지 않은 과거 경로 시뮬레이션이며 미래 성과를 보장하지 않습니다.'
+            : 'If direction-adjusted MAE reaches N% from entry, the result is -N%; otherwise it uses the direction-adjusted entry-to-exit price return. Leverage, margin, fees, and funding are excluded. Slippage and intrabar ordering are unavailable, so this is a historical path simulation rather than a forecast.'}
         </p>
         {result.excludedTradeCount > 0 && <p className="mt-1 text-amber-400/80">{isKo ? `필수 경로 데이터가 없는 ${result.excludedTradeCount}건은 제외했습니다.` : `${result.excludedTradeCount} trades without required path data were excluded.`}</p>}
       </details>
