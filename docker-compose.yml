@@ -1,0 +1,13 @@
+services:
+  journal:
+    build: .
+    env_file:
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      JOURNAL_DIR: /app/journal
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./journal:/app/journal
+    restart: unless-stopped

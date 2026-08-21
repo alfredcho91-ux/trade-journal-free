@@ -1,0 +1,15 @@
+.git
+.env
+journal
+node_modules
+venv
+.cache
+server.log
+__pycache__
+.DS_Store
+frontend/node_modules
+frontend/dist
+backend/__pycache__
+backend/venv
+**/__pycache__
+**/.DS_Store

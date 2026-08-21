@@ -1,0 +1,77 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.9"
+
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Core Guard Check
+      run: |
+        python3 scripts/check_core_imports.py
+
+    - name: Run Route Guard Check
+      run: |
+        python3 scripts/check_route_imports.py
+
+    - name: Run Backend Test Suite
+      run: |
+        cd backend
+        pytest -q
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+
+    - name: Frontend CI (Install, Test, Lint, Build)
+      run: |
+        cd frontend
+        npm ci
+        npm test
+        npm run lint
+        npm run build
+
+  talib-regression:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.9"
+
+    - name: Install backend dependencies with TA-Lib
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install TA-Lib
+
+    - name: Run TA-Lib + TradingView regression tests (mandatory)
+      env:
+        CI_REQUIRE_TALIB: "1"
+      run: |
+        cd backend
+        pytest -q tests/test_core_indicators.py
