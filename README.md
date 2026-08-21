@@ -36,8 +36,10 @@ cp .env.example .env
 ./start.sh
 ```
 
-- Frontend: `http://localhost:5173`
-- Backend/OpenAPI: `http://localhost:8000/docs`
+- Frontend: `http://localhost:5181`
+- Backend/OpenAPI: `http://localhost:8011/docs`
+
+기본 포트는 전체 Quant-Lab 앱(`5173/8000`)과 동시에 실행해도 충돌하지 않도록 분리되어 있습니다. `.env`의 `JOURNAL_FRONTEND_PORT`, `JOURNAL_BACKEND_PORT`로 변경할 수 있습니다.
 
 ## 환경 변수
 

@@ -36,11 +36,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      port: 5173,
+      host: env.JOURNAL_HOST || '127.0.0.1',
+      port: Number(env.JOURNAL_FRONTEND_PORT || 5181),
       allowedHosts: ['.ngrok-free.dev'],
       proxy: {
         '/api': {
-          target: env.VITE_API_TARGET || 'http://localhost:8000',
+          target: env.VITE_API_TARGET || 'http://localhost:8011',
           changeOrigin: true,
         },
       },

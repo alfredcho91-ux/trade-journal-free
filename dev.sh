@@ -20,15 +20,22 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
     set +a
 fi
 
+JOURNAL_HOST="${JOURNAL_HOST:-127.0.0.1}"
+JOURNAL_BACKEND_PORT="${JOURNAL_BACKEND_PORT:-8011}"
+JOURNAL_FRONTEND_PORT="${JOURNAL_FRONTEND_PORT:-5181}"
+
 cleanup() {
+    status=$?
+    trap - EXIT SIGINT SIGTERM
     echo ""
     echo "Shutting down servers..."
-    kill $BACKEND_PID 2>/dev/null || true
-    kill $FRONTEND_PID 2>/dev/null || true
-    exit 0
+    [ -n "${BACKEND_PID:-}" ] && kill "$BACKEND_PID" 2>/dev/null || true
+    [ -n "${FRONTEND_PID:-}" ] && kill "$FRONTEND_PID" 2>/dev/null || true
+    wait 2>/dev/null || true
+    exit "$status"
 }
 
-trap cleanup SIGINT SIGTERM
+trap cleanup EXIT SIGINT SIGTERM
 
 echo -e "${BLUE}Starting Backend Server...${NC}"
 cd "$SCRIPT_DIR"
@@ -39,16 +46,22 @@ if [ ! -d "backend/venv" ]; then
 fi
 
 "$SCRIPT_DIR/backend/venv/bin/python" -m uvicorn backend.main:app \
-    --host 0.0.0.0 \
-    --port 8000 \
+    --host "$JOURNAL_HOST" \
+    --port "$JOURNAL_BACKEND_PORT" \
     --reload \
     --reload-dir backend \
     --reload-dir core &
 BACKEND_PID=$!
-echo -e "${GREEN}Backend started on http://localhost:8000${NC}"
-echo ""
 
 sleep 2
+
+if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo "Backend failed to start. Check whether port $JOURNAL_BACKEND_PORT is already in use."
+    exit 1
+fi
+
+echo -e "${GREEN}Backend started on http://localhost:${JOURNAL_BACKEND_PORT}${NC}"
+echo ""
 
 echo -e "${BLUE}Starting Frontend Server...${NC}"
 cd "$SCRIPT_DIR/frontend"
@@ -58,9 +71,18 @@ if [ ! -d "node_modules" ]; then
     exit 1
 fi
 
-npm run dev &
+VITE_API_TARGET="http://127.0.0.1:${JOURNAL_BACKEND_PORT}" \
+    npm run dev -- --host "$JOURNAL_HOST" --port "$JOURNAL_FRONTEND_PORT" &
 FRONTEND_PID=$!
-echo -e "${GREEN}Frontend started on http://localhost:5173${NC}"
+
+sleep 1
+
+if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    echo "Frontend failed to start. Check whether port $JOURNAL_FRONTEND_PORT is already in use."
+    exit 1
+fi
+
+echo -e "${GREEN}Frontend started on http://localhost:${JOURNAL_FRONTEND_PORT}${NC}"
 echo ""
 
 echo "Press Ctrl+C to stop all servers"
