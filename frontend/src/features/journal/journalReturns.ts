@@ -7,9 +7,9 @@ export function positionNotional(entry: JournalEntry): number | null {
     return null;
   }
 
-  // Deepcoin SWAP size is a contract count, whose coin multiplier differs by symbol.
+  // Exchange derivative size may be a contract count, whose multiplier differs by symbol.
   // Recover the position notional from reported gross PnL and the underlying price move.
-  if (entry.source === 'deepcoin_position') {
+  if (entry.source?.endsWith('_position')) {
     const exitPrice = entry.exit_price;
     const netPnl = entry.realized_pnl;
     if (
@@ -54,7 +54,7 @@ export function investedAmount(entry: JournalEntry): number | null {
   }
 
   // Non-derivative entries are unleveraged unless an exchange says otherwise.
-  return entry.source === 'deepcoin_position' ? null : notional;
+  return entry.source?.endsWith('_position') ? null : notional;
 }
 
 export function aggregateNetReturnPct(entries: JournalEntry[]): number | null {

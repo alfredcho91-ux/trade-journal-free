@@ -5,13 +5,13 @@ import { BarChart3, CandlestickChart, Link2, RefreshCw, Trash2 } from 'lucide-re
 
 import {
   deleteJournalEntry,
-  getDeepcoinStatus,
+  getExchangeStatuses,
   getJournal,
   getJournalExcursions,
-  syncDeepcoinFills,
+  syncExchange,
 } from '../api/client';
 import { useLanguage } from '../store/useStore';
-import type { JournalEntry } from '../types';
+import type { ExchangeId, JournalEntry } from '../types';
 import { isClosedPosition } from '../features/journal/journalEntries';
 import {
   buildJournalPeriod,
@@ -223,8 +223,8 @@ function PeriodAnalysis({
     if (lookbackDays > 90) {
       setCustomError(
         isKo
-          ? '90일을 초과한 구간은 기존에 저장된 데이터만 분석합니다. Deepcoin 자동 동기화는 최근 90일까지 지원합니다.'
-          : 'Periods beyond 90 days use already-saved data only; automatic Deepcoin sync supports the most recent 90 days.',
+          ? '90일을 초과한 구간은 기존에 저장된 데이터만 분석합니다. 거래소 자동 동기화는 최근 90일까지 지원합니다.'
+          : 'Periods beyond 90 days use already-saved data only; automatic exchange sync supports the most recent 90 days.',
       );
       return;
     }
@@ -336,8 +336,8 @@ function PeriodAnalysis({
           <h2 className="text-lg font-semibold text-white">{isKo ? '기간 성과 분석' : 'Period Performance Analysis'}</h2>
           <p className="mt-1 text-xs text-dark-400">
             {isKo
-              ? '기간을 선택하면 Deepcoin 데이터를 동기화한 뒤 종료 포지션을 분석합니다.'
-              : 'Choosing a period syncs Deepcoin data and analyzes closed positions.'}
+              ? '기간을 선택하면 선택한 거래소 데이터를 동기화한 뒤 종료 포지션을 분석합니다.'
+              : 'Choosing a period syncs the selected exchange and analyzes closed positions.'}
           </p>
           <div className="mt-1 text-[11px] text-dark-500">
             {period.start || '-'} ~ {period.end || '-'}
@@ -436,8 +436,8 @@ function PeriodAnalysis({
       {instType === 'SPOT' && (
         <div className="mt-3 border border-primary-500/20 bg-primary-500/5 p-2 text-[11px] text-primary-200">
           {isKo
-            ? '현물 선택 시 체결 기록은 동기화되지만, 아래 성과 분석은 Deepcoin 선물 종료 포지션 기준입니다.'
-            : 'Spot sync imports fills, while the performance section below is based on closed futures positions.'}
+            ? '현물은 매수·매도 체결을 기준으로 완료 거래를 재구성합니다.'
+            : 'Spot trades are reconstructed from matched buy and sell fills.'}
         </div>
       )}
 
@@ -614,7 +614,9 @@ export default function JournalPage() {
   const isKo = language === 'ko';
   const queryClient = useQueryClient();
 
-  const [deepcoinInstType, setDeepcoinInstType] = useState<'SWAP' | 'SPOT'>('SWAP');
+  const [selectedExchange, setSelectedExchange] = useState<ExchangeId>('deepcoin');
+  const [exchangeInstType, setExchangeInstType] = useState<'SWAP' | 'SPOT'>('SWAP');
+  const [exchangeSymbols, setExchangeSymbols] = useState('BTC/USDT, ETH/USDT, SOL/USDT');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [snapshotEntry, setSnapshotEntry] = useState<JournalEntry | null>(null);
   const [historyPeriod, setHistoryPeriod] = useState<JournalPeriod>(() => buildJournalPeriod());
@@ -640,11 +642,12 @@ export default function JournalPage() {
     [excursionQuery.data?.items],
   );
 
-  const { data: deepcoinStatus } = useQuery({
-    queryKey: ['deepcoin-status'],
-    queryFn: getDeepcoinStatus,
+  const { data: exchangeStatuses } = useQuery({
+    queryKey: ['exchange-statuses'],
+    queryFn: getExchangeStatuses,
     staleTime: 60_000,
   });
+  const selectedExchangeStatus = exchangeStatuses?.find((item) => item.id === selectedExchange);
 
   const deleteMutation = useMutation({
     mutationFn: deleteJournalEntry,
@@ -654,8 +657,8 @@ export default function JournalPage() {
     },
   });
 
-  const deepcoinSyncMutation = useMutation({
-    mutationFn: syncDeepcoinFills,
+  const exchangeSyncMutation = useMutation({
+    mutationFn: syncExchange,
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries });
       await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
@@ -709,9 +712,9 @@ export default function JournalPage() {
             <Link2 className="h-4 w-4" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-white">Deepcoin</div>
-            <div className={`text-xs ${deepcoinStatus?.configured ? 'text-bull' : 'text-dark-400'}`}>
-              {deepcoinStatus?.configured
+            <div className="text-sm font-semibold text-white">{selectedExchangeStatus?.name || 'Exchange'}</div>
+            <div className={`text-xs ${selectedExchangeStatus?.configured ? 'text-bull' : 'text-dark-400'}`}>
+              {selectedExchangeStatus?.configured
                 ? isKo
                   ? '읽기 전용 연결 준비됨'
                   : 'Read-only connection ready'
@@ -723,14 +726,38 @@ export default function JournalPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select
-            value={deepcoinInstType}
-            onChange={(event) => setDeepcoinInstType(event.target.value as 'SWAP' | 'SPOT')}
+            value={selectedExchange}
+            onChange={(event) => {
+              setSelectedExchange(event.target.value as ExchangeId);
+              setSyncMessage(null);
+            }}
+            className="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm"
+            aria-label={isKo ? '거래소' : 'Exchange'}
+          >
+            {(exchangeStatuses || []).map((exchange) => (
+              <option key={exchange.id} value={exchange.id}>
+                {exchange.name}{exchange.configured ? '' : isKo ? ' · 미설정' : ' · Not configured'}
+              </option>
+            ))}
+          </select>
+          <select
+            value={exchangeInstType}
+            onChange={(event) => setExchangeInstType(event.target.value as 'SWAP' | 'SPOT')}
             className="bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm"
             aria-label={isKo ? '상품 유형' : 'Instrument type'}
           >
             <option value="SWAP">{isKo ? 'USDT 선물' : 'USDT Perpetual'}</option>
             <option value="SPOT">{isKo ? '현물' : 'Spot'}</option>
           </select>
+          {selectedExchange !== 'deepcoin' && (
+            <input
+              value={exchangeSymbols}
+              onChange={(event) => setExchangeSymbols(event.target.value)}
+              className="min-w-[280px] bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-sm"
+              aria-label={isKo ? '동기화 종목' : 'Sync symbols'}
+              placeholder="BTC/USDT, ETH/USDT"
+            />
+          )}
           <span className="text-xs text-dark-400">
             {isKo ? '동기화 기간은 아래 기간 성과 분석에서 선택합니다.' : 'Choose the sync period in the performance section below.'}
           </span>
@@ -740,17 +767,19 @@ export default function JournalPage() {
       <PeriodAnalysis
         closedEntries={closedEntries}
         isKo={isKo}
-        instType={deepcoinInstType}
-        canSync={Boolean(deepcoinStatus?.configured)}
-        isSyncing={deepcoinSyncMutation.isPending}
+        instType={exchangeInstType}
+        canSync={Boolean(selectedExchangeStatus?.configured)}
+        isSyncing={exchangeSyncMutation.isPending}
         syncMessage={syncMessage}
-        syncError={deepcoinSyncMutation.error}
+        syncError={exchangeSyncMutation.error}
         period={historyPeriod}
         onSyncDays={(days) => {
           setSyncMessage(null);
-          deepcoinSyncMutation.mutate({
-            inst_type: deepcoinInstType,
+          exchangeSyncMutation.mutate({
+            exchange: selectedExchange,
+            inst_type: exchangeInstType,
             lookback_days: days,
+            symbols: exchangeSymbols.split(',').map((value) => value.trim()).filter(Boolean),
           });
         }}
         onPeriodApply={setHistoryPeriod}
@@ -760,7 +789,7 @@ export default function JournalPage() {
         <div className="card p-4 text-center">
           <div className="text-2xl font-bold text-white">{stats.total}</div>
           <div className="text-sm text-dark-400">{isKo ? '종료 거래' : 'Closed Trades'}</div>
-          <div className="mt-1 text-[11px] text-dark-500">{isKo ? 'Deepcoin 포지션 기준' : 'Deepcoin positions'}</div>
+          <div className="mt-1 text-[11px] text-dark-500">{isKo ? '연결 거래소 기준' : 'Connected exchanges'}</div>
         </div>
         <div className="card p-4 text-center">
           <div className="text-2xl font-bold text-primary-400">{winRate.toFixed(2)}%</div>
@@ -853,14 +882,14 @@ export default function JournalPage() {
                         <div className="font-medium">{entry.symbol || '-'}</div>
                         <div className="flex items-center gap-1.5 text-xs text-dark-400">
                           <span>{entry.timeframe || '-'}</span>
-                          {entry.source === 'deepcoin' && (
+                          {!closed && entry.exchange && (
                             <span className="border border-primary-500/30 bg-primary-500/10 px-1 text-[10px] text-primary-300">
-                              Deepcoin
+                              {entry.exchange}
                             </span>
                           )}
-                          {entry.source === 'deepcoin_position' && (
+                          {closed && (
                             <span className="border border-bull/30 bg-bull/10 px-1 text-[10px] text-bull">
-                              {isKo ? 'Deepcoin 종료' : 'Deepcoin Closed'}
+                              {entry.exchange || (isKo ? '거래소' : 'Exchange')} {isKo ? '종료' : 'Closed'}
                             </span>
                           )}
                         </div>

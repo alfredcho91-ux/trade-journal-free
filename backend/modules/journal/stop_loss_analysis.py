@@ -448,7 +448,11 @@ def _cache_key(start_time: int, end_time: int, positions: List[Dict[str, Any]]) 
 def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Dict[str, Any]:
     if start_time > end_time:
         raise ValueError("start_time must be before end_time")
-    positions = closed_positions(repository.list_entries(), start_time, end_time)
+    all_positions = closed_positions(repository.list_entries(), start_time, end_time)
+    positions = [
+        position for position in all_positions
+        if str(position.get("source") or "") == "deepcoin_position"
+    ]
     cache_key = _cache_key(start_time, end_time, positions)
     cached = STOP_ANALYSIS_CACHE.get(cache_key)
     if cached is not None:
@@ -459,6 +463,11 @@ def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Di
             return cached
 
         warnings: List[str] = []
+        excluded_count = len(all_positions) - len(positions)
+        if excluded_count:
+            warnings.append(
+                f"{excluded_count} non-Deepcoin positions were excluded because confirmed stop-order import is not available for those connectors."
+            )
         symbols = [str(position["symbol"]) for position in positions if position.get("symbol")]
         events_by_symbol, trigger_coverage = _load_stop_events(symbols, warnings)
         matched = _match_confirmed_stops(positions, events_by_symbol)
@@ -508,6 +517,7 @@ def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Di
                 "direction_breakdown": _direction_breakdown(items),
                 "coverage": {
                     "closed_positions_considered": len(positions),
+                    "non_deepcoin_positions_excluded": excluded_count,
                     "matched_confirmed_stops": len(matched),
                     "trigger_history": trigger_coverage,
                 },

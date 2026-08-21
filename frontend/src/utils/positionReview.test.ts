@@ -112,4 +112,24 @@ describe('position review entry time', () => {
     expect(result.entryFills[0].size).toBe(3);
     expect(result.entryFills[0].entry_price).toBeCloseTo(101);
   });
+
+  it('matches an opening fill from another supported exchange', () => {
+    const bybitPosition: JournalEntry = {
+      ...position,
+      source: 'bybit_position',
+      exchange: 'Bybit',
+      entry_datetime: '2026-08-04T18:00:00Z',
+    };
+    const bybitFill: JournalEntry = {
+      ...fill({}),
+      source: 'bybit_fill',
+      exchange: 'Bybit',
+      notes: 'Bybit SWAP fill: sell',
+    };
+
+    const result = resolvePositionEntryTime(bybitPosition, [bybitPosition, bybitFill]);
+
+    expect(result.confidence).toBe('confirmed');
+    expect(result.matchedEntry).toBe(bybitFill);
+  });
 });

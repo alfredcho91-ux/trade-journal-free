@@ -152,6 +152,30 @@ export default function TradeReportModal({
     }),
     [resolvedEntryTime.entryFills],
   );
+  const exchangeExitMarkers = useMemo(() => {
+    if (entry.exchange === 'Deepcoin' || !resolvedEntryTime.datetime || !entry.datetime) return [];
+    const entryMs = new Date(resolvedEntryTime.datetime).getTime();
+    const exitMs = new Date(entry.datetime).getTime();
+    return allEntries
+      .filter((candidate) => {
+        if (!candidate.source?.endsWith('_fill')) return false;
+        if (candidate.exchange !== entry.exchange || candidate.symbol !== entry.symbol) return false;
+        if (candidate.direction === entry.direction || !candidate.datetime) return false;
+        const candidateMs = new Date(candidate.datetime).getTime();
+        return Number.isFinite(candidateMs) && candidateMs >= entryMs && candidateMs <= exitMs;
+      })
+      .sort((left, right) => new Date(left.datetime as string).getTime() - new Date(right.datetime as string).getTime())
+      .flatMap((fill, index) => {
+        if (!fill.datetime || fill.entry_price == null || !Number.isFinite(fill.entry_price)) return [];
+        return [{
+          datetime: fill.datetime,
+          price: fill.entry_price,
+          size: fill.size,
+          order_id: fill.order_id,
+          label: `EXIT${index + 1}`,
+        }];
+      });
+  }, [allEntries, entry, resolvedEntryTime.datetime]);
   const entrySnapshot = matchedEntry?.indicator_snapshot || null;
   const exitSnapshot = isClosedPosition(entry) ? entry.indicator_snapshot || null : null;
   const activeSnapshot = reviewMoment === 'entry' ? entrySnapshot : exitSnapshot;
@@ -212,6 +236,7 @@ export default function TradeReportModal({
     }),
     enabled: Boolean(
       isClosedPosition(entry) &&
+      entry.exchange === 'Deepcoin' &&
       entry.symbol &&
       (entry.direction === 'Long' || entry.direction === 'Short') &&
       resolvedEntryTime.datetime &&
@@ -508,7 +533,7 @@ export default function TradeReportModal({
                   entryPrice={entry.entry_price}
                   exitPrice={entry.exit_price}
                   entryEvents={splitEntryMarkers}
-                  takeProfitEvents={tradeMarkerQuery.data?.take_profits || []}
+                  takeProfitEvents={tradeMarkerQuery.data?.take_profits || exchangeExitMarkers}
                 />
                 {tradeMarkerQuery.data?.warnings.map((warning) => (
                   <div key={warning} className="border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
@@ -544,7 +569,7 @@ export default function TradeReportModal({
                     <span className={`text-[10px] ${resolvedEntryTime.confidence === 'estimated' ? 'text-amber-300' : 'text-dark-500'}`}>
                       {resolvedEntryTime.confidence === 'estimated'
                         ? isKo ? '진입 체결 추정값' : 'Estimated entry fill'
-                        : isKo ? 'Deepcoin 주문 체결 확인' : 'Confirmed Deepcoin order fill'}
+                        : isKo ? `${entry.exchange || '거래소'} 주문 체결 확인` : `Confirmed ${entry.exchange || 'exchange'} order fill`}
                     </span>
                   )}
                 </div>

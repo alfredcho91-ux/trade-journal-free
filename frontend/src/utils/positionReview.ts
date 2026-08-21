@@ -17,7 +17,7 @@ function timestamp(entry: JournalEntry): number | null {
 }
 
 function fillSide(entry: JournalEntry): 'buy' | 'sell' | null {
-  const match = entry.notes?.match(/Deepcoin\s+\S+\s+fill:\s*(buy|sell)\b/i);
+  const match = entry.notes?.match(/^\S+\s+\S+\s+fill:\s*(buy|sell)\b/i);
   return match ? (match[1].toLowerCase() as 'buy' | 'sell') : null;
 }
 
@@ -96,7 +96,8 @@ export function resolvePositionEntryTime(
 
   const matchingFills = entries
     .filter((candidate) => {
-      if (candidate.source !== 'deepcoin' || candidate.symbol !== position.symbol) return false;
+      const isFill = candidate.source === 'deepcoin' || candidate.source?.endsWith('_fill');
+      if (!isFill || candidate.symbol !== position.symbol || candidate.exchange !== position.exchange) return false;
       if (!isOpeningFill(position, candidate)) return false;
       const fillTime = timestamp(candidate);
       return fillTime != null && fillTime <= closeTime;
@@ -107,7 +108,8 @@ export function resolvePositionEntryTime(
     .filter(
       (candidate) =>
         candidate.id !== position.id &&
-        candidate.source === 'deepcoin_position' &&
+        candidate.source?.endsWith('_position') &&
+        candidate.exchange === position.exchange &&
         candidate.symbol === position.symbol &&
         candidate.direction === position.direction,
     )

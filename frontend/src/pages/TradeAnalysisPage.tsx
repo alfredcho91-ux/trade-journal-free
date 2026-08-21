@@ -279,7 +279,7 @@ export default function TradeAnalysisPage() {
             <BarChart3 className="h-5 w-5 text-primary-400" />
             {isKo ? '매매 분석' : 'Trade Analysis'}
           </h1>
-          <div className="mt-1 text-xs text-dark-500">{period.start} ~ {period.end} · {isKo ? 'Deepcoin 종료 포지션' : 'Deepcoin closed positions'}</div>
+          <div className="mt-1 text-xs text-dark-500">{period.start} ~ {period.end} · {isKo ? '연결 거래소 종료 포지션' : 'Connected exchange closed positions'}</div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <button type="button" onClick={applyRollingPeriod} className="border border-dark-700 bg-dark-800 px-3 py-2 text-xs text-dark-300 hover:text-white">

@@ -5,6 +5,9 @@ import type {
   DeepcoinStatus,
   DeepcoinSyncResult,
   DeepcoinTradeMarkers,
+  ExchangeId,
+  ExchangeStatus,
+  ExchangeSyncResult,
   JournalExcursionData,
   JournalCurrentMarketData,
   JournalQualityAnalysisData,
@@ -162,5 +165,31 @@ export async function getDeepcoinTradeMarkers(params: {
     return unwrapApiResponse(res, 'Failed to load Deepcoin trade markers.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to load Deepcoin trade markers.');
+  }
+}
+
+export async function getExchangeStatuses(): Promise<ExchangeStatus[]> {
+  try {
+    const res = await api.get<ApiResponse<{ exchanges: ExchangeStatus[] }>>('/exchanges');
+    return unwrapApiResponse(res, 'Failed to load exchange connection status.').exchanges;
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load exchange connection status.');
+  }
+}
+
+export async function syncExchange(params: {
+  exchange: ExchangeId;
+  inst_type: 'SWAP' | 'SPOT';
+  lookback_days: number;
+  symbols: string[];
+}): Promise<ExchangeSyncResult> {
+  try {
+    const { exchange, ...body } = params;
+    const res = await api.post<ApiResponse<ExchangeSyncResult>>(`/exchanges/${exchange}/sync`, body, {
+      timeout: 360_000,
+    });
+    return unwrapApiResponse(res, 'Failed to sync exchange trades.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to sync exchange trades.');
   }
 }

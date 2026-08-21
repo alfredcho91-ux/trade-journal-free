@@ -16,6 +16,7 @@ from backend.config.settings import (
     get_basic_auth_credentials,
 )
 from backend.modules.deepcoin.router import router as deepcoin_router
+from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
 from backend.modules.journal.router import router as journal_router
 
@@ -53,7 +54,7 @@ def verify_credentials(
 
 app = FastAPI(
     title="Trade Journal Free API",
-    description="Read-only Deepcoin journal and personal trade analytics",
+    description="Read-only multi-exchange journal and personal trade analytics",
     version="1.0.0",
     default_response_class=ORJSONResponse,
     dependencies=[Depends(verify_credentials)],
@@ -73,6 +74,7 @@ def health():
     return {"success": True, "data": {"service": "trade-journal-free"}}
 
 app.include_router(journal_router)
+app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)
 

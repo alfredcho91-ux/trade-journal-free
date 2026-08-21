@@ -1,10 +1,10 @@
 # Security
 
-## Deepcoin key
+## Exchange API keys
 
 - 전용 API key를 새로 만들고 Read Only 권한만 부여합니다.
 - 거래, 출금, 자산 이동 권한을 켜지 않습니다.
-- 가능하면 Deepcoin의 IP 허용 목록을 설정합니다.
+- 가능하면 거래소의 IP 허용 목록을 설정합니다.
 - `.env`를 Git에 추가하거나 브라우저 코드에 넣지 않습니다.
 - 키가 노출되었다면 즉시 폐기하고 새 키를 발급합니다.
 

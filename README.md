@@ -1,10 +1,11 @@
 # Trade Journal Free
 
-Deepcoin의 읽기 전용 거래 기록을 동기화하고, 실제 종료 거래를 분석하는 개인용 무료 배포판입니다. 화면은 `매매일지`와 `매매분석` 두 개만 제공합니다.
+여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 무료 배포판입니다. 화면은 `매매일지`와 `매매분석` 두 개만 제공합니다.
 
 ## 제공 기능
 
-- Deepcoin SWAP/SPOT 읽기 전용 체결 및 종료 포지션 동기화
+- Deepcoin, Binance, Bybit, OKX SWAP/SPOT 읽기 전용 동기화
+- 거래소 선택과 동기화 종목 직접 지정
 - 거래별 순수익률·순수익금·수수료·펀딩·보유시간 기록
 - Lightweight Charts 기반 진입/청산 차트 복기
 - RSI, MACD, Stoch RSI, Slow Stochastic 3종 진입·청산 시점 비교
@@ -12,12 +13,12 @@ Deepcoin의 읽기 전용 거래 기록을 동기화하고, 실제 종료 거래
 - 손절 사후 분석, Stop 최적화, N% 손절 기대값, SL/TP 조합 시뮬레이션
 - 현재 시장과 과거 거래의 유사도 비교
 
-이 프로그램은 주문 생성·수정·취소·출금 API를 호출하지 않습니다. Deepcoin 키는 반드시 Read Only로 생성하세요.
+이 프로그램은 주문 생성·수정·취소·출금 API를 호출하지 않습니다. 모든 거래소 키는 반드시 Read Only로 생성하세요.
 
 ## 가장 쉬운 실행: Docker
 
 1. `.env.example`을 `.env`로 복사합니다.
-2. Deepcoin의 읽기 전용 API key, secret, passphrase를 `.env`에 입력합니다.
+2. 사용할 거래소의 읽기 전용 API key와 secret을 `.env`에 입력합니다. Deepcoin과 OKX는 passphrase도 필요합니다.
 3. 아래 명령을 실행합니다.
 
 ```bash
@@ -49,6 +50,10 @@ cp .env.example .env
 | `DEEPCOIN_SECRET_KEY` | Deepcoin secret |
 | `DEEPCOIN_PASSPHRASE` | Deepcoin API passphrase |
 | `DEEPCOIN_API_BASE_URL` | 기본값 `https://api.deepcoin.com` |
+| `BINANCE_API_KEY`, `BINANCE_SECRET_KEY` | Binance 읽기 전용 API 자격 증명 |
+| `BYBIT_API_KEY`, `BYBIT_SECRET_KEY` | Bybit 읽기 전용 API 자격 증명 |
+| `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE` | OKX 읽기 전용 API 자격 증명 |
+| `{EXCHANGE}_SYMBOLS` | 기본 동기화 종목. 화면에서도 변경 가능 |
 | `JOURNAL_DIR` | SQLite/CSV 저장 디렉터리 |
 | `APP_ENV` | 로컬은 `development`, 외부 공개는 `production` |
 | `DEMO_USERNAME`, `DEMO_PASSWORD` | production Basic Auth 계정 |
@@ -57,11 +62,13 @@ cp .env.example .env
 
 ## 데이터 기준
 
-- 거래 원본과 손익은 Deepcoin 읽기 전용 API를 사용합니다.
+- 거래 원본은 선택한 거래소의 읽기 전용 API를 사용합니다.
+- Deepcoin은 종료 포지션 API를 사용하고, Binance·Bybit·OKX는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다.
+- CCXT 커넥터는 선택 기간 이전에 열린 포지션, 거래소가 제공하지 않는 과거 레버리지·펀딩을 완전히 복원하지 못할 수 있으며 UI 경고로 표시합니다.
 - 캔들, 보조지표, VPVR, VWAP은 Binance Spot OHLCV를 사용합니다.
 - 진입 분석에는 진입 전에 완료된 봉만 사용합니다.
 - 종료 이후 봉은 추가 홀딩·청산 품질·손절 사후 분석에만 사용합니다.
-- 두 거래소의 가격과 거래량은 동일하지 않을 수 있습니다.
+- 분석용 Binance Spot 시세와 실제 체결 거래소의 가격·거래량은 다를 수 있습니다.
 
 ## 검증
 

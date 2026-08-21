@@ -40,7 +40,7 @@ def closed_positions(
 ) -> List[Dict[str, Any]]:
     selected: List[Dict[str, Any]] = []
     for entry in entries:
-        if entry.get("source") != "deepcoin_position":
+        if not str(entry.get("source") or "").endswith("_position"):
             continue
         close_time = timestamp_ms(entry.get("datetime"))
         entry_time = timestamp_ms(entry.get("entry_datetime"))

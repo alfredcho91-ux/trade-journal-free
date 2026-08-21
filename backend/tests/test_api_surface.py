@@ -22,6 +22,8 @@ def test_free_edition_exposes_only_journal_analysis_routes():
         ("GET", "/api/deepcoin/status"),
         ("POST", "/api/deepcoin/sync"),
         ("GET", "/api/deepcoin/trade-markers"),
+        ("GET", "/api/exchanges"),
+        ("POST", "/api/exchanges/{exchange_id}/sync"),
         ("GET", "/api/indicators/projection"),
         ("GET", "/api/indicators/trade-report/{coin}/{interval}"),
         ("GET", "/api/indicators/vpvr-source/{coin}/{interval}"),

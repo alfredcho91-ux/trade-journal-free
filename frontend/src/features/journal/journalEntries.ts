@@ -1,5 +1,5 @@
 import type { JournalEntry } from '../../types';
 
 export function isClosedPosition(entry: JournalEntry): boolean {
-  return entry.source === 'deepcoin_position';
+  return Boolean(entry.source?.endsWith('_position'));
 }

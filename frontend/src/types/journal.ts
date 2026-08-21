@@ -454,6 +454,22 @@ export interface DeepcoinStatus {
   mode: 'read_only';
 }
 
+export type ExchangeId = 'deepcoin' | 'binance' | 'bybit' | 'okx';
+
+export interface ExchangeStatus {
+  id: ExchangeId;
+  name: string;
+  configured: boolean;
+  mode: 'read_only';
+  instrument_types: Array<'SWAP' | 'SPOT'>;
+  requires_passphrase: boolean;
+  connector: 'native' | 'ccxt';
+}
+
+export interface ExchangeSyncResult extends DeepcoinSyncResult {
+  exchange: ExchangeId;
+}
+
 export interface DeepcoinSyncResult {
   inst_type: 'SWAP' | 'SPOT';
   lookback_days: number;
