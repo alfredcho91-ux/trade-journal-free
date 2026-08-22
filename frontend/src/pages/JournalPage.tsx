@@ -558,7 +558,7 @@ export default function JournalPage() {
   const [historyPeriod, setHistoryPeriod] = useState<JournalPeriod>(() => buildJournalPeriod());
   const [connectionOpen, setConnectionOpen] = useState(false);
 
-  const { data: entries, isLoading } = useQuery({
+  const { data: entries, isLoading, isError: entriesError, refetch: refetchEntries } = useQuery({
     queryKey: journalQueryKeys.entries,
     queryFn: getJournal,
   });
@@ -698,7 +698,7 @@ export default function JournalPage() {
           <div className={`text-2xl font-bold ${(stats?.net_return_pct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>
             {stats?.net_return_pct == null ? '-' : `${formatSignedNumber(stats.net_return_pct, 2)}%`}
           </div>
-          <div className="text-sm text-dark-400">{isKo ? '순수익률' : 'Net Return'}</div>
+          <div className="text-sm text-dark-400">{isKo ? '투입 증거금 대비 수익률' : 'Return on deployed margin'}</div>
           <div className="mt-1 text-[11px] text-dark-500">
             {isKo ? '수수료·펀딩 반영' : 'After fees and funding'}
           </div>
@@ -727,7 +727,12 @@ export default function JournalPage() {
           </div>
         </div>
 
-        {isLoading ? (
+        {entriesError ? (
+          <div className="flex items-center justify-center gap-3 py-8 text-sm text-amber-300">
+            <span>{isKo ? '거래 기록을 불러오지 못했습니다.' : 'Trade history could not be loaded.'}</span>
+            <button type="button" onClick={() => void refetchEntries()} className="inline-flex items-center gap-1 border border-amber-300/40 px-2 py-1 text-xs"><RefreshCw className="h-3 w-3" />{isKo ? '재시도' : 'Retry'}</button>
+          </div>
+        ) : isLoading ? (
           <div className="text-center py-8 text-dark-400">{isKo ? '로딩 중...' : 'Loading...'}</div>
         ) : visibleEntries.length === 0 ? (
           <div className="text-center py-8 text-dark-400">
@@ -744,7 +749,7 @@ export default function JournalPage() {
                   <th className="text-center py-2 px-3">{isKo ? '방향' : 'Dir'}</th>
                   <th className="text-right py-2 px-3">{isKo ? '진입' : 'Entry'}</th>
                   <th className="text-right py-2 px-3">{isKo ? '청산' : 'Exit'}</th>
-                  <th className="text-right py-2 px-3">{isKo ? '순수익률' : 'Net Return'}</th>
+                  <th className="text-right py-2 px-3">{isKo ? '투입금 대비 수익률' : 'Margin Return'}</th>
                   <th className="text-right py-2 px-3">{isKo ? '순수익금' : 'Net Profit'}</th>
                   <th className="text-center py-2 px-3">{isKo ? '손익 결과' : 'PnL Result'}</th>
                   <th className="text-center py-2 px-1">

@@ -13,7 +13,7 @@ import pandas as pd
 from backend.config.settings import PROJECT_ROOT
 from backend.modules.journal import repository
 from backend.modules.journal.cache_keys import position_analysis_cache_key
-from backend.modules.journal.trade_selection import closed_positions, finite_float, position_batches, timestamp_ms
+from backend.modules.journal.trade_selection import closed_positions, finite_float, market_group_key, position_batches, timestamp_ms
 from backend.utils.cache import DataCache
 from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
@@ -399,15 +399,15 @@ def _path_cache_key(start_time: int, end_time: int, positions: List[Dict[str, An
 
 
 def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
-    by_symbol: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         symbol = position.get("symbol")
         if symbol:
-            by_symbol[str(symbol)].append(position)
+            by_market[market_group_key(position)].append(position)
 
     items: List[Dict[str, Any]] = []
     warnings: List[str] = []
-    for symbol, symbol_positions in by_symbol.items():
+    for (exchange, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(position_batches(symbol_positions), start=1):
             earliest = min(timestamp_ms(item.get("entry_datetime")) or 0 for item in batch)
             latest = max(timestamp_ms(item.get("datetime")) or 0 for item in batch)
@@ -420,7 +420,7 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
                 PATH_INTERVAL,
                 total_candles=requested,
                 end_time=latest,
-                exchange=batch[0].get("exchange"),
+                exchange=exchange,
             )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: SL/TP market data unavailable")

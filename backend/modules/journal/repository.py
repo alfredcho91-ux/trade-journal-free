@@ -107,10 +107,11 @@ def _resolve_csv_path(csv_path: Optional[Path] = None) -> Path:
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     db_path = _resolve_db_path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     return conn
 
 
@@ -629,10 +630,27 @@ def delete_entry(
         return cursor.rowcount > 0
 
 
+def delete_imported_positions(exchange_id: str, exchange_name: str, symbols: Iterable[str]) -> int:
+    """Replace only machine-generated closed positions for the synced markets."""
+    normalized = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
+    if not normalized:
+        return 0
+    placeholders = ", ".join("?" for _ in normalized)
+    with _connect() as conn:
+        _ensure_schema(conn)
+        cursor = conn.execute(
+            f"DELETE FROM {TABLE_NAME} WHERE source = ? AND exchange = ? AND symbol IN ({placeholders})",
+            (f"{exchange_id}_position", exchange_name, *normalized),
+        )
+        conn.commit()
+        return max(0, cursor.rowcount)
+
+
 __all__ = [
     "add_entries_if_new_external_ids",
     "add_entry_if_new_external_id",
     "delete_entry",
+    "delete_imported_positions",
     "existing_external_ids",
     "external_entry_exists",
     "list_entries",

@@ -9,11 +9,11 @@ import ccxt
 
 from backend.modules.deepcoin.snapshot import build_indicator_snapshots
 from backend.modules.exchanges.ccxt_adapter import fetch_trades, normalize_trades, requested_symbols
-from backend.modules.exchanges.execution_repository import add_executions_if_new
+from backend.modules.exchanges.execution_repository import add_executions_if_new, list_executions
 from backend.modules.exchanges.models import NormalizedTrade, SnapshotEvent
 from backend.modules.exchanges.reconstruction import reconstruct_positions, trade_sign
 from backend.modules.exchanges.registry import SUPPORTED_EXCHANGES
-from backend.modules.journal.repository import add_entries_if_new_external_ids, existing_external_ids
+from backend.modules.journal.repository import add_entries_if_new_external_ids, delete_imported_positions
 from backend.utils.error_handler import DataLoadError
 
 
@@ -31,19 +31,23 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
             close()
 
     trades, ignored = normalize_trades(exchange_id, client, fetch_result.trades)
-    positions, positions_ignored = reconstruct_positions(exchange_id, trades, inst_type)
-    position_ids = [position["external_id"] for position in positions]
-    existing_positions = existing_external_ids(position_ids)
-    new_positions = [position for position in positions if position["external_id"] not in existing_positions]
+    exchange_name = SUPPORTED_EXCHANGES[exchange_id]["name"]
+    execution_rows = [
+        _execution_row(exchange_id, exchange_name, trade, None, inst_type)
+        for trade in trades
+    ]
+    imported_execution_ids = add_executions_if_new(execution_rows)
+    stored_trades = _stored_trades(list_executions(exchange=exchange_name), inst_type, requested)
+    positions, positions_ignored = reconstruct_positions(exchange_id, stored_trades, inst_type)
 
     snapshot_events = [
         *[
             SnapshotEvent(position["entry_external_id"], position["entry_timestamp_ms"], position["coin"], "position_entry")
-            for position in new_positions
+            for position in positions
         ],
         *[
             SnapshotEvent(position["external_id"], position["timestamp_ms"], position["coin"], "position_close")
-            for position in new_positions
+            for position in positions
         ],
     ]
     snapshots = build_indicator_snapshots(snapshot_events) if snapshot_events else {}
@@ -52,17 +56,21 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
         if snapshot:
             snapshot["reference"] = f"last_completed_candle_before_{exchange_id}_{event.event_type}"
 
-    exchange_name = SUPPORTED_EXCHANGES[exchange_id]["name"]
-    execution_rows = [
-        _execution_row(exchange_id, exchange_name, trade, snapshots.get(trade.external_id), inst_type)
-        for trade in trades
-    ]
-    imported_execution_ids = add_executions_if_new(execution_rows)
+    # Keep compact raw execution records useful for chart review without making
+    # snapshots a prerequisite for reconstruction on the first import.
+    if trades:
+        add_executions_if_new([
+            _execution_row(exchange_id, exchange_name, trade, snapshots.get(trade.external_id), inst_type)
+            for trade in trades
+        ])
+
     position_rows = [
         _position_row(exchange_id, exchange_name, position, snapshots.get(position["external_id"], {}), inst_type)
-        for position in new_positions
+        for position in positions
     ]
+    replaced_count = delete_imported_positions(exchange_id, exchange_name, [trade.symbol for trade in stored_trades])
     created_positions = add_entries_if_new_external_ids(position_rows)
+    incomplete_fee_count = sum(1 for position in positions if not position.get("fee_complete", True))
 
     partial_snapshots = sum(
         1 for event in snapshot_events
@@ -74,11 +82,15 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
         )
     )
     warnings = [
-        "Closed positions are reconstructed from fills using net/hedge position side. "
-        "Trades opened before the selected lookback may be incomplete."
+        "Closed positions are rebuilt from the locally stored execution ledger using net/hedge position side. "
+        "The first sync for a symbol may be incomplete if its opening fills predate the downloaded history."
     ]
     if inst_type == "SWAP":
         warnings.append("Funding and historical leverage are not supplied by the generic CCXT connector.")
+    if incomplete_fee_count:
+        warnings.append(
+            f"{incomplete_fee_count} reconstructed position(s) include a fee currency that could not be converted to quote currency."
+        )
     if partial_snapshots:
         warnings.append("Some imported positions were saved with partial entry or exit indicator snapshots.")
     if fetch_result.truncated_symbols:
@@ -97,11 +109,34 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
         "partial_snapshots": partial_snapshots,
         "positions_fetched": len(positions),
         "positions_imported": len(created_positions),
-        "positions_updated": 0,
-        "positions_skipped": len(positions) - len(created_positions),
+        "positions_updated": replaced_count,
+        "positions_skipped": 0,
         "positions_ignored": positions_ignored,
         "warnings": warnings,
     }}
+
+
+def _stored_trades(rows: Sequence[Dict[str, Any]], inst_type: str, symbols: Sequence[str]) -> list[NormalizedTrade]:
+    """Restore normalized executions so repeated syncs use one local history ledger."""
+    restored: list[NormalizedTrade] = []
+    requested = {str(symbol).upper().replace("-", "/").split(":", 1)[0] for symbol in symbols}
+    for row in rows:
+        if row.get("inst_type") != inst_type or not row.get("actual_side") or str(row.get("symbol")).upper() not in requested:
+            continue
+        try:
+            timestamp_ms = int(datetime.fromisoformat(str(row["datetime"]).replace("Z", "+00:00")).timestamp() * 1000)
+            restored.append(NormalizedTrade(
+                external_id=str(row["external_id"]), timestamp_ms=timestamp_ms,
+                symbol=str(row["symbol"]), coin=str(row["symbol"]).split("/", 1)[0].upper(),
+                side=str(row["actual_side"]), amount=float(row["size"]), price=float(row["entry_price"]),
+                fee=float(row.get("fee") or 0.0), fee_currency=row.get("fee_currency"),
+                order_id=row.get("order_id"), position_side=row.get("position_side"),
+                contract_size=float(row.get("contract_size") or 1.0),
+                fee_complete=bool(row.get("fee_complete", True)),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sorted(restored, key=lambda trade: (trade.timestamp_ms, trade.external_id))
 
 
 def _iso(timestamp_ms: int) -> str:
@@ -130,6 +165,11 @@ def _execution_row(
         "fee_currency": trade.fee_currency,
         "indicator_snapshot": snapshot,
         "created_at": _iso(int(datetime.now(timezone.utc).timestamp() * 1000)),
+        "actual_side": trade.side,
+        "position_side": trade.position_side,
+        "contract_size": trade.contract_size,
+        "inst_type": inst_type,
+        "fee_complete": trade.fee_complete,
     }
 
 
@@ -155,7 +195,10 @@ def _position_row(
         "pnl_pct": pnl_pct,
         "outcome": "Win" if position["realized_pnl"] > 0 else "Loss" if position["realized_pnl"] < 0 else "Breakeven",
         "tags": f"{exchange_id},{inst_type.lower()},closed-position",
-        "notes": f"{exchange_name} {inst_type} reconstructed closed position",
+        "notes": (
+            f"{exchange_name} {inst_type} reconstructed closed position"
+            + ("; some fee currencies were not converted" if not position.get("fee_complete", True) else "")
+        ),
         "source": f"{exchange_id}_position",
         "external_id": position["external_id"],
         "exchange": exchange_name,

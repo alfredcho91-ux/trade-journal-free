@@ -23,6 +23,7 @@ import {
   toDateInputValue,
   type JournalPeriod,
 } from '../features/journal/journalPeriod';
+import { netReturnPct } from '../features/journal/journalReturns';
 import TradeQualityAnalysis from '../features/tradeAnalysis/TradeQualityAnalysis';
 import CurrentMarketSimilarityPanel from '../features/tradeAnalysis/CurrentMarketSimilarityPanel';
 import MajorFailureAnalysis from '../features/tradeAnalysis/MajorFailureAnalysis';
@@ -127,18 +128,23 @@ export default function TradeAnalysisPage() {
   const [activeSection, setActiveSection] = useState<AnalysisSection>('overview');
   const [returnRange, setReturnRange] = useState<ReturnRangeId>('all');
   const [timeframe, setTimeframe] = useState<AnalysisTimeframe>('4h');
+  const [minimumAbsNetReturnPct, setMinimumAbsNetReturnPct] = useState(0);
   const [periodError, setPeriodError] = useState<string | null>(null);
 
   const lastDailyRefreshDateRef = useRef(toDateInputValue(new Date()));
-  const { data: entries = [], isLoading: isJournalLoading, refetch: refetchJournal } = useQuery({
+  const { data: entries = [], isLoading: isJournalLoading, isError: isJournalError, refetch: refetchJournal } = useQuery({
     queryKey: journalQueryKeys.entries,
     queryFn: getJournal,
   });
   const startTime = dateBoundaryTimestamp(period.start);
   const endTime = dateBoundaryTimestamp(period.end, true);
   const qualityQuery = useQuery({
-    queryKey: journalQueryKeys.qualityAnalysis(startTime, endTime),
-    queryFn: () => getJournalQualityAnalysis({ start_time: startTime as number, end_time: endTime as number }),
+    queryKey: journalQueryKeys.qualityAnalysis(startTime, endTime, minimumAbsNetReturnPct),
+    queryFn: () => getJournalQualityAnalysis({
+      start_time: startTime as number,
+      end_time: endTime as number,
+      min_abs_net_return_pct: minimumAbsNetReturnPct,
+    }),
     enabled: startTime != null && endTime != null && startTime <= endTime,
     staleTime: 30 * 60_000,
     retry: 2,
@@ -186,15 +192,20 @@ export default function TradeAnalysisPage() {
     () => entries.filter((entry) => isJournalEntryWithinPeriod(entry, period)),
     [entries, period],
   );
+  const analysisEntries = useMemo(() => periodEntries.filter((entry) => {
+    if (minimumAbsNetReturnPct <= 0) return true;
+    const returnPct = netReturnPct(entry);
+    return returnPct != null && Math.abs(returnPct) > minimumAbsNetReturnPct;
+  }), [minimumAbsNetReturnPct, periodEntries]);
   const ongoingEntries = periodEntries;
   const allTrades = useMemo(() => {
-    const periodIds = new Set(periodEntries.map((entry) => entry.id));
+    const periodIds = new Set(analysisEntries.map((entry) => entry.id));
     const excursions = qualityQuery.data?.items
       .map((item) => item.excursion)
       .filter((item): item is NonNullable<typeof item> => item != null) || [];
     return buildAnalyzedTrades(entries, excursions)
       .filter((trade) => periodIds.has(trade.entry.id));
-  }, [entries, qualityQuery.data?.items, periodEntries]);
+  }, [analysisEntries, entries, qualityQuery.data?.items]);
   const directionTrades = allTrades.filter((trade) => trade.entry.direction === direction);
   const rangeTrades = filterTradesByReturnRange(directionTrades, returnRange);
   const selectedTrades = mode === 'wins'
@@ -267,10 +278,36 @@ export default function TradeAnalysisPage() {
           </button>
           <input type="date" max={toDateInputValue(new Date())} value={draftPeriod.start} onChange={(event) => setDraftPeriod((current) => ({ ...current, start: event.target.value }))} className="border border-dark-700 bg-dark-800 px-2 py-2 text-xs" aria-label={isKo ? '분석 시작일' : 'Analysis start date'} />
           <input type="date" max={toDateInputValue(new Date())} value={draftPeriod.end} onChange={(event) => setDraftPeriod((current) => ({ ...current, end: event.target.value }))} className="border border-dark-700 bg-dark-800 px-2 py-2 text-xs" aria-label={isKo ? '분석 종료일' : 'Analysis end date'} />
+          <label className="flex h-9 items-center gap-1 border border-dark-700 bg-dark-800 px-2 text-xs text-dark-300">
+            <span>{isKo ? '최소 순수익률' : 'Min. net return'}</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={minimumAbsNetReturnPct}
+              onChange={(event) => setMinimumAbsNetReturnPct(Math.min(100, Math.max(0, Number(event.target.value) || 0)))}
+              className="w-12 bg-transparent text-right font-mono text-dark-100 outline-none"
+              aria-label={isKo ? '분석에서 제외할 최소 절대 순수익률' : 'Minimum absolute net return to include in analysis'}
+            />
+            <span>%</span>
+          </label>
           <button type="button" onClick={applyCustom} className="btn-primary px-3 py-2 text-xs">{isKo ? '적용' : 'Apply'}</button>
         </div>
       </header>
       {periodError && <div className="text-xs text-bear">{periodError}</div>}
+      {minimumAbsNetReturnPct > 0 && (
+        <div className="text-xs text-dark-400">
+          {isKo ? `투입금 대비 순수익률 절대값이 ${minimumAbsNetReturnPct}% 이하인 종료 거래는 분석에서 제외합니다.` : `Closed trades at or below ${minimumAbsNetReturnPct}% absolute net return on invested margin are excluded.`}
+          {qualityQuery.data?.return_filter && ` ${isKo ? `분석 ${qualityQuery.data.return_filter.included_count}/${qualityQuery.data.return_filter.candidate_count}건` : `${qualityQuery.data.return_filter.included_count}/${qualityQuery.data.return_filter.candidate_count} trades included`}`}
+        </div>
+      )}
+      {isJournalError && (
+        <div className="flex items-center gap-3 border border-amber-300/30 bg-amber-300/5 px-3 py-2 text-xs text-amber-200">
+          <span>{isKo ? '거래 기록을 불러오지 못했습니다. 분석 결과가 불완전할 수 있습니다.' : 'Trade history could not be loaded; analysis may be incomplete.'}</span>
+          <button type="button" onClick={() => void refetchJournal()} className="border border-amber-300/40 px-2 py-1">{isKo ? '재시도' : 'Retry'}</button>
+        </div>
+      )}
 
       <nav className="grid grid-cols-2 border border-dark-700 bg-dark-900/35 p-1" aria-label={isKo ? '매매 분석 섹션' : 'Trade analysis sections'}>
         {sections.map((section) => (

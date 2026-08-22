@@ -60,6 +60,7 @@ def fetch_trades(client: Any, symbols: Sequence[str], since: int) -> TradeFetchR
             if not page:
                 break
             newest = cursor
+            new_records = 0
             for trade in page:
                 trade_id = str(trade.get("id") or "")
                 timestamp_ms = int(trade.get("timestamp") or 0)
@@ -67,8 +68,15 @@ def fetch_trades(client: Any, symbols: Sequence[str], since: int) -> TradeFetchR
                 if unique_key not in seen:
                     seen.add(unique_key)
                     output.append(trade)
-                newest = max(newest, timestamp_ms + 1)
-            if len(page) < TRADE_PAGE_SIZE or newest <= cursor:
+                    new_records += 1
+                newest = max(newest, timestamp_ms)
+            if len(page) < TRADE_PAGE_SIZE:
+                break
+            # CCXT `since` is commonly inclusive. Re-query the boundary timestamp
+            # and deduplicate by exchange trade ID so fills sharing one millisecond
+            # are not skipped by a `+1ms` cursor jump.
+            if new_records == 0:
+                truncated_symbols.append(symbol)
                 break
             cursor = newest
             if page_index == MAX_TRADE_PAGES - 1:
@@ -102,11 +110,11 @@ def normalize_trades(
         fee_cost = abs(_finite(fee_data.get("cost")) or 0.0)
         fee_currency = str(fee_data.get("currency") or quote).upper()
         if fee_currency == coin:
-            fee, normalized_fee_currency = fee_cost * price, quote
+            fee, normalized_fee_currency, fee_complete = fee_cost * price, quote, True
         elif fee_currency == quote:
-            fee, normalized_fee_currency = fee_cost, quote
+            fee, normalized_fee_currency, fee_complete = fee_cost, quote, True
         else:
-            fee, normalized_fee_currency = 0.0, None
+            fee, normalized_fee_currency, fee_complete = 0.0, None, False
         stable = str(raw.get("id") or "").strip() or _trade_digest(raw, timestamp_ms, symbol, side, amount, price)
         trades.append(NormalizedTrade(
             external_id=f"{exchange_id}:fill:{stable}",
@@ -121,6 +129,7 @@ def normalize_trades(
             order_id=str(raw.get("order") or "") or None,
             position_side=_position_side(raw),
             contract_size=_finite(market.get("contractSize")) or 1.0,
+            fee_complete=fee_complete,
         ))
     return trades, ignored
 

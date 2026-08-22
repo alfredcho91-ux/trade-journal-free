@@ -13,7 +13,7 @@ from backend.modules.deepcoin.service import DeepcoinClient
 from backend.modules.journal import repository
 from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.market_context import load_market_frames
-from backend.modules.journal.trade_selection import closed_positions
+from backend.modules.journal.trade_selection import closed_positions, market_group_key
 from backend.modules.journal.quality_market import (
     TREND_INTERVALS,
     classify_market_regime,
@@ -468,17 +468,23 @@ def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Di
             warnings.append(
                 f"{excluded_count} non-Deepcoin positions were excluded because confirmed stop-order import is not available for those connectors."
             )
-        symbols = [str(position["symbol"]) for position in positions if position.get("symbol")]
+        stop_positions = [
+            position for position in positions
+            if str(position.get("exchange") or "").strip().lower() == "deepcoin"
+        ]
+        if len(stop_positions) < len(positions):
+            warnings.append("Stop-loss confirmation is available only for Deepcoin positions.")
+        symbols = [str(position["symbol"]) for position in stop_positions if position.get("symbol")]
         events_by_symbol, trigger_coverage = _load_stop_events(symbols, warnings)
-        matched = _match_confirmed_stops(positions, events_by_symbol)
-        matched_by_symbol: Dict[str, List[Tuple[Dict[str, Any], Dict[str, Any]]]] = defaultdict(list)
+        matched = _match_confirmed_stops(stop_positions, events_by_symbol)
+        matched_by_market: Dict[tuple[str, str], List[Tuple[Dict[str, Any], Dict[str, Any]]]] = defaultdict(list)
         for position, event in matched:
-            matched_by_symbol[str(position["symbol"])].append((position, event))
+            matched_by_market[market_group_key(position)].append((position, event))
 
         items: List[Dict[str, Any]] = []
-        for symbol, pairs in matched_by_symbol.items():
-            stop_positions = [position for position, _ in pairs]
-            frames = load_market_frames(symbol, stop_positions, warnings)
+        for (_exchange, symbol), pairs in matched_by_market.items():
+            grouped_positions = [position for position, _ in pairs]
+            frames = load_market_frames(symbol, grouped_positions, warnings)
             if "4h" not in frames:
                 continue
             for position, event in pairs:

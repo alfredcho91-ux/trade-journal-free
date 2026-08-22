@@ -12,7 +12,7 @@ from backend.modules.journal import repository
 from backend.modules.journal.analysis import run_journal_excursions_service
 from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.market_context import load_market_frames
-from backend.modules.journal.trade_selection import closed_positions
+from backend.modules.journal.trade_selection import closed_positions, market_group_key
 from backend.modules.journal.quality_market import (
     HOLD_HORIZONS,
     TREND_INTERVALS,
@@ -27,7 +27,7 @@ from backend.config.settings import PROJECT_ROOT
 from backend.utils.cache import DataCache
 
 MIN_REGIME_CONCLUSION_SAMPLE = 5
-QUALITY_ANALYSIS_CACHE_VERSION = 5
+QUALITY_ANALYSIS_CACHE_VERSION = 6
 QUALITY_ANALYSIS_CACHE = DataCache(
     ttl_minutes=10,
     cache_dir=str(PROJECT_ROOT / ".cache" / "journal_quality"),
@@ -254,9 +254,76 @@ def _direction_breakdown(items: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any
     }
 
 
-def _analysis_cache_key(start_time: int, end_time: int, positions: List[Dict[str, Any]]) -> str:
+def _net_return_pct(entry: Dict[str, Any]) -> Optional[float]:
+    """Match the journal UI's net-return basis without using price movement as a proxy."""
+    net_pnl = finite(entry.get("realized_pnl"))
+    if net_pnl is None:
+        return None
+
+    invested = finite(entry.get("invested_amount"))
+    if invested is None or invested <= 0:
+        entry_price = finite(entry.get("entry_price"))
+        size = finite(entry.get("size"))
+        source = str(entry.get("source") or "")
+        notional: Optional[float] = None
+        if source.endswith("_position") and entry_price is not None and entry_price > 0:
+            exit_price = finite(entry.get("exit_price"))
+            direction = -1 if entry.get("direction") == "Short" else 1
+            if exit_price is not None:
+                price_return = ((exit_price - entry_price) / entry_price) * direction
+                fee = abs(finite(entry.get("fee")) or 0.0)
+                funding = finite(entry.get("funding_fee")) or 0.0
+                gross_pnl = net_pnl + fee - funding
+                if abs(price_return) > np.finfo(float).eps and abs(gross_pnl) > np.finfo(float).eps:
+                    notional = abs(gross_pnl / price_return)
+        elif entry_price is not None and entry_price > 0 and size is not None:
+            notional = abs(entry_price * size)
+
+        leverage = finite(entry.get("leverage"))
+        if notional is None:
+            return None
+        invested = notional / leverage if leverage is not None and leverage > 0 else notional
+
+    return (net_pnl / invested) * 100 if invested > 0 else None
+
+
+def _filter_positions_by_net_return(
+    positions: List[Dict[str, Any]],
+    min_abs_net_return_pct: float,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    threshold = max(0.0, float(min_abs_net_return_pct))
+    included: List[Dict[str, Any]] = []
+    unavailable_count = 0
+    below_threshold_count = 0
+    for position in positions:
+        return_pct = _net_return_pct(position)
+        if threshold <= 0:
+            included.append(position)
+        elif return_pct is None:
+            unavailable_count += 1
+        elif abs(return_pct) <= threshold:
+            below_threshold_count += 1
+        else:
+            included.append(position)
+
+    return included, {
+        "basis": "net_return_on_invested_margin",
+        "minimum_abs_net_return_pct": threshold,
+        "candidate_count": len(positions),
+        "included_count": len(included),
+        "excluded_below_threshold_count": below_threshold_count,
+        "excluded_return_unavailable_count": unavailable_count,
+    }
+
+
+def _analysis_cache_key(
+    start_time: int,
+    end_time: int,
+    positions: List[Dict[str, Any]],
+    min_abs_net_return_pct: float,
+) -> str:
     return position_analysis_cache_key(
-        "journal_quality",
+        f"journal_quality:return-filter:{min_abs_net_return_pct:.6f}",
         QUALITY_ANALYSIS_CACHE_VERSION,
         start_time,
         end_time,
@@ -270,6 +337,12 @@ def _analysis_cache_key(start_time: int, end_time: int, positions: List[Dict[str
             "entry_price",
             "exit_price",
             "realized_pnl",
+            "invested_amount",
+            "leverage",
+            "fee",
+            "funding_fee",
+            "source",
+            "size",
             "r_multiple",
         ),
     )
@@ -317,13 +390,18 @@ def _build_item(
     }
 
 
-def run_journal_quality_analysis_service(start_time: int, end_time: int) -> Dict[str, Any]:
+def run_journal_quality_analysis_service(
+    start_time: int,
+    end_time: int,
+    min_abs_net_return_pct: float = 0.0,
+) -> Dict[str, Any]:
     """Analyze entry-time regimes and post-exit alternatives without look-ahead leakage."""
     if start_time > end_time:
         raise ValueError("start_time must be before end_time")
 
-    positions = closed_positions(repository.list_entries(), start_time, end_time)
-    cache_key = _analysis_cache_key(start_time, end_time, positions)
+    all_positions = closed_positions(repository.list_entries(), start_time, end_time)
+    positions, return_filter = _filter_positions_by_net_return(all_positions, min_abs_net_return_pct)
+    cache_key = _analysis_cache_key(start_time, end_time, positions, return_filter["minimum_abs_net_return_pct"])
     cached_result = QUALITY_ANALYSIS_CACHE.get(cache_key)
     if cached_result is not None:
         return cached_result
@@ -331,27 +409,28 @@ def run_journal_quality_analysis_service(start_time: int, end_time: int) -> Dict
         cached_result = QUALITY_ANALYSIS_CACHE.get(cache_key)
         if cached_result is not None:
             return cached_result
-        return _run_uncached_quality_analysis(start_time, end_time, positions, cache_key)
+        return _run_uncached_quality_analysis(start_time, end_time, positions, return_filter, cache_key)
 
 
 def _run_uncached_quality_analysis(
     start_time: int,
     end_time: int,
     positions: List[Dict[str, Any]],
+    return_filter: Dict[str, Any],
     cache_key: str,
 ) -> Dict[str, Any]:
     excursion_response = run_journal_excursions_service(start_time, end_time)
     excursion_data = excursion_response["data"]
     excursions = {item["journal_id"]: item for item in excursion_data["items"]}
     warnings = list(excursion_data.get("warnings") or [])
-    by_symbol: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         if position.get("symbol"):
-            by_symbol[str(position["symbol"])].append(position)
+            by_market[market_group_key(position)].append(position)
 
     items: List[Dict[str, Any]] = []
     market_data_sources = set()
-    for symbol, symbol_positions in by_symbol.items():
+    for (_exchange, symbol), symbol_positions in by_market.items():
         frames = load_market_frames(symbol, symbol_positions, warnings)
         market_data_sources.update(
             str(frame.attrs.get("market_source"))
@@ -382,6 +461,7 @@ def _run_uncached_quality_analysis(
             "direction_stats": _group_stats(items, "direction"),
             "direction_breakdown": _direction_breakdown(items),
             "items": items,
+            "return_filter": return_filter,
             "warnings": sorted(set(warnings)),
         },
     }

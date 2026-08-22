@@ -63,6 +63,12 @@ class JournalExcursionQuery(BaseModel):
     end_time: int = Field(ge=1)
 
 
+class JournalQualityQuery(JournalExcursionQuery):
+    """Quality-analysis filter expressed as a net return on invested margin."""
+
+    min_abs_net_return_pct: float = Field(default=0.0, ge=0, le=100)
+
+
 class JournalSlTpQuery(JournalExcursionQuery):
     sl_min: float = Field(default=0.5, ge=0.1, le=50)
     sl_max: float = Field(default=5.0, ge=0.1, le=50)
@@ -265,6 +271,7 @@ class JournalQualityData(QualityAnalysisSlice):
     direction_stats: List[QualityGroup]
     direction_breakdown: Dict[str, QualityAnalysisSlice]
     items: List[QualityItem]
+    return_filter: Dict[str, Any]
     warnings: List[str]
 
 

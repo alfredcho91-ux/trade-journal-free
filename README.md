@@ -131,7 +131,7 @@ wrangler secret put DEMO_PASSWORD
 ## 데이터 기준
 
 - 거래 원본은 선택한 거래소의 읽기 전용 API를 사용합니다.
-- Deepcoin은 종료 포지션 API를 사용하고, Binance·Bybit·OKX는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다.
+- Deepcoin은 종료 포지션 API를 사용하고, Binance·Bybit·OKX는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다. 동기화는 timestamp 경계를 겹쳐 재조회하고 거래 ID로 중복 제거합니다. 조회 기간보다 이전에 열린 포지션은 충분한 기존 체결 원장이 없으면 복원이 불완전할 수 있으므로 경고를 확인해야 합니다.
 - 종료 포지션은 저널 테이블에, 차트 복기용 개별 체결은 경량 `exchange_executions` 테이블에 분리 저장합니다. 지표 스냅샷은 최초 진입과 종료 시점에만 계산합니다.
 - CCXT 커넥터는 선택 기간 이전에 열린 포지션, 거래소가 제공하지 않는 과거 레버리지·펀딩을 완전히 복원하지 못할 수 있으며 UI 경고로 표시합니다.
 - Deepcoin 거래 분석은 Deepcoin SWAP OHLCV를 우선 사용하고, 불가능한 경우 Binance Spot OHLCV를 대체 데이터로 사용하며 화면에 출처를 표시합니다.

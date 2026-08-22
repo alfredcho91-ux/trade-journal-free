@@ -45,6 +45,24 @@ def test_reconstructs_partial_exits_as_one_closed_position():
     assert positions[0]["realized_pnl"] == 29.6
 
 
+def test_reconstruction_keeps_lifecycle_weighted_prices_after_reduce_then_add():
+    trades = [
+        _trade("entry-1", 1_000, "buy", 2, 100),
+        _trade("reduce", 2_000, "sell", 1, 110),
+        _trade("entry-2", 3_000, "buy", 1, 120),
+        _trade("close", 4_000, "sell", 2, 130),
+    ]
+
+    positions, ignored = service._reconstruct_positions("bybit", trades, "SWAP")
+
+    assert ignored == 0
+    assert len(positions) == 1
+    assert positions[0]["size"] == 3
+    assert round(positions[0]["entry_price"], 6) == round(320 / 3, 6)
+    assert round(positions[0]["exit_price"], 6) == round(370 / 3, 6)
+    assert positions[0]["realized_pnl"] == 50
+
+
 def test_reconstructs_hedge_mode_short_direction():
     trades = [
         _trade("entry", 1_000, "sell", 1, 100, position_side="SHORT"),

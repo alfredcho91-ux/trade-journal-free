@@ -16,6 +16,7 @@ from backend.modules.journal.trade_selection import (
     MAX_EXCURSION_CANDLES,
     closed_positions,
     finite_float,
+    market_group_key,
     position_batches,
     timestamp_ms,
 )
@@ -85,14 +86,14 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
         raise ValueError("start_time must be before end_time")
 
     positions = _closed_positions(repository.list_entries(), start_time, end_time)
-    by_symbol: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         if position.get("symbol"):
-            by_symbol[str(position["symbol"])].append(position)
+            by_market[market_group_key(position)].append(position)
 
     excursions: List[Dict[str, Any]] = []
     warnings: List[str] = []
-    for symbol, symbol_positions in by_symbol.items():
+    for (exchange, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(_position_batches(symbol_positions), start=1):
             earliest_entry = min(_timestamp_ms(item["entry_datetime"]) or end_time for item in batch)
             latest_close = max(_timestamp_ms(item["datetime"]) or start_time for item in batch)
@@ -105,7 +106,7 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
                 EXCURSION_INTERVAL,
                 total_candles=requested,
                 end_time=latest_close,
-                exchange=batch[0].get("exchange"),
+                exchange=exchange,
             )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: market data unavailable")

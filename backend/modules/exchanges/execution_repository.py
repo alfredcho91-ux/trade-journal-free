@@ -13,6 +13,7 @@ TABLE_NAME = "exchange_executions"
 COLUMNS = [
     "external_id", "datetime", "symbol", "direction", "size", "entry_price",
     "source", "exchange", "order_id", "notes", "fee", "fee_currency", "indicator_snapshot", "created_at",
+    "actual_side", "position_side", "contract_size", "inst_type", "fee_complete",
 ]
 
 
@@ -42,15 +43,24 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
             fee REAL,
             fee_currency TEXT,
             indicator_snapshot TEXT,
-            created_at TEXT
+            created_at TEXT,
+            actual_side TEXT,
+            position_side TEXT,
+            contract_size REAL,
+            inst_type TEXT,
+            fee_complete INTEGER
         )
     """)
     existing_columns = {
         str(row["name"])
         for row in connection.execute(f"PRAGMA table_info({TABLE_NAME})").fetchall()
     }
-    if "notes" not in existing_columns:
-        connection.execute(f"ALTER TABLE {TABLE_NAME} ADD COLUMN notes TEXT")
+    for column, definition in (
+        ("notes", "TEXT"), ("actual_side", "TEXT"), ("position_side", "TEXT"),
+        ("contract_size", "REAL"), ("inst_type", "TEXT"), ("fee_complete", "INTEGER"),
+    ):
+        if column not in existing_columns:
+            connection.execute(f"ALTER TABLE {TABLE_NAME} ADD COLUMN {column} {definition}")
     connection.execute(
         f"CREATE INDEX IF NOT EXISTS {TABLE_NAME}_lookup ON {TABLE_NAME} (exchange, symbol, datetime)"
     )
@@ -69,7 +79,8 @@ def _migrate_legacy_rows(connection: sqlite3.Connection) -> None:
     connection.execute(f"""
         INSERT OR IGNORE INTO {TABLE_NAME} ({", ".join(COLUMNS)})
         SELECT external_id, datetime, symbol, direction, size, entry_price,
-               source, exchange, order_id, notes, fee, fee_currency, indicator_snapshot, created_at
+               source, exchange, order_id, notes, fee, fee_currency, indicator_snapshot, created_at,
+               NULL, NULL, NULL, NULL, 1
         FROM journal_entries
         WHERE source IN ({placeholders}) AND external_id IS NOT NULL
     """, sources)
@@ -146,6 +157,7 @@ def _normalize_row(row: Dict[str, Any]) -> Dict[str, Any]:
     snapshot = payload.get("indicator_snapshot")
     if isinstance(snapshot, dict):
         payload["indicator_snapshot"] = json.dumps(snapshot, separators=(",", ":"))
+    payload["fee_complete"] = int(bool(payload.get("fee_complete", True)))
     return payload
 
 

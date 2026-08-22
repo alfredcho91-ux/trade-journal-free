@@ -13,6 +13,7 @@ from backend.modules.journal.schemas import (
     JournalListEnvelope,
     JournalPerformanceEnvelope,
     JournalQualityEnvelope,
+    JournalQualityQuery,
     JournalSlTpEnvelope,
     JournalSlTpQuery,
     JournalStopLossEnvelope,
@@ -65,12 +66,13 @@ async def api_get_journal_excursions(query: Annotated[JournalExcursionQuery, Dep
 
 @router.get("/journal/quality-analysis", response_model=JournalQualityEnvelope)
 @handle_api_errors()
-async def api_get_journal_quality_analysis(query: Annotated[JournalExcursionQuery, Depends()]):
+async def api_get_journal_quality_analysis(query: Annotated[JournalQualityQuery, Depends()]):
     """Analyze point-in-time market regimes and exit quality for closed positions."""
     return await run_in_threadpool(
         run_journal_quality_analysis_service,
         query.start_time,
         query.end_time,
+        query.min_abs_net_return_pct,
     )
 
 

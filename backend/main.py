@@ -32,11 +32,18 @@ if get_app_environment() == "production":
 
 
 def verify_credentials(
+    request: Request,
     credentials: Optional[HTTPBasicCredentials] = Depends(security),
 ):
     """Require Basic Auth outside local development."""
     if get_app_environment() != "production":
-        return "local_dev"
+        client = request.client.host if request.client else ""
+        if client in {"127.0.0.1", "::1", "testclient"}:
+            return "local_dev"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Development mode only accepts loopback requests",
+        )
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -115,4 +122,4 @@ app.mount("/", StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="f
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

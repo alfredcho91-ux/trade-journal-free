@@ -27,12 +27,15 @@ class NormalizedTrade:
     order_id: Optional[str]
     position_side: Optional[str]
     contract_size: float
+    fee_complete: bool = True
 
 
 @dataclass
 class PositionState:
     signed_amount: float = 0.0
     average_price: float = 0.0
+    entry_amount_total: float = 0.0
+    weighted_entry_total: float = 0.0
     entry_timestamp_ms: int = 0
     entry_external_id: str = ""
     open_fee: float = 0.0
@@ -43,6 +46,7 @@ class PositionState:
     last_close_timestamp_ms: int = 0
     last_order_id: Optional[str] = None
     fee_currency: Optional[str] = None
+    fee_complete: bool = True
 
 
 @dataclass(frozen=True)

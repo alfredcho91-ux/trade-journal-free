@@ -66,6 +66,7 @@ export async function getJournalExcursions(params: {
 export async function getJournalQualityAnalysis(params: {
   start_time: number;
   end_time: number;
+  min_abs_net_return_pct?: number;
 }): Promise<JournalQualityAnalysisData> {
   try {
     const res = await api.get<ApiResponse<JournalQualityAnalysisData>>('/journal/quality-analysis', {

@@ -1,6 +1,7 @@
 from backend.modules.journal.quality_analysis import (
     _assign_quality_classes,
     _direction_breakdown,
+    _filter_positions_by_net_return,
     _performance_stats,
 )
 
@@ -65,3 +66,19 @@ def test_direction_breakdown_keeps_long_and_short_statistics_separate():
     assert breakdown["Short"]["summary"]["trade_count"] == 1
     assert breakdown["Long"]["regimes"][0]["average_pnl"] == 10
     assert breakdown["Short"]["regimes"][0]["average_pnl"] == -5
+
+
+def test_return_filter_uses_absolute_net_return_on_invested_margin():
+    positions = [
+        {"id": 1, "realized_pnl": 1.0, "invested_amount": 100.0},
+        {"id": 2, "realized_pnl": -0.9, "invested_amount": 100.0},
+        {"id": 3, "realized_pnl": -2.0, "invested_amount": 100.0},
+        {"id": 4, "realized_pnl": 5.0},
+    ]
+
+    included, metadata = _filter_positions_by_net_return(positions, 1.0)
+
+    assert [position["id"] for position in included] == [3]
+    assert metadata["basis"] == "net_return_on_invested_margin"
+    assert metadata["excluded_below_threshold_count"] == 2
+    assert metadata["excluded_return_unavailable_count"] == 1

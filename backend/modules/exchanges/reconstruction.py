@@ -40,8 +40,11 @@ def reconstruct_positions(
             if not state.entry_timestamp_ms:
                 state.entry_timestamp_ms = trade.timestamp_ms
                 state.entry_external_id = trade.external_id
+            state.entry_amount_total += added
+            state.weighted_entry_total += trade.price * added
             state.signed_amount += signed_trade
             state.open_fee += trade.fee
+            state.fee_complete = state.fee_complete and trade.fee_complete
             continue
 
         closing_amount = min(abs(state.signed_amount), abs(signed_trade))
@@ -62,6 +65,7 @@ def reconstruct_positions(
         state.last_close_timestamp_ms = trade.timestamp_ms
         state.last_order_id = trade.order_id
         state.fee_currency = trade.fee_currency or state.fee_currency
+        state.fee_complete = state.fee_complete and trade.fee_complete
         old_sign = 1.0 if state.signed_amount > 0 else -1.0
         remainder = abs(state.signed_amount) - closing_amount
         state.open_fee -= allocated_open_fee
@@ -69,7 +73,8 @@ def reconstruct_positions(
             state.signed_amount = old_sign * remainder
             continue
 
-        notional = state.average_price * state.closed_amount * trade.contract_size
+        lifecycle_entry_price = state.weighted_entry_total / state.entry_amount_total
+        notional = lifecycle_entry_price * state.closed_amount * trade.contract_size
         positions.append({
             "external_id": _position_external_id(exchange_id, key, state, trade),
             "entry_external_id": state.entry_external_id,
@@ -79,10 +84,11 @@ def reconstruct_positions(
             "coin": trade.coin,
             "direction": direction,
             "size": state.closed_amount,
-            "entry_price": state.average_price,
+            "entry_price": lifecycle_entry_price,
             "exit_price": state.weighted_exit_total / state.closed_amount,
             "fee": state.closed_fee,
             "fee_currency": state.fee_currency,
+            "fee_complete": state.fee_complete,
             "realized_pnl": state.realized_pnl,
             "invested_amount": notional if inst_type == "SPOT" else None,
             "order_id": state.last_order_id,
@@ -90,12 +96,15 @@ def reconstruct_positions(
         flip = abs(signed_trade) - closing_amount
         state.signed_amount = (1.0 if signed_trade > 0 else -1.0) * flip if flip > 1e-12 else 0.0
         state.average_price = trade.price if flip > 1e-12 else 0.0
+        state.entry_amount_total = flip
+        state.weighted_entry_total = trade.price * flip
         state.entry_timestamp_ms = trade.timestamp_ms if flip > 1e-12 else 0
         state.entry_external_id = trade.external_id if flip > 1e-12 else ""
         state.open_fee = trade.fee * (flip / abs(signed_trade)) if flip > 1e-12 else 0.0
         state.closed_amount = state.weighted_exit_total = state.realized_pnl = state.closed_fee = 0.0
         state.last_close_timestamp_ms = 0
         state.last_order_id = state.fee_currency = None
+        state.fee_complete = trade.fee_complete if flip > 1e-12 else True
     return positions, ignored_closes
 
 

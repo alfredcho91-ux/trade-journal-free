@@ -33,6 +33,13 @@ def finite_float(value: Any) -> Optional[float]:
     return result if math.isfinite(result) else None
 
 
+def market_group_key(entry: Dict[str, Any]) -> tuple[str, str]:
+    """Keep positions from different exchanges out of the same OHLCV analysis."""
+    exchange = str(entry.get("exchange") or "unknown").strip().lower()
+    symbol = str(entry.get("symbol") or "").strip().upper()
+    return exchange, symbol
+
+
 def closed_positions(
     entries: Iterable[Dict[str, Any]],
     start_time: int,

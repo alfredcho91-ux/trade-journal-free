@@ -20,7 +20,7 @@ from backend.modules.journal.analysis import (
 from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.quality_analysis import run_journal_quality_analysis_service
 from backend.modules.journal.quality_market import finite, finite_timestamp
-from backend.modules.journal.trade_selection import closed_positions, position_batches
+from backend.modules.journal.trade_selection import closed_positions, market_group_key, position_batches
 from backend.utils.cache import DataCache
 from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
@@ -347,13 +347,13 @@ def _build_path_items(
     quality_items: Dict[int, Dict[str, Any]],
     warnings: List[str],
 ) -> List[Dict[str, Any]]:
-    by_symbol: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         if position.get("symbol"):
-            by_symbol[str(position["symbol"])].append(position)
+            by_market[market_group_key(position)].append(position)
 
     items = []
-    for symbol, symbol_positions in by_symbol.items():
+    for (exchange, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(position_batches(symbol_positions), start=1):
             earliest = min(finite_timestamp(item.get("entry_datetime")) or 0 for item in batch)
             latest = max(finite_timestamp(item.get("datetime")) or 0 for item in batch)
@@ -366,7 +366,7 @@ def _build_path_items(
                 EXCURSION_INTERVAL,
                 total_candles=requested,
                 end_time=latest,
-                exchange=batch[0].get("exchange"),
+                exchange=exchange,
             )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: stop optimization market data unavailable")
