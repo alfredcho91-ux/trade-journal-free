@@ -36,6 +36,7 @@ export default function TradeReferenceSummary({
   isKo: boolean;
 }) {
   const metrics: Array<{ label: string; value: string; tone?: string }> = [];
+  const vwapDeviation = vwaps?.vwap_deviation;
   if (vpvr) {
     metrics.push(
       {
@@ -68,14 +69,9 @@ export default function TradeReferenceSummary({
       tone: 'text-bull',
     });
   });
-  if (vwaps?.vwap_deviation) {
-    const { sigma, zone } = vwaps.vwap_deviation;
-    metrics.push({
-      label: isKo ? '월간 VWAP 편차' : 'Monthly VWAP deviation',
-      value: `${sigma == null ? '-' : `${sigma >= 0 ? '+' : ''}${sigma.toFixed(2)}σ`} · ${VWAP_ZONE_LABELS[zone]?.[isKo ? 'ko' : 'en'] || zone}`,
-      tone: 'text-primary-300',
-    });
-  }
+  const gapPct = vwapDeviation && vwapDeviation.vwap !== 0
+    ? (vwapDeviation.current_price - vwapDeviation.vwap) / vwapDeviation.vwap * 100
+    : null;
 
   return (
     <section className="border border-dark-700 bg-dark-900/35">
@@ -83,19 +79,34 @@ export default function TradeReferenceSummary({
         <BarChart3 className="h-4 w-4 text-amber-300" />
         {isKo ? 'VPVR · VWAP 기준값' : 'VPVR · VWAP References'}
       </header>
-      {metrics.length ? (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-          {metrics.map(({ label, value, tone }) => (
-            <div key={label} className="border-b border-dark-800 px-4 py-3 sm:border-r xl:last:border-r-0">
-              <dt className="text-[11px] text-dark-500">{label}</dt>
-              <dd className={`mt-1 font-mono text-sm font-semibold ${tone || 'text-dark-100'}`}>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
+      {metrics.length ? <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">{metrics.map(({ label, value, tone }) => (
+        <div key={label} className="border-b border-dark-800 px-4 py-3 sm:border-r xl:last:border-r-0">
+          <dt className="text-[11px] text-dark-500">{label}</dt>
+          <dd className={`mt-1 font-mono text-sm font-semibold ${tone || 'text-dark-100'}`}>{value}</dd>
+        </div>
+      ))}</dl> : (
         <div className="px-4 py-6 text-center text-xs text-dark-500">
           {isKo ? '선택 시점의 기준값이 없습니다.' : 'No point-in-time references are available.'}
         </div>
+      )}
+      {vwapDeviation && (
+        <section className="border-t border-dark-700 px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-semibold text-white">{isKo ? '월간 Anchored VWAP · 표준편차 밴드' : 'Monthly Anchored VWAP · deviation bands'}</h3>
+              <p className="mt-1 text-[10px] text-dark-500">HLC3 · {isKo ? '최근 최대 14개 완료봉' : 'up to 14 completed bars'}</p>
+            </div>
+            <span className="font-mono text-sm font-semibold text-primary-300">{vwapDeviation.sigma == null ? '—' : `${vwapDeviation.sigma >= 0 ? '+' : ''}${vwapDeviation.sigma.toFixed(2)}σ`} · {VWAP_ZONE_LABELS[vwapDeviation.zone]?.[isKo ? 'ko' : 'en'] || vwapDeviation.zone}</span>
+          </div>
+          <dl className="mt-3 grid grid-cols-3 border border-dark-800 text-xs">
+            <div className="px-3 py-2"><dt className="text-dark-500">VWAP</dt><dd className="mt-1 font-mono font-semibold text-dark-100">{formatPrice(vwapDeviation.vwap)}</dd></div>
+            <div className="border-x border-dark-800 px-3 py-2"><dt className="text-dark-500">{isKo ? '기준 시점 가격' : 'Reference price'}</dt><dd className="mt-1 font-mono font-semibold text-white">{formatPrice(vwapDeviation.current_price)}</dd></div>
+            <div className="px-3 py-2"><dt className="text-dark-500">{isKo ? 'VWAP 대비' : 'vs VWAP'}</dt><dd className={`mt-1 font-mono font-semibold ${gapPct != null && gapPct >= 0 ? 'text-bull' : 'text-bear'}`}>{gapPct == null ? '-' : `${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(2)}%`}</dd></div>
+          </dl>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {[1, 2, 3].map((band) => <div key={band} className="grid grid-cols-2 gap-2 border border-dark-800 bg-dark-950/35 px-3 py-2 text-[11px]"><span className="text-bear">-{band}σ <strong className="ml-1 font-mono text-dark-200">{formatPrice(vwapDeviation.bands[String(-band)])}</strong></span><span className="text-right text-bull">+{band}σ <strong className="ml-1 font-mono text-dark-200">{formatPrice(vwapDeviation.bands[String(band)])}</strong></span></div>)}
+          </div>
+        </section>
       )}
     </section>
   );
