@@ -49,6 +49,7 @@ FastAPI
 - `backend/modules/exchanges/encrypted_store.py`: AES-256-GCM 암호문 SQLite adapter
 - `backend/modules/exchanges/keyring_store.py`: macOS Keychain/Windows Credential Manager adapter
 - `backend/modules/exchanges/legacy_env.py`: 이전 `.env` credential의 원자적 제거
+- `packaging/sign_windows_artifact.ps1`: Authenticode 서명·timestamp·검증
 - `backend/modules/exchanges/service.py`: API가 호출하는 공개 서비스 경계
 - `backend/modules/deepcoin/`: Deepcoin 고유 서명 API와 TP/SL 주문 상세
 - `backend/modules/journal/`: SQLite 저장소와 분석 서비스

@@ -37,6 +37,10 @@ jobs:
         shell: pwsh
         env:
           PYTHON_BIN: python
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_SIGNING_REQUIRED: ${{ vars.WINDOWS_SIGNING_REQUIRED }}
+          WINDOWS_TIMESTAMP_URL: http://timestamp.digicert.com
         run: ./packaging/build_windows_app.ps1
 
       - name: Upload Windows ZIP

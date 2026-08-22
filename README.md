@@ -23,6 +23,18 @@ backend/venv/bin/python -m pip install -r packaging/requirements-build.txt
 
 Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Free-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 거래 DB가 `%APPDATA%\Trade Journal Free`에, API Key는 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
 
+### Windows 코드 서명
+
+공개 배포본은 Authenticode PFX 인증서로 `Trade Journal Free.exe`를 서명한 뒤 timestamp 검증까지 수행합니다. GitHub 저장소의 `Settings → Secrets and variables → Actions`에 아래 값을 등록합니다.
+
+| 종류 | 이름 | 값 |
+| --- | --- | --- |
+| Secret | `WINDOWS_CERTIFICATE_BASE64` | 코드 서명용 `.pfx` 파일 전체를 Base64로 인코딩한 값 |
+| Secret | `WINDOWS_CERTIFICATE_PASSWORD` | PFX 비밀번호 |
+| Variable | `WINDOWS_SIGNING_REQUIRED` | 공개 릴리스에서는 `true` |
+
+`WINDOWS_SIGNING_REQUIRED=true`인데 인증서가 없거나 검증에 실패하면 Windows 배포 빌드는 실패합니다. 개인 테스트 빌드는 이 변수를 비워 둘 수 있지만, unsigned 파일에는 SmartScreen 경고가 표시될 수 있습니다. 인증서와 비밀번호는 `.env`, 코드, GitHub Actions 로그에 직접 넣지 않습니다.
+
 ## 지원 거래소
 
 | 거래소 | 연동 방식 | Passphrase |

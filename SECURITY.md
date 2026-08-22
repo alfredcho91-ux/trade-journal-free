@@ -17,6 +17,12 @@
 
 Docker Compose 기본값은 `127.0.0.1:8000`으로 로컬에서만 접근됩니다. 외부 서버나 터널에 공개할 때는 `APP_ENV=production`, 강한 `DEMO_USERNAME`/`DEMO_PASSWORD`, HTTPS reverse proxy를 설정해야 합니다. credential 생성·삭제 endpoint는 production에서 HTTPS가 아니면 거부합니다. `TRUST_PROXY_HEADERS=true`는 Cloudflare처럼 직접 관리하는 proxy 뒤에서만 사용합니다.
 
+## Windows release signing
+
+공개 Windows 배포본은 `Trade Journal Free.exe`에 Authenticode 서명을 적용하고 timestamp 서버로 검증합니다. PFX 인증서와 비밀번호는 GitHub Actions Secret인 `WINDOWS_CERTIFICATE_BASE64`, `WINDOWS_CERTIFICATE_PASSWORD`로만 주입합니다. `WINDOWS_SIGNING_REQUIRED=true`이면 인증서 누락·서명 실패·검증 실패가 배포 빌드를 중단합니다.
+
+PFX, 비밀번호, 서명 토큰을 로컬 프로젝트나 Git에 저장하지 마세요. 인증서가 노출되었거나 만료되면 즉시 폐기하고 새 인증서로 교체해야 합니다.
+
 ## Stored data
 
 거래 기록은 기본적으로 `journal/trade_journal.db`에 평문 SQLite로 저장됩니다. 같은 DB의 거래소 credential 레코드만 암호화됩니다. 컴퓨터 계정과 디스크를 보호하고, DB를 공유 저장소나 공개 백업에 올리지 마세요.

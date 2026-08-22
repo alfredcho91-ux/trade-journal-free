@@ -69,5 +69,7 @@ try {
 Move-Item (Join-Path $ProjectDir "dist\Trade Journal Free") $WindowsAppDir
 Remove-Item -Recurse -Force (Join-Path $ProjectDir "dist"), (Join-Path $ProjectDir "build")
 
+& (Join-Path $PSScriptRoot "sign_windows_artifact.ps1") -AppDirectory $WindowsAppDir
+
 Compress-Archive -Path $WindowsAppDir -DestinationPath $ArchivePath -Force
 Write-Host "Created: $ArchivePath"
