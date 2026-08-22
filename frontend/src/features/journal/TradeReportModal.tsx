@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 
 import { getTradeReport } from '../../api/client';
-import { getDeepcoinTradeMarkers } from '../../api/journal';
+import { getDeepcoinTradeMarkers, getExchangeExecutions } from '../../api/journal';
 import PositionReviewChart from '../../components/PositionReviewChart';
 import TradeIndicatorCharts from '../../components/TradeIndicatorCharts';
 import TradeReferenceSummary from '../../components/TradeReferenceSummary';
@@ -12,84 +12,18 @@ import { resolvePositionEntryTime } from '../../utils/positionReview';
 import { ENTRY_REASON_FIELDS, formatEntryReason } from './entryReasons';
 import { isClosedPosition } from './journalEntries';
 import { tradeOutcomeAssessment } from './tradeOutcomeAssessment';
+import {
+  flattenSnapshotMetrics,
+  formatSnapshotNumber,
+  humanizeIndicatorKey,
+  KNOWN_SNAPSHOT_INDICATOR_KEYS,
+  SNAPSHOT_METADATA_KEYS,
+  type SnapshotIndicatorDefinition,
+} from './tradeReportSnapshot';
 
 function formatSignedNumber(value: number | null | undefined, maximumFractionDigits = 4): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits })}`;
-}
-
-function formatSnapshotNumber(value: number | null | undefined, maximumFractionDigits = 2): string {
-  if (value == null || !Number.isFinite(value)) {
-    return '-';
-  }
-  return value.toLocaleString(undefined, { maximumFractionDigits });
-}
-
-type SnapshotIndicatorDefinition = {
-  id: string;
-  label: string;
-  group: string;
-  hasData: (snapshot: TradeIndicatorTimeframeSnapshot) => boolean;
-};
-
-const SNAPSHOT_METADATA_KEYS = new Set([
-  'status',
-  'reason',
-  'candle_close_time',
-  'close',
-]);
-
-const KNOWN_SNAPSHOT_INDICATOR_KEYS = new Set([
-  'rsi',
-  'macd',
-  'slow_stochastic',
-  'stoch_rsi',
-  'vpvr',
-]);
-
-function humanizeIndicatorKey(value: string): string {
-  return value
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function flattenSnapshotMetrics(
-  value: unknown,
-  prefix = '',
-): Array<{ label: string; value: string }> {
-  if (value == null) {
-    return [];
-  }
-
-  if (typeof value === 'number') {
-    return [
-      {
-        label: prefix || 'Value',
-        value: Number.isFinite(value) ? formatSnapshotNumber(value, 6) : '-',
-      },
-    ];
-  }
-
-  if (typeof value === 'string' || typeof value === 'boolean') {
-    return [{ label: prefix || 'Value', value: String(value) }];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) =>
-      flattenSnapshotMetrics(item, prefix ? `${prefix} ${index + 1}` : String(index + 1)),
-    );
-  }
-
-  if (typeof value === 'object') {
-    return Object.entries(value as Record<string, unknown>).flatMap(([key, nestedValue]) =>
-      flattenSnapshotMetrics(
-        nestedValue,
-        prefix ? `${prefix} · ${humanizeIndicatorKey(key)}` : humanizeIndicatorKey(key),
-      ),
-    );
-  }
-
-  return [];
 }
 
 type ReviewMoment = 'entry' | 'exit';
@@ -134,9 +68,25 @@ export default function TradeReportModal({
 }) {
   const [reviewMoment, setReviewMoment] = useState<ReviewMoment>('entry');
   const [reportInterval, setReportInterval] = useState<ReportInterval>('4h');
+  const isGenericExchange = Boolean(entry.exchange && entry.exchange !== 'Deepcoin');
+  const executionQuery = useQuery({
+    queryKey: ['exchange-executions', entry.exchange, entry.symbol, entry.entry_datetime, entry.datetime],
+    queryFn: () => getExchangeExecutions({
+      exchange: entry.exchange,
+      symbol: entry.symbol,
+      start_time: entry.entry_datetime,
+      end_time: entry.datetime,
+    }),
+    enabled: isGenericExchange && Boolean(entry.symbol && entry.datetime),
+    staleTime: 5 * 60_000,
+  });
+  const reviewEntries = useMemo(
+    () => [...allEntries, ...(executionQuery.data || [])],
+    [allEntries, executionQuery.data],
+  );
   const resolvedEntryTime = useMemo(
-    () => resolvePositionEntryTime(entry, allEntries),
-    [allEntries, entry],
+    () => resolvePositionEntryTime(entry, reviewEntries),
+    [entry, reviewEntries],
   );
   const matchedEntry = resolvedEntryTime.matchedEntry;
   const splitEntryMarkers = useMemo(
@@ -156,7 +106,7 @@ export default function TradeReportModal({
     if (entry.exchange === 'Deepcoin' || !resolvedEntryTime.datetime || !entry.datetime) return [];
     const entryMs = new Date(resolvedEntryTime.datetime).getTime();
     const exitMs = new Date(entry.datetime).getTime();
-    return allEntries
+    return reviewEntries
       .filter((candidate) => {
         if (!candidate.source?.endsWith('_fill')) return false;
         if (candidate.exchange !== entry.exchange || candidate.symbol !== entry.symbol) return false;
@@ -175,7 +125,7 @@ export default function TradeReportModal({
           label: `EXIT${index + 1}`,
         }];
       });
-  }, [allEntries, entry, resolvedEntryTime.datetime]);
+  }, [entry, resolvedEntryTime.datetime, reviewEntries]);
   const entrySnapshot = matchedEntry?.indicator_snapshot || null;
   const exitSnapshot = isClosedPosition(entry) ? entry.indicator_snapshot || null : null;
   const activeSnapshot = reviewMoment === 'entry' ? entrySnapshot : exitSnapshot;

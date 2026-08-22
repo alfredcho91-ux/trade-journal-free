@@ -11,6 +11,7 @@ from backend.modules.journal.schemas import (
     JournalExcursionEnvelope,
     JournalExcursionQuery,
     JournalListEnvelope,
+    JournalPerformanceEnvelope,
     JournalQualityEnvelope,
     JournalSlTpEnvelope,
     JournalSlTpQuery,
@@ -18,6 +19,7 @@ from backend.modules.journal.schemas import (
     JournalStopOptimizationEnvelope,
 )
 from backend.modules.journal.analysis import run_journal_excursions_service
+from backend.modules.journal.performance import run_journal_performance_service
 from backend.modules.journal.current_market import run_current_market_snapshot_service
 from backend.modules.journal.quality_analysis import run_journal_quality_analysis_service
 from backend.modules.journal.sl_tp_analysis import run_journal_sl_tp_analysis_service
@@ -34,6 +36,13 @@ router = APIRouter(prefix="/api", tags=["journal"])
 async def api_get_journal():
     """Get all journal entries."""
     return await run_in_threadpool(get_journal_service)
+
+
+@router.get("/journal/performance", response_model=JournalPerformanceEnvelope)
+@handle_api_errors()
+async def api_get_journal_performance(query: Annotated[JournalExcursionQuery, Depends()]):
+    """Return canonical period performance used by journal and analysis screens."""
+    return await run_in_threadpool(run_journal_performance_service, query.start_time, query.end_time)
 
 
 @router.get("/journal/current-market", response_model=JournalCurrentMarketEnvelope)

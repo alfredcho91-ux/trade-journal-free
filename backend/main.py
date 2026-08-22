@@ -3,7 +3,8 @@
 import secrets
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -20,6 +21,9 @@ from backend.modules.deepcoin.router import router as deepcoin_router
 from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
 from backend.modules.journal.router import router as journal_router
+from backend.utils.log_redaction import install_log_redaction
+
+install_log_redaction()
 
 security = HTTPBasic(auto_error=False)
 
@@ -68,6 +72,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, exc: RequestValidationError):
+    """Return field errors without echoing credential or other request values."""
+    fields = [
+        {
+            "location": [str(part) for part in error.get("loc", ())],
+            "message": str(error.get("msg", "Invalid value")),
+            "type": str(error.get("type", "validation_error")),
+        }
+        for error in exc.errors()
+    ]
+    return ORJSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "success": False,
+            "error": "Request validation failed",
+            "error_code": "VALIDATION_ERROR",
+            "details": {"fields": fields},
+        },
+    )
 
 
 @app.get("/api/health", dependencies=[])

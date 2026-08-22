@@ -6,6 +6,8 @@ import traceback
 import sys
 import logging
 
+from backend.utils.log_redaction import redact_data, redact_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,11 +98,11 @@ def create_error_response(
         )
         response = {
             "success": False,
-            "error": public_message,
+            "error": redact_text(public_message),
             "error_code": error.error_code,
         }
         if error.details:
-            response["details"] = error.details
+            response["details"] = redact_data(error.details)
         if include_traceback or sys.flags.debug:
             response["traceback"] = traceback.format_exc()
         return response
@@ -109,7 +111,7 @@ def create_error_response(
     if isinstance(error, ValueError):
         response = {
             "success": False,
-            "error": str(error),
+            "error": redact_text(error),
             "error_code": error_code or "VALIDATION_ERROR",
         }
         if include_traceback or sys.flags.debug:
@@ -126,7 +128,7 @@ def create_error_response(
         response["traceback"] = traceback.format_exc()
 
     # 에러 로깅
-    logger.error(f"Unhandled error: {error}", exc_info=True)
+    logger.error("Unhandled error: %s", redact_text(error), exc_info=True)
 
     return response
 

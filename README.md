@@ -1,6 +1,14 @@
 # Multi-Exchange Trade Journal Free
 
-여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 무료 오픈소스 트레이딩 저널입니다. 화면은 `매매일지`와 `매매분석` 두 개만 제공합니다.
+여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 무료 오픈소스 트레이딩 저널입니다. 화면은 `매매일지`와 `매매분석` 두 개만 제공하며, 주문·출금·자산이동 기능은 포함하지 않습니다.
+
+## 무료 배포판 범위
+
+- Deepcoin, Binance, Bybit, OKX의 읽기 전용 API 연동
+- 종료 거래 저널, 거래 차트 복기, 분할 진입·익절 마커
+- 승패·진입·청산·손절·SL/TP 기대값 분석
+- macOS 앱과 Windows x64 압축 배포판
+- 사용자 API Key는 브라우저 저장소나 프론트엔드 코드에 저장하지 않음
 
 ## 바로 실행 배포판
 
@@ -11,9 +19,9 @@ backend/venv/bin/python -m pip install -r packaging/requirements-build.txt
 ./packaging/build_macos_app.sh
 ```
 
-완성된 파일은 `release/Trade-Journal-Free-macOS.zip`입니다. 이 압축 파일에는 API 키, 매매일지 DB, 시장 데이터가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 개인 데이터와 읽기 전용 API 키는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다.
+완성된 파일은 `release/Trade-Journal-Free-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 거래 DB는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다. API Key는 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
 
-Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Free-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 개인 데이터와 읽기 전용 API 키가 `%APPDATA%\Trade Journal Free`에 저장됩니다.
+Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Free-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 거래 DB가 `%APPDATA%\Trade Journal Free`에, API Key는 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
 
 ## 지원 거래소
 
@@ -24,7 +32,7 @@ Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를
 | Bybit | CCXT 체결 기록 재구성 | 불필요 |
 | OKX | CCXT 체결 기록 재구성 | 필요 |
 
-모든 연동은 읽기 전용 API를 전제로 하며, 주문 실행이나 출금 기능은 포함하지 않습니다.
+모든 연동은 읽기 전용 API를 전제로 하며, 주문 실행이나 출금 기능은 포함하지 않습니다. 거래소에서 API 권한을 만들 때 거래·출금·자산 이동 권한은 반드시 끄세요.
 
 ## 제공 기능
 
@@ -42,13 +50,19 @@ Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를
 
 ## 가장 쉬운 실행: Docker
 
-1. 아래 명령을 실행합니다.
+1. `.env.example`을 `.env`로 복사하고 `CREDENTIAL_MASTER_KEY`에 아래 생성 명령의 결과를 넣습니다. 이 파일은 Git에서 제외됩니다.
+
+```bash
+python3 -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+```
+
+2. 아래 명령을 실행합니다.
 
 ```bash
 docker compose up --build
 ```
 
-브라우저에서 `http://localhost:8000`을 열고 매매일지의 `API 연결`에서 거래소를 선택합니다. 읽기 전용 권한을 확인한 키만 이 컴퓨터의 git 제외 `.env`에 권한 `600`으로 저장합니다. Docker 포트는 기본적으로 `127.0.0.1`에만 열리며, 거래 DB는 `journal/`에 보존됩니다.
+브라우저에서 `http://localhost:8000`을 열고 매매일지의 `API 연결`에서 거래소를 선택합니다. Docker/서버 모드에서는 읽기 전용 권한을 확인한 키가 `journal/trade_journal.db`에 AES-256-GCM 암호문으로만 저장됩니다. Docker 포트는 기본적으로 `127.0.0.1`에만 열리며, 거래 DB는 `journal/`에 보존됩니다.
 
 ## 로컬 개발 실행
 
@@ -68,7 +82,7 @@ chmod +x bootstrap.sh dev.sh start.sh
 
 | 변수 | 용도 |
 | --- | --- |
-| `DEEPCOIN_API_KEY` | Deepcoin 읽기 전용 API key |
+| `DEEPCOIN_API_KEY` | Deepcoin 읽기 전용 API key. 배포 시 Secret으로만 주입 |
 | `DEEPCOIN_SECRET_KEY` | Deepcoin secret |
 | `DEEPCOIN_PASSPHRASE` | Deepcoin API passphrase |
 | `DEEPCOIN_API_BASE_URL` | 기본값 `https://api.deepcoin.com` |
@@ -79,13 +93,34 @@ chmod +x bootstrap.sh dev.sh start.sh
 | `JOURNAL_DIR` | SQLite/CSV 저장 디렉터리 |
 | `APP_ENV` | 로컬은 `development`, 외부 공개는 `production` |
 | `DEMO_USERNAME`, `DEMO_PASSWORD` | production Basic Auth 계정 |
+| `CREDENTIAL_STORAGE` | `auto`, `keyring`, `encrypted_db`. production의 `auto`는 암호화 DB 사용 |
+| `CREDENTIAL_MASTER_KEY` | AES-256-GCM용 32바이트 URL-safe base64 키. 서버 Secret으로만 주입 |
+| `TRUST_PROXY_HEADERS` | 신뢰하는 reverse proxy/Cloudflare 뒤에서만 `true` |
 
-`.env`, `journal/*.db`, 캐시와 시장 데이터는 Git에서 제외됩니다. API 연결 창은 검증에 필요한 순간에만 키를 서버로 전송하며 브라우저 저장소에는 보관하지 않습니다. 키를 GitHub에 입력하지 마세요.
+`.env`, `journal/*.db`, 인증서·키 파일, 캐시와 시장 데이터는 Git에서 제외됩니다. API 연결 창은 키를 브라우저 저장소에 기록하지 않고 같은 origin의 `/api` 백엔드에만 전송합니다. 데스크톱은 Keychain/Credential Manager, Docker·production 서버는 SQLite의 AES-256-GCM 암호문을 사용합니다. 마스터 키는 DB나 코드에 저장되지 않습니다. 명시적인 환경변수는 보안 저장소보다 우선하며 기존 로컬 `.env`의 거래소 키는 보호 저장소로 이전한 뒤 파일에서 제거합니다.
+
+마스터 키는 로컬에서 다음처럼 생성하고 결과를 배포 Secret에만 등록합니다.
+
+```bash
+python3 -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+```
+
+## Cloudflare 배포 준비
+
+Pages는 빌드된 프론트엔드를 제공하고 `/api`를 Workers 또는 별도 FastAPI origin으로 라우팅합니다. 현재 Python FastAPI 자체는 Workers 런타임에서 직접 실행되지 않지만, 저장 암호문은 Workers Web Crypto가 지원하는 AES-256-GCM 형식이라 D1 기반 adapter로 옮길 수 있습니다.
+
+```bash
+wrangler secret put CREDENTIAL_MASTER_KEY
+wrangler secret put DEMO_PASSWORD
+```
+
+`APP_ENV=production`, `CREDENTIAL_STORAGE=encrypted_db`를 설정하고 HTTPS를 종료하는 신뢰 가능한 Cloudflare proxy 뒤에서만 `TRUST_PROXY_HEADERS=true`로 둡니다. Pages와 API는 같은 HTTPS origin을 권장합니다.
 
 ## 데이터 기준
 
 - 거래 원본은 선택한 거래소의 읽기 전용 API를 사용합니다.
 - Deepcoin은 종료 포지션 API를 사용하고, Binance·Bybit·OKX는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다.
+- 종료 포지션은 저널 테이블에, 차트 복기용 개별 체결은 경량 `exchange_executions` 테이블에 분리 저장합니다. 지표 스냅샷은 최초 진입과 종료 시점에만 계산합니다.
 - CCXT 커넥터는 선택 기간 이전에 열린 포지션, 거래소가 제공하지 않는 과거 레버리지·펀딩을 완전히 복원하지 못할 수 있으며 UI 경고로 표시합니다.
 - 캔들, 보조지표, VPVR, VWAP은 Binance Spot OHLCV를 사용합니다.
 - 진입 분석에는 진입 전에 완료된 봉만 사용합니다.
@@ -100,6 +135,8 @@ cd frontend && npm test
 cd frontend && npm run lint
 cd frontend && npm run build
 ```
+
+개발·테스트 의존성은 `backend/requirements-dev.txt`, 실행 의존성은 `backend/requirements.txt`로 분리되어 있습니다.
 
 구조와 API 범위는 [ARCHITECTURE.md](./ARCHITECTURE.md), 보안 배포 기준은 [SECURITY.md](./SECURITY.md)를 참고하세요.
 

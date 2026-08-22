@@ -454,6 +454,49 @@ export interface DeepcoinStatus {
   mode: 'read_only';
 }
 
+export interface JournalPerformanceGroup {
+  id: string;
+  trade_count: number;
+  wins: number;
+  win_rate_pct: number | null;
+  net_pnl: number;
+}
+
+export interface JournalPerformanceTrade {
+  journal_id: number;
+  symbol?: string | null;
+  direction?: string | null;
+  realized_pnl?: number | null;
+}
+
+export interface JournalPerformanceData {
+  closed_trade_count: number;
+  evaluated_trade_count: number;
+  missing_pnl_count: number;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  win_rate_pct: number | null;
+  net_pnl: number;
+  net_return_pct: number | null;
+  return_sample_count: number;
+  gross_profit: number;
+  gross_loss: number;
+  profit_factor: number | null;
+  profit_factor_infinite: boolean;
+  average_win: number | null;
+  average_loss: number | null;
+  expectancy: number | null;
+  fee_impact: number;
+  funding_impact: number;
+  max_win_streak: number;
+  max_loss_streak: number;
+  best_trade: JournalPerformanceTrade | null;
+  worst_trade: JournalPerformanceTrade | null;
+  directions: JournalPerformanceGroup[];
+  symbols: JournalPerformanceGroup[];
+}
+
 export type ExchangeId = 'deepcoin' | 'binance' | 'bybit' | 'okx';
 
 export interface ExchangeStatus {
@@ -464,6 +507,14 @@ export interface ExchangeStatus {
   instrument_types: Array<'SWAP' | 'SPOT'>;
   requires_passphrase: boolean;
   connector: 'native' | 'ccxt';
+  credential_source: 'environment' | 'keyring' | 'encrypted_db' | 'none';
+  credential_error?: string | null;
+}
+
+export interface ExchangeCredentialDeleteResult {
+  exchanges: ExchangeStatus[];
+  deleted: boolean;
+  environment_override: boolean;
 }
 
 export interface ExchangeSyncResult extends DeepcoinSyncResult {

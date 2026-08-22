@@ -1,6 +1,6 @@
 """Contracts for exchange discovery and read-only synchronization."""
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,8 @@ class ExchangeStatus(BaseModel):
     instrument_types: List[InstrumentType]
     requires_passphrase: bool = False
     connector: Literal["native", "ccxt"]
+    credential_source: Literal["environment", "keyring", "encrypted_db", "none"] = "none"
+    credential_error: Optional[str] = None
 
 
 class ExchangeListData(BaseModel):
@@ -26,6 +28,16 @@ class ExchangeListData(BaseModel):
 class ExchangeListEnvelope(BaseModel):
     success: bool
     data: ExchangeListData
+
+
+class ExchangeCredentialDeleteData(ExchangeListData):
+    deleted: bool
+    environment_override: bool
+
+
+class ExchangeCredentialDeleteEnvelope(BaseModel):
+    success: bool
+    data: ExchangeCredentialDeleteData
 
 
 class ExchangeSyncRequest(BaseModel):
@@ -63,9 +75,33 @@ class ExchangeSyncEnvelope(BaseModel):
     data: ExchangeSyncData
 
 
+class ExchangeExecution(BaseModel):
+    external_id: str
+    datetime: str
+    symbol: str
+    direction: str
+    size: Optional[float] = None
+    entry_price: float
+    source: str
+    exchange: str
+    order_id: Optional[str] = None
+    notes: Optional[str] = None
+    fee: Optional[float] = None
+    fee_currency: Optional[str] = None
+    indicator_snapshot: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+
+
+class ExchangeExecutionEnvelope(BaseModel):
+    success: bool
+    data: List[ExchangeExecution]
+
+
 __all__ = [
     "ExchangeId",
     "ExchangeCredentialsRequest",
+    "ExchangeCredentialDeleteEnvelope",
+    "ExchangeExecutionEnvelope",
     "ExchangeListEnvelope",
     "ExchangeStatus",
     "ExchangeSyncEnvelope",

@@ -27,6 +27,7 @@ APP_DATA_DIR = Path(os.getenv("TRADE_JOURNAL_DATA_DIR", str(_default_app_data_di
 PROJECT_ROOT = APP_DATA_DIR if IS_FROZEN else SOURCE_ROOT
 FRONTEND_DIST_DIR = BUNDLE_ROOT / "frontend" / "dist" if IS_FROZEN else SOURCE_ROOT / "frontend" / "dist"
 LOCAL_ENV_PATH = PROJECT_ROOT / ".env"
+LOCAL_ENV_KEYS_LOADED: set[str] = set()
 
 
 def _load_local_env() -> None:
@@ -46,7 +47,9 @@ def _load_local_env() -> None:
             continue
         key, value = parts[0].split("=", 1)
         if key and key.replace("_", "").isalnum():
-            os.environ.setdefault(key, value)
+            if key not in os.environ:
+                os.environ[key] = value
+                LOCAL_ENV_KEYS_LOADED.add(key)
 
 
 _load_local_env()
@@ -140,15 +143,15 @@ class DeepcoinCredentials:
 
 def get_deepcoin_credentials() -> Optional[DeepcoinCredentials]:
     """Return complete Deepcoin credentials, or ``None`` when not configured."""
-    api_key = os.getenv("DEEPCOIN_API_KEY", "").strip()
-    secret_key = os.getenv("DEEPCOIN_SECRET_KEY", "")
-    passphrase = os.getenv("DEEPCOIN_PASSPHRASE", "")
-    if not all((api_key, secret_key, passphrase)):
+    from backend.modules.exchanges.credentials import load_exchange_credentials
+
+    stored = load_exchange_credentials("deepcoin")
+    if stored is None or not stored.passphrase:
         return None
     return DeepcoinCredentials(
-        api_key=api_key,
-        secret_key=secret_key,
-        passphrase=passphrase,
+        api_key=stored.api_key,
+        secret_key=stored.secret_key,
+        passphrase=stored.passphrase,
     )
 
 

@@ -1,4 +1,4 @@
-from backend.modules.exchanges import service
+from backend.modules.exchanges import credentials, service
 
 
 def _trade(
@@ -74,9 +74,14 @@ def test_spot_does_not_invent_short_for_sell_without_loaded_entry():
 
 
 def test_exchange_status_never_returns_credentials(monkeypatch):
-    monkeypatch.setenv("BINANCE_API_KEY", "key")
-    monkeypatch.setenv("BINANCE_SECRET_KEY", "secret")
-    monkeypatch.setattr(service, "get_deepcoin_credentials", lambda: None)
+    def resolve(exchange_id):
+        if exchange_id == "binance":
+            return credentials.CredentialResolution(
+                credentials.StoredCredentials("key", "secret"), "environment"
+            )
+        return credentials.CredentialResolution(None, "none")
+
+    monkeypatch.setattr(service, "resolve_exchange_credentials", resolve)
 
     result = service.exchange_status_service()
 
@@ -85,3 +90,16 @@ def test_exchange_status_never_returns_credentials(monkeypatch):
     assert "api_key" not in binance
     assert "secret_key" not in binance
 
+
+def test_exchange_status_distinguishes_storage_error(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "resolve_exchange_credentials",
+        lambda _exchange_id: credentials.CredentialResolution(
+            None, "none", "Protected credential storage is unavailable"
+        ),
+    )
+
+    result = service.exchange_status_service()
+
+    assert result["data"]["exchanges"][0]["credential_error"] == "Protected credential storage is unavailable"

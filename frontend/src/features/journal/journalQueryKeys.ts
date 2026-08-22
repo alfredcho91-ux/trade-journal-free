@@ -2,6 +2,8 @@ export const journalQueryKeys = {
   entries: ['journal'] as const,
   excursions: (startTime: number | null, endTime: number | null) =>
     ['journal-excursions', startTime, endTime] as const,
+  performance: (startTime: number | null, endTime: number | null) =>
+    ['journal-performance', startTime, endTime] as const,
   qualityAnalysis: (startTime: number | null, endTime: number | null) =>
     ['journal-quality-analysis', startTime, endTime] as const,
   stopLossAnalysis: (startTime: number | null, endTime: number | null) =>
@@ -22,6 +24,7 @@ export const journalQueryKeys = {
 };
 
 export const journalDerivedQueryPrefixes = [
+  ['journal-performance'],
   ['journal-excursions'],
   ['journal-quality-analysis'],
   ['journal-stop-loss-analysis'],

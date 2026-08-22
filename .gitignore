@@ -1,5 +1,11 @@
 .DS_Store
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+secrets/
 .cache/
 .pytest_cache/
 __pycache__/

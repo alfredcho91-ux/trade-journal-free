@@ -11,6 +11,8 @@ import webbrowser
 import uvicorn
 
 from backend.main import app
+from backend.config.settings import APP_DATA_DIR
+from backend.desktop_instance import DesktopInstance
 
 
 def _available_port(start_port: int) -> int:
@@ -29,20 +31,31 @@ def _open_browser(url: str) -> None:
 
 def main() -> None:
     """Start the local-only server and open it in the user's default browser."""
-    requested_port = int(os.getenv("TRADE_JOURNAL_PORT", "5181"))
-    port = _available_port(requested_port)
-    url = f"http://127.0.0.1:{port}"
-    if os.getenv("TRADE_JOURNAL_NO_BROWSER", "").strip().lower() not in {"1", "true", "yes"}:
-        threading.Thread(target=_open_browser, args=(url,), daemon=True).start()
+    with DesktopInstance(APP_DATA_DIR) as instance:
+        if not instance.acquired:
+            existing_url = instance.existing_url()
+            if existing_url:
+                webbrowser.open(existing_url, new=1)
+            return
 
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
-    uvicorn.Server(config).run()
+        requested_port = int(os.getenv("TRADE_JOURNAL_PORT", "5181"))
+        port = _available_port(requested_port)
+        url = f"http://127.0.0.1:{port}"
+        instance.publish(url)
+        if os.getenv("TRADE_JOURNAL_NO_BROWSER", "").strip().lower() not in {"1", "true", "yes"}:
+            threading.Thread(target=_open_browser, args=(url,), daemon=True).start()
+
+        config = uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+            access_log=False,
+        )
+        try:
+            uvicorn.Server(config).run()
+        except KeyboardInterrupt:
+            pass
 
 
 if __name__ == "__main__":

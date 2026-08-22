@@ -23,7 +23,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
     - name: Run Core Guard Check
       run: |
@@ -66,7 +66,7 @@ jobs:
       run: |
         cd backend
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
         pip install TA-Lib
 
     - name: Run TA-Lib + TradingView regression tests (mandatory)

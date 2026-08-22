@@ -29,8 +29,9 @@ cd "$PROJECT_DIR/frontend"
 npm run build
 
 cd "$PROJECT_DIR"
-rm -rf build release
+rm -rf build dist "release/Trade Journal Free.app"
 mkdir -p release
+rm -f "release/Trade-Journal-Free-macOS.zip"
 
 "$PYTHON_BIN" -m PyInstaller \
     --noconfirm \
@@ -40,8 +41,15 @@ mkdir -p release
     --name "Trade Journal Free" \
     --paths "$PROJECT_DIR" \
     --add-data "$PROJECT_DIR/frontend/dist:frontend/dist" \
-    --collect-all ccxt \
+    --hidden-import ccxt.binance \
+    --hidden-import ccxt.binanceusdm \
+    --hidden-import ccxt.bybit \
+    --hidden-import ccxt.okx \
+    --hidden-import keyring.backends.macOS \
+    --exclude-module pytest \
+    --exclude-module _pytest \
     --collect-all diskcache \
+    --collect-all cryptography \
     --collect-all orjson \
     --collect-all uvicorn \
     "$PROJECT_DIR/packaging/desktop_entry.py"

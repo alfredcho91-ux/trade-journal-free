@@ -3,31 +3,53 @@
 Trade Journal Free는 저널과 거래 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
 ```text
-Browser
+Browser / Desktop WebView
   -> React: /journal, /trade-analysis
-  -> /api
+  -> same-origin /api
 FastAPI
-  -> journal: 저장·MFE/MAE·품질·손절·SL/TP 분석
+  -> journal: 저장·기간 성과·MFE/MAE·품질·손절·SL/TP 분석
   -> exchanges: 공통 거래소 목록·연결 검증·읽기 전용 동기화
      -> deepcoin: native 종료 포지션·TP 마커
-     -> ccxt: Binance·Bybit·OKX 체결 및 포지션 재구성
+     -> ccxt adapter: Binance·Bybit·OKX 조회·정규화
+     -> reconstruction: 체결 기반 종료 포지션 재구성
+     -> sync service: 스냅샷·저장 오케스트레이션
   -> indicators: Binance 거래 복기 차트·VPVR·VWAP
   -> core: RSI·MACD·Stochastic·ADX·VPVR 계산
-  -> journal/trade_journal.db
+  -> credential policy
+     -> deployment environment secret
+     -> desktop Keychain / Credential Manager
+     -> server AES-256-GCM encrypted SQLite record
+  -> JOURNAL_DIR/trade_journal.db
+     -> journal_entries: 종료 포지션과 분석 스냅샷
+     -> exchange_executions: 분할 진입·청산 차트 마커
+     -> exchange_credentials: 서버 배포용 AES-GCM 암호문
 ```
 
 ## 프런트엔드
 
 - `frontend/src/App.tsx`: 두 화면, 코인 선택, 언어 전환만 제공
-- `frontend/src/pages/JournalPage.tsx`: 거래소 선택, API 연결 검증·저장, 동기화와 종료 거래 목록
+- `frontend/src/pages/JournalPage.tsx`: 저널 쿼리·기간·모달 상태 조립
+- `frontend/src/features/journal/ExchangeConnectionModal.tsx`: API 입력과 연결 검증 UI
+- `frontend/src/features/journal/JournalSyncPanel.tsx`: 거래소·상품·종목 선택 UI
+- `frontend/src/features/journal/useExchangeConnection.ts`: 거래소 연결 상태·저장·삭제 mutation
+- `frontend/src/features/journal/exchangeQueryKeys.ts`: 거래소 상태 React Query key
 - `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·품질·손절·SL/TP 분석
-- `frontend/src/features/journal/`: 기간·수익률·리포트 조립
+- `frontend/src/features/journal/`: 기간·행 표시 수익률·리포트 조립. 기간 집계 공식은 백엔드를 사용
 - `frontend/src/features/tradeAnalysis/`: 브라우저 집계와 분석 UI
 - `frontend/src/components/PositionReviewChart.tsx`: Lightweight Charts 가격 차트
 
 ## 백엔드
 
-- `backend/modules/exchanges/`: 거래소 레지스트리, 연결 검증·로컬 저장, 공통 API 계약, CCXT 동기화
+- `backend/modules/exchanges/registry.py`: 지원 거래소와 기능 메타데이터
+- `backend/modules/exchanges/ccxt_adapter.py`: CCXT 클라이언트·페이지 조회·체결 정규화
+- `backend/modules/exchanges/reconstruction.py`: 분할 체결의 완료 포지션 재구성
+- `backend/modules/exchanges/sync_service.py`: 스냅샷과 저장 오케스트레이션
+- `backend/modules/exchanges/execution_repository.py`: 복기용 원시 체결 경량 저장소
+- `backend/modules/exchanges/credentials.py`: environment·Keychain·암호화 DB 선택, legacy migration, 상태 해석
+- `backend/modules/exchanges/encrypted_store.py`: AES-256-GCM 암호문 SQLite adapter
+- `backend/modules/exchanges/keyring_store.py`: macOS Keychain/Windows Credential Manager adapter
+- `backend/modules/exchanges/legacy_env.py`: 이전 `.env` credential의 원자적 제거
+- `backend/modules/exchanges/service.py`: API가 호출하는 공개 서비스 경계
 - `backend/modules/deepcoin/`: Deepcoin 고유 서명 API와 TP/SL 주문 상세
 - `backend/modules/journal/`: SQLite 저장소와 분석 서비스
 - `backend/modules/indicators/`: 거래 리포트와 시장 지표
@@ -39,11 +61,22 @@ FastAPI
 
 ## 보안 경계
 
-- 연결 창은 선택 거래소의 읽기 전용 조회를 먼저 검증하고, 성공한 값만 프로젝트의 git 제외 `.env`에 원자적으로 저장하며 파일 권한을 `600`으로 제한합니다. 실행 중에는 서버 환경 변수로만 읽습니다.
+- 연결 창은 같은 origin의 백엔드에만 값을 보내며 읽기 전용 조회를 먼저 검증합니다. desktop은 Keychain/Credential Manager, Docker·production은 AES-256-GCM 암호화 DB를 사용합니다.
+- 거래소 상태 조회는 credential을 한 번만 해석해 연결 여부·저장 위치·저장소 오류를 함께 반환합니다. API 응답에는 credential 값이 포함되지 않습니다.
+- 암호화 AAD에 거래소 ID와 버전을 묶어 다른 레코드로 암호문을 이동할 수 없게 하며, 마스터 키는 환경 Secret에만 존재합니다.
+- credential 저장·삭제 endpoint는 production에서 HTTPS를 강제합니다. proxy header는 명시적으로 신뢰할 때만 사용합니다.
 - API 응답은 키·secret·passphrase를 반환하지 않습니다.
+- 연결 삭제 시 OS vault와 암호화 DB 레코드를 제거합니다. 배포 환경 Secret은 서버 밖에서 별도로 삭제해야 합니다.
 - 거래소 동기화는 체결·포지션·주문 이력의 읽기 전용 endpoint만 사용합니다.
 - production은 HTTP Basic Auth 설정 없이는 시작하지 않습니다.
 - Docker 기본 포트는 localhost에만 바인딩합니다.
+- 패키지 앱은 OS 파일 잠금으로 한 인스턴스만 실행하며 두 번째 실행은 기존 로컬 URL을 다시 엽니다.
+
+## 계산 경계
+
+- 기간 승률, 순손익, 투자금 가중 순수익률, PF, 연승·연패, 방향·종목별 성과는 `journal/performance.py`가 계산합니다.
+- 프런트엔드는 API 집계값을 표시하고, 개별 행의 표시용 수익률과 차트 좌표만 계산합니다.
+- 품질 분석 응답은 요약·Regime·홀딩·가상 청산·거래 항목별 Pydantic 모델로 검증합니다.
 
 ## 분석 시점
 

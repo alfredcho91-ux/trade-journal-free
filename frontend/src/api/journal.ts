@@ -15,6 +15,7 @@ import type {
   JournalStopLossAnalysisData,
   JournalStopOptimizationData,
   JournalEntry,
+  JournalPerformanceData,
 } from '../types';
 
 export async function getJournal(): Promise<JournalEntry[]> {
@@ -23,6 +24,18 @@ export async function getJournal(): Promise<JournalEntry[]> {
     return unwrapApiResponse(res, 'Failed to load journal entries.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to load journal entries.');
+  }
+}
+
+export async function getJournalPerformance(params: {
+  start_time: number;
+  end_time: number;
+}): Promise<JournalPerformanceData> {
+  try {
+    const res = await api.get<ApiResponse<JournalPerformanceData>>('/journal/performance', { params });
+    return unwrapApiResponse(res, 'Failed to load journal performance.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load journal performance.');
   }
 }
 
@@ -177,6 +190,20 @@ export async function getExchangeStatuses(): Promise<ExchangeStatus[]> {
   }
 }
 
+export async function getExchangeExecutions(params: {
+  exchange?: string;
+  symbol?: string;
+  start_time?: string;
+  end_time?: string;
+}): Promise<JournalEntry[]> {
+  try {
+    const res = await api.get<ApiResponse<JournalEntry[]>>('/exchanges/executions', { params });
+    return unwrapApiResponse(res, 'Failed to load exchange executions.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load exchange executions.');
+  }
+}
+
 export async function configureExchangeCredentials(params: {
   exchange: ExchangeId;
   api_key: string;
@@ -189,6 +216,23 @@ export async function configureExchangeCredentials(params: {
     return unwrapApiResponse(res, 'Failed to verify and save exchange credentials.').exchanges;
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to verify and save exchange credentials.');
+  }
+}
+
+export async function deleteExchangeCredentials(exchange: ExchangeId): Promise<{
+  exchanges: ExchangeStatus[];
+  deleted: boolean;
+  environment_override: boolean;
+}> {
+  try {
+    const res = await api.delete<ApiResponse<{
+      exchanges: ExchangeStatus[];
+      deleted: boolean;
+      environment_override: boolean;
+    }>>(`/exchanges/${exchange}/credentials`);
+    return unwrapApiResponse(res, 'Failed to remove exchange credentials.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to remove exchange credentials.');
   }
 }
 

@@ -35,17 +35,9 @@ jobs:
 
       - name: Build Windows distribution
         shell: pwsh
-        run: |
-          $ProjectDir = $env:GITHUB_WORKSPACE
-          $PythonBin = "python"
-          Push-Location "$ProjectDir/frontend"
-          npm run build
-          Pop-Location
-          Push-Location $ProjectDir
-          python -m PyInstaller --noconfirm --clean --windowed --onedir --name "Trade Journal Free" --paths $ProjectDir --add-data "$ProjectDir/frontend/dist;frontend/dist" --collect-all ccxt --collect-all diskcache --collect-all orjson --collect-all uvicorn "$ProjectDir/packaging/desktop_entry.py"
-          New-Item -ItemType Directory -Path "$ProjectDir/release" | Out-Null
-          Move-Item "$ProjectDir/dist/Trade Journal Free" "$ProjectDir/release/Trade Journal Free"
-          Compress-Archive -Path "$ProjectDir/release/Trade Journal Free" -DestinationPath "$ProjectDir/release/Trade-Journal-Free-Windows.zip"
+        env:
+          PYTHON_BIN: python
+        run: ./packaging/build_windows_app.ps1
 
       - name: Upload Windows ZIP
         uses: actions/upload-artifact@v4

@@ -1,17 +1,28 @@
 """HTTP endpoints shared by every read-only exchange connector."""
 
-from fastapi import APIRouter
+from typing import Optional
+
+from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 
 from backend.modules.exchanges.schemas import (
     ExchangeCredentialsRequest,
+    ExchangeCredentialDeleteEnvelope,
+    ExchangeExecutionEnvelope,
     ExchangeId,
     ExchangeListEnvelope,
     ExchangeSyncEnvelope,
     ExchangeSyncRequest,
 )
-from backend.modules.exchanges.service import configure_exchange_credentials_service, exchange_status_service, sync_exchange_service
+from backend.modules.exchanges.service import (
+    configure_exchange_credentials_service,
+    delete_exchange_credentials_service,
+    exchange_executions_service,
+    exchange_status_service,
+    sync_exchange_service,
+)
 from backend.utils.decorators import handle_api_errors
+from backend.utils.transport_security import require_secure_credential_transport
 
 router = APIRouter(prefix="/api/exchanges", tags=["exchanges"])
 
@@ -23,17 +34,48 @@ async def api_exchange_statuses():
     return await run_in_threadpool(exchange_status_service)
 
 
+@router.get("/executions", response_model=ExchangeExecutionEnvelope)
+@handle_api_errors()
+async def api_exchange_executions(
+    exchange: Optional[str] = None,
+    symbol: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+):
+    """Return compact execution markers for one trade review window."""
+    return await run_in_threadpool(
+        exchange_executions_service,
+        exchange,
+        symbol,
+        start_time,
+        end_time,
+    )
+
+
 @router.post("/{exchange_id}/credentials", response_model=ExchangeListEnvelope)
 @handle_api_errors()
-async def api_exchange_credentials(exchange_id: ExchangeId, request: ExchangeCredentialsRequest):
+async def api_exchange_credentials(
+    exchange_id: ExchangeId,
+    payload: ExchangeCredentialsRequest,
+    request: Request,
+):
     """Verify and save local read-only credentials without returning secrets."""
+    require_secure_credential_transport(request)
     return await run_in_threadpool(
         configure_exchange_credentials_service,
         exchange_id,
-        request.api_key,
-        request.secret_key,
-        request.passphrase,
+        payload.api_key,
+        payload.secret_key,
+        payload.passphrase,
     )
+
+
+@router.delete("/{exchange_id}/credentials", response_model=ExchangeCredentialDeleteEnvelope)
+@handle_api_errors()
+async def api_delete_exchange_credentials(exchange_id: ExchangeId, request: Request):
+    """Remove persisted credentials for one exchange."""
+    require_secure_credential_transport(request)
+    return await run_in_threadpool(delete_exchange_credentials_service, exchange_id)
 
 
 @router.post("/{exchange_id}/sync", response_model=ExchangeSyncEnvelope)
