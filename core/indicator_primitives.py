@@ -216,6 +216,64 @@ def compute_vwap_anchored(
     return float((typical_price * volume).sum() / total_volume)
 
 
+def compute_vwap_standard_deviation(
+    df: pd.DataFrame,
+    anchor: Literal["month"] = "month",
+    length: int = 14,
+    timestamp_column: str = "open_dt",
+) -> Optional[dict[str, object]]:
+    """Return monthly anchored HLC3 VWAP, bands, and current sigma position."""
+    if anchor != "month" or length <= 0:
+        raise ValueError("Only the month anchor and a positive length are supported")
+    if df.empty or not {"high", "low", "close", "volume"}.issubset(df.columns):
+        return None
+    vwap = compute_vwap_anchored(df, anchor="month", timestamp_column=timestamp_column)
+    if vwap is None:
+        return None
+    typical = (df["high"] + df["low"] + df["close"]) / 3.0
+    sample = pd.DataFrame({"typical": typical, "volume": df["volume"]}).tail(length)
+    sample = sample.replace([np.inf, -np.inf], np.nan).dropna()
+    if sample.empty:
+        return None
+    weights = sample["volume"].clip(lower=0.0)
+    weight_total = float(weights.sum())
+    if weight_total <= 0:
+        weights = pd.Series(1.0, index=sample.index)
+        weight_total = float(len(sample))
+    variance = float(((sample["typical"] - vwap) ** 2 * weights).sum() / weight_total)
+    standard_deviation = float(np.sqrt(max(variance, 0.0)))
+    current_price = float(df["close"].iloc[-1])
+    sigma = None if standard_deviation <= 0 else (current_price - vwap) / standard_deviation
+    if sigma is None:
+        zone = "중심권"
+    elif sigma >= 3:
+        zone = "극단적 상단 이격"
+    elif sigma >= 2:
+        zone = "강한 상단 이격"
+    elif sigma >= 1:
+        zone = "상단 확장"
+    elif sigma <= -3:
+        zone = "극단적 하단 이격"
+    elif sigma <= -2:
+        zone = "강한 하단 이격"
+    elif sigma <= -1:
+        zone = "하단 확장"
+    else:
+        zone = "중심권"
+    bands = {str(multiplier): vwap + standard_deviation * multiplier for multiplier in (-3, -2, -1, 1, 2, 3)}
+    return {
+        "anchor": "month",
+        "length": length,
+        "source": "HLC3",
+        "vwap": float(vwap),
+        "standard_deviation": standard_deviation,
+        "current_price": current_price,
+        "sigma": None if sigma is None else float(sigma),
+        "zone": zone,
+        "bands": bands,
+    }
+
+
 def compute_supertrend(
     df: pd.DataFrame,
     period: int = 10,

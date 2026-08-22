@@ -86,3 +86,7 @@ FastAPI
 ## 분석 시점
 
 진입 feature는 진입 전에 완료된 candle만 사용합니다. 거래 종료 이후 데이터는 MFE/MAE, 추가 홀딩, 가상 청산, 손절 사후 분석에만 사용해 look-ahead bias가 진입 분석에 섞이지 않도록 분리합니다.
+
+## VWAP 분석 경계
+
+`core/indicator_primitives.py`의 `compute_vwap_standard_deviation`이 월간 Anchored VWAP, HLC3, Length 14 표준편차, 현재 σ 위치와 1σ·2σ·3σ 밴드를 공통 계산합니다. 선택된 거래 리포트 타임프레임별로 독립 계산하며, 응답의 `vwap_deviation`에 VWAP·표준편차·σ·구간·밴드를 담습니다. 기존 VPVR와 롤링 VWAP 계약은 변경하지 않습니다.

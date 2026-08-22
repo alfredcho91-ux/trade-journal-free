@@ -63,11 +63,24 @@ class IndicatorProjectionRollingVWAP(BaseModel):
     value: Optional[float] = None
 
 
+class IndicatorProjectionVWAPDeviation(BaseModel):
+    anchor: Literal["month"]
+    length: int
+    source: str
+    vwap: float
+    standard_deviation: float
+    current_price: float
+    sigma: Optional[float] = None
+    zone: str
+    bands: Dict[str, float]
+
+
 class IndicatorProjectionPayload(BaseModel):
     current_price: float
     current_rsi: Optional[float] = None
     vwaps: list[IndicatorProjectionVWAP]
     rolling_vwaps: list[IndicatorProjectionRollingVWAP]
+    vwap_deviation: Optional[IndicatorProjectionVWAPDeviation] = None
     projections: IndicatorProjectionValues
 
 

@@ -23,6 +23,7 @@ from .indicator_primitives import (
     compute_stoch_rsi,
     compute_supertrend,
     compute_vwap_rolling,
+    compute_vwap_standard_deviation,
     get_latest_indicator_values,
     set_bollinger_columns,
 )
@@ -45,6 +46,7 @@ __all__ = [
     "compute_trend_indicators",
     "compute_trend_judgment_indicators",
     "compute_vwap_rolling",
+    "compute_vwap_standard_deviation",
     "get_latest_indicator_values",
     "prepare_strategy_data",
     "set_bollinger_columns",

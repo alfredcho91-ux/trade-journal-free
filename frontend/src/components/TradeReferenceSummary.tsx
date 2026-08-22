@@ -58,6 +58,14 @@ export default function TradeReferenceSummary({
       tone: 'text-bull',
     });
   });
+  if (vwaps?.vwap_deviation) {
+    const { sigma, zone } = vwaps.vwap_deviation;
+    metrics.push({
+      label: isKo ? '월간 VWAP 편차' : 'Monthly VWAP deviation',
+      value: `${sigma == null ? '-' : `${sigma >= 0 ? '+' : ''}${sigma.toFixed(2)}σ`} · ${zone}`,
+      tone: 'text-primary-300',
+    });
+  }
 
   return (
     <section className="border border-dark-700 bg-dark-900/35">

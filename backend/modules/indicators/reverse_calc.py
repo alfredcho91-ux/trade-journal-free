@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Any, Dict, Literal, Optional, Sequence
 
-from core.indicator_primitives import compute_rsi_wilder, compute_vwap_anchored, compute_vwap_rolling
+from core.indicator_primitives import compute_rsi_wilder, compute_vwap_anchored, compute_vwap_rolling, compute_vwap_standard_deviation
 
 def calculate_required_price_for_rsi(closes: pd.Series, target_rsi: float = 30.0, period: int = 14) -> Optional[float]:
     """
@@ -77,6 +77,7 @@ def get_indicator_projections(
         }
         for window in rolling_vwap_windows
     ]
+    vwap_deviation = compute_vwap_standard_deviation(df, anchor="month", length=14)
 
     projections = {
         "rsi_30": calculate_required_price_for_rsi(closes, target_rsi=30.0), # type: ignore
@@ -94,5 +95,6 @@ def get_indicator_projections(
         "current_rsi": current_rsi,
         "vwaps": vwaps,
         "rolling_vwaps": rolling_vwaps,
+        "vwap_deviation": vwap_deviation,
         "projections": sanitized_projections
     }

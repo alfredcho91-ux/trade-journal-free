@@ -15,6 +15,7 @@ from core.indicators import (
     compute_stoch_rsi,
     compute_trend_indicators,
     compute_trend_judgment_indicators,
+    compute_vwap_standard_deviation,
     get_latest_indicator_values,
     prepare_strategy_data,
 )
@@ -298,6 +299,19 @@ def test_build_indicator_adapter_raises_for_unknown_mode():
     df = _build_ohlcv(rows=200)
     with pytest.raises(ValueError):
         build_indicator_adapter(df, mode="unknown")  # type: ignore[arg-type]
+
+
+def test_compute_vwap_standard_deviation_returns_monthly_bands_and_sigma():
+    df = _build_ohlcv(rows=40)
+    result = compute_vwap_standard_deviation(df, length=14)
+
+    assert result is not None
+    assert result["anchor"] == "month"
+    assert result["length"] == 14
+    assert result["source"] == "HLC3"
+    assert result["bands"]["1"] > result["vwap"]
+    assert result["bands"]["-1"] < result["vwap"]
+    assert np.isfinite(result["sigma"])
 
 
 @pytest.mark.skipif(talib is None, reason="TA-Lib not installed in environment")
