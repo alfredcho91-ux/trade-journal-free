@@ -16,6 +16,16 @@ const ANCHOR_LABELS: Record<string, { ko: string; en: string }> = {
   year: { ko: '연간 VWAP', en: 'Yearly VWAP' },
 };
 
+const VWAP_ZONE_LABELS: Record<string, { ko: string; en: string }> = {
+  center: { ko: 'VWAP 중심권', en: 'VWAP center range' },
+  upper_expansion: { ko: '상단 확장', en: 'Upper expansion' },
+  strong_upper: { ko: '강한 상단 이격', en: 'Strong upper extension' },
+  extreme_upper: { ko: '극단적 상단 이격', en: 'Extreme upper extension' },
+  lower_expansion: { ko: '하단 확장', en: 'Lower expansion' },
+  strong_lower: { ko: '강한 하단 이격', en: 'Strong lower extension' },
+  extreme_lower: { ko: '극단적 하단 이격', en: 'Extreme lower extension' },
+};
+
 export default function TradeReferenceSummary({
   vpvr,
   vwaps,
@@ -62,7 +72,7 @@ export default function TradeReferenceSummary({
     const { sigma, zone } = vwaps.vwap_deviation;
     metrics.push({
       label: isKo ? '월간 VWAP 편차' : 'Monthly VWAP deviation',
-      value: `${sigma == null ? '-' : `${sigma >= 0 ? '+' : ''}${sigma.toFixed(2)}σ`} · ${zone}`,
+      value: `${sigma == null ? '-' : `${sigma >= 0 ? '+' : ''}${sigma.toFixed(2)}σ`} · ${VWAP_ZONE_LABELS[zone]?.[isKo ? 'ko' : 'en'] || zone}`,
       tone: 'text-primary-300',
     });
   }

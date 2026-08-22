@@ -314,6 +314,23 @@ def test_compute_vwap_standard_deviation_returns_monthly_bands_and_sigma():
     assert np.isfinite(result["sigma"])
 
 
+def test_vwap_standard_deviation_excludes_prior_month_from_its_window():
+    index = pd.to_datetime(["2024-01-31 20:00:00", "2024-01-31 21:00:00", "2024-02-01 00:00:00", "2024-02-01 04:00:00"])
+    frame = pd.DataFrame({
+        "high": [10_001, 20_001, 101, 103],
+        "low": [9_999, 19_999, 99, 101],
+        "close": [10_000, 20_000, 100, 102],
+        "volume": [100, 100, 1, 1],
+    }, index=index)
+
+    result = compute_vwap_standard_deviation(frame, length=14)
+
+    assert result is not None
+    assert result["vwap"] == pytest.approx(101.0)
+    assert result["standard_deviation"] == pytest.approx(1.0)
+    assert result["bands"]["1"] == pytest.approx(102.0)
+
+
 @pytest.mark.skipif(talib is None, reason="TA-Lib not installed in environment")
 def test_compute_live_indicators_rsi_macd_are_close_to_talib():
     df = _build_ohlcv(rows=500)
