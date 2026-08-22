@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 $PythonBin = if ($env:PYTHON_BIN) { $env:PYTHON_BIN } else { Join-Path $ProjectDir "backend\venv\Scripts\python.exe" }
 $FrontendDir = Join-Path $ProjectDir "frontend"
-$ReleaseDir = Join-Path $ProjectDir "release"
+$ReleaseDir = if ($env:TRADE_JOURNAL_RELEASE_DIR) { $env:TRADE_JOURNAL_RELEASE_DIR } else { Join-Path $ProjectDir "Windows" }
 
 if ($env:PYTHON_BIN) {
     if (-not (Get-Command $PythonBin -ErrorAction SilentlyContinue)) {

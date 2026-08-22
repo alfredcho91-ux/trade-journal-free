@@ -8,6 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 PYTHON_BIN="$PROJECT_DIR/backend/venv/bin/python"
+RELEASE_DIR="${TRADE_JOURNAL_RELEASE_DIR:-$PROJECT_DIR/macOS}"
+export PYINSTALLER_CONFIG_DIR="${PYINSTALLER_CONFIG_DIR:-$PROJECT_DIR/.pyinstaller}"
 
 if [ ! -x "$PYTHON_BIN" ]; then
     echo "Missing backend virtual environment. Run ./bootstrap.sh first."
@@ -29,9 +31,8 @@ cd "$PROJECT_DIR/frontend"
 npm run build
 
 cd "$PROJECT_DIR"
-rm -rf build dist "release/Trade Journal Free.app"
-mkdir -p release
-rm -f "release/Trade-Journal-Free-macOS.zip"
+rm -rf build dist "$RELEASE_DIR"
+mkdir -p "$RELEASE_DIR"
 
 "$PYTHON_BIN" -m PyInstaller \
     --noconfirm \
@@ -54,9 +55,9 @@ rm -f "release/Trade-Journal-Free-macOS.zip"
     --collect-all uvicorn \
     "$PROJECT_DIR/packaging/desktop_entry.py"
 
-mv "dist/Trade Journal Free.app" "release/Trade Journal Free.app"
+mv "dist/Trade Journal Free.app" "$RELEASE_DIR/Trade Journal Free.app"
 rm -rf dist build
 
-cd release
+cd "$RELEASE_DIR"
 ditto -c -k --sequesterRsrc --keepParent "Trade Journal Free.app" "Trade-Journal-Free-macOS.zip"
-echo "Created: $PROJECT_DIR/release/Trade-Journal-Free-macOS.zip"
+echo "Created: $RELEASE_DIR/Trade-Journal-Free-macOS.zip"

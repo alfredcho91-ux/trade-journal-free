@@ -918,6 +918,10 @@ export default function JournalPage() {
           excursionLoading={excursionQuery.isLoading}
           isKo={isKo}
           onClose={() => setSnapshotEntry(null)}
+          onBehaviorUpdated={async () => {
+            await queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries });
+            await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+          }}
         />
       )}
       {connectionOpen && selectedExchangeStatus && (

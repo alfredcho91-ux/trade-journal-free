@@ -1,11 +1,21 @@
 """Trading Journal API router."""
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
 
 from backend.modules.journal.schemas import (
+    JournalBehaviorComparisonRequest,
+    JournalBehaviorEnvelope,
+    JournalBehaviorQuery,
+    JournalBehaviorRuleCreate,
+    JournalBehaviorRuleEnvelope,
+    JournalBehaviorRulesEnvelope,
+    JournalBehaviorRuleUpdate,
+    JournalBehaviorUpdate,
+    JournalBehaviorUpdateEnvelope,
     JournalCurrentMarketEnvelope,
     JournalDeleteEnvelope,
     JournalExcursionEnvelope,
@@ -20,13 +30,27 @@ from backend.modules.journal.schemas import (
     JournalStopOptimizationEnvelope,
 )
 from backend.modules.journal.analysis import run_journal_excursions_service
+from backend.modules.journal.behavior_analysis import (
+    run_journal_behavior_analysis_service,
+    run_journal_behavior_comparison_service,
+)
 from backend.modules.journal.performance import run_journal_performance_service
 from backend.modules.journal.current_market import run_current_market_snapshot_service
 from backend.modules.journal.quality_analysis import run_journal_quality_analysis_service
 from backend.modules.journal.sl_tp_analysis import run_journal_sl_tp_analysis_service
 from backend.modules.journal.stop_loss_analysis import run_journal_stop_loss_analysis_service
 from backend.modules.journal.stop_optimization import run_journal_stop_optimization_service
-from backend.modules.journal.service import delete_journal_service, get_journal_service
+from backend.modules.journal.repository import (
+    create_behavior_rule,
+    delete_behavior_rule,
+    list_behavior_rules,
+    update_behavior_rule,
+)
+from backend.modules.journal.service import (
+    delete_journal_service,
+    get_journal_service,
+    update_journal_behavior_service,
+)
 from backend.utils.decorators import handle_api_errors
 
 router = APIRouter(prefix="/api", tags=["journal"])
@@ -76,6 +100,30 @@ async def api_get_journal_quality_analysis(query: Annotated[JournalQualityQuery,
     )
 
 
+@router.get("/journal/behavior-analysis", response_model=JournalBehaviorEnvelope)
+@handle_api_errors()
+async def api_get_journal_behavior_analysis(query: Annotated[JournalBehaviorQuery, Depends()]):
+    return await run_in_threadpool(
+        run_journal_behavior_analysis_service,
+        query.start_time,
+        query.end_time,
+        query.min_abs_net_return_pct,
+    )
+
+
+@router.post("/journal/behavior-analysis/compare", response_model=JournalBehaviorEnvelope)
+@handle_api_errors()
+async def api_compare_journal_behavior(payload: JournalBehaviorComparisonRequest):
+    return await run_in_threadpool(
+        run_journal_behavior_comparison_service,
+        payload.start_time,
+        payload.end_time,
+        payload.left.model_dump(),
+        payload.right.model_dump(),
+        payload.min_abs_net_return_pct,
+    )
+
+
 @router.get("/journal/stop-loss-analysis", response_model=JournalStopLossEnvelope)
 @handle_api_errors()
 async def api_get_journal_stop_loss_analysis(query: Annotated[JournalExcursionQuery, Depends()]):
@@ -120,3 +168,46 @@ async def api_get_journal_sl_tp_analysis(query: Annotated[JournalSlTpQuery, Depe
 async def api_delete_journal(entry_id: int):
     """Delete a journal entry."""
     return await run_in_threadpool(delete_journal_service, entry_id)
+
+
+@router.patch("/journal/{entry_id}/behavior", response_model=JournalBehaviorUpdateEnvelope)
+@handle_api_errors()
+async def api_update_journal_behavior(entry_id: int, payload: JournalBehaviorUpdate):
+    data = payload.model_dump(exclude_unset=True)
+    has_plan = any(
+        data.get(field) not in (None, "")
+        for field in ("planned_stop_pct", "planned_target_pct", "planned_entry_reason")
+    )
+    if has_plan:
+        data["plan_recorded_at"] = datetime.now(timezone.utc).isoformat()
+    return await run_in_threadpool(update_journal_behavior_service, entry_id, data)
+
+
+@router.get("/journal/behavior-rules", response_model=JournalBehaviorRulesEnvelope)
+@handle_api_errors()
+async def api_list_journal_behavior_rules():
+    return {"success": True, "data": await run_in_threadpool(list_behavior_rules)}
+
+
+@router.post("/journal/behavior-rules", response_model=JournalBehaviorRuleEnvelope)
+@handle_api_errors()
+async def api_create_journal_behavior_rule(payload: JournalBehaviorRuleCreate):
+    return {"success": True, "data": await run_in_threadpool(create_behavior_rule, payload.model_dump())}
+
+
+@router.patch("/journal/behavior-rules/{rule_id}", response_model=JournalBehaviorRuleEnvelope)
+@handle_api_errors()
+async def api_update_journal_behavior_rule(rule_id: int, payload: JournalBehaviorRuleUpdate):
+    rule = await run_in_threadpool(update_behavior_rule, rule_id, payload.model_dump(exclude_unset=True))
+    if rule is None:
+        return {"success": False, "error": "Behavior rule not found"}
+    return {"success": True, "data": rule}
+
+
+@router.delete("/journal/behavior-rules/{rule_id}", response_model=JournalDeleteEnvelope)
+@handle_api_errors()
+async def api_delete_journal_behavior_rule(rule_id: int):
+    deleted = await run_in_threadpool(delete_behavior_rule, rule_id)
+    if not deleted:
+        return {"success": False, "error": "Behavior rule not found"}
+    return {"success": True, "message": "Behavior rule deleted"}

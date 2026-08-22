@@ -13,6 +13,7 @@ import pandas as pd
 from backend.config.settings import JOURNAL_COLUMNS, JOURNAL_CSV_PATH, JOURNAL_DB_PATH
 
 TABLE_NAME = "journal_entries"
+RULE_TABLE_NAME = "journal_behavior_rules"
 INSERTABLE_COLUMNS = [col for col in JOURNAL_COLUMNS if col != "id"]
 OPTIONAL_SCHEMA_COLUMNS = {
     "entry_datetime": "TEXT",
@@ -35,6 +36,12 @@ OPTIONAL_SCHEMA_COLUMNS = {
     "invested_amount": "REAL",
     "pnl_calculation_version": "INTEGER",
     "indicator_snapshot": "TEXT",
+    "planned_stop_pct": "REAL",
+    "planned_target_pct": "REAL",
+    "planned_entry_reason": "TEXT",
+    "setup_tags": "TEXT",
+    "mistake_tags": "TEXT",
+    "plan_recorded_at": "TEXT",
 }
 EXCHANGE_REFRESH_COLUMNS = [
     "datetime",
@@ -146,6 +153,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             emotion TEXT,
             tags TEXT,
             mistakes TEXT,
+            planned_stop_pct REAL,
+            planned_target_pct REAL,
+            planned_entry_reason TEXT,
+            setup_tags TEXT,
+            mistake_tags TEXT,
+            plan_recorded_at TEXT,
             notes TEXT,
             source TEXT,
             external_id TEXT,
@@ -172,6 +185,19 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(
                     f"ALTER TABLE {TABLE_NAME} ADD COLUMN {column} {column_type}"
                 )
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {RULE_TABLE_NAME} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                rule_type TEXT NOT NULL,
+                parameters TEXT NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         _migrate_signed_pnl(conn)
         conn.execute(
             f"""
@@ -260,11 +286,39 @@ def _normalize_indicator_list(value: Any) -> Optional[str]:
     return json.dumps([normalized]) if normalized else None
 
 
+def _normalize_tag_list(value: Any) -> Optional[str]:
+    """Store behavior tags as a compact, de-duplicated JSON list."""
+    value = _clean_value(value)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            parsed = stripped.split(",")
+    elif isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray, dict)):
+        parsed = value
+    else:
+        parsed = [value]
+
+    tags: List[str] = []
+    for item in parsed:
+        text = str(item).strip() if item is not None else ""
+        if text and text not in tags:
+            tags.append(text)
+    return json.dumps(tags, ensure_ascii=True, separators=(",", ":")) if tags else None
+
+
 def _normalize_column_value(column: str, value: Any) -> Any:
     if column == "indicators":
         return _normalize_indicator_list(value)
     if column.endswith("_indicator"):
         return _normalize_indicator_name(value)
+    if column in {"setup_tags", "mistake_tags"}:
+        return _normalize_tag_list(value)
     if column == "indicator_snapshot":
         value = _clean_value(value)
         if value is None:
@@ -359,6 +413,16 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         result[detail_key] = detail_value
 
     result.pop("indicators", None)
+    for column in ("setup_tags", "mistake_tags"):
+        value = result.get(column)
+        if isinstance(value, str):
+            try:
+                parsed_tags = json.loads(value)
+            except json.JSONDecodeError:
+                parsed_tags = []
+            result[column] = [str(item) for item in parsed_tags if str(item).strip()] if isinstance(parsed_tags, list) else []
+        elif not isinstance(value, list):
+            result[column] = []
     snapshot = result.get("indicator_snapshot")
     if isinstance(snapshot, str):
         try:
@@ -630,6 +694,138 @@ def delete_entry(
         return cursor.rowcount > 0
 
 
+BEHAVIOR_COLUMNS = [
+    "planned_stop_pct",
+    "planned_target_pct",
+    "planned_entry_reason",
+    "setup_tags",
+    "mistake_tags",
+    "plan_recorded_at",
+]
+
+
+def update_entry_behavior(
+    entry_id: int,
+    behavior: Dict[str, Any],
+    *,
+    db_path: Optional[Path] = None,
+    csv_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update only user-owned behavior notes for an imported journal entry."""
+    payload = {
+        column: _normalize_column_value(column, behavior.get(column))
+        for column in BEHAVIOR_COLUMNS
+        if column in behavior
+    }
+    if not payload:
+        raise ValueError("At least one behavior field is required")
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        _migrate_legacy_csv_if_needed(conn, csv_path=csv_path)
+        existing = _fetch_entry_by_id(conn, entry_id)
+        if existing is None:
+            return None
+        if existing.get("plan_recorded_at") and "plan_recorded_at" in payload:
+            payload["plan_recorded_at"] = existing["plan_recorded_at"]
+        assignments = ", ".join(f"{column} = ?" for column in payload)
+        conn.execute(
+            f"UPDATE {TABLE_NAME} SET {assignments} WHERE id = ?",
+            (*payload.values(), entry_id),
+        )
+        conn.commit()
+        return _fetch_entry_by_id(conn, entry_id)
+
+
+def _rule_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    try:
+        parameters = json.loads(row["parameters"])
+    except (TypeError, json.JSONDecodeError):
+        parameters = {}
+    return {
+        "id": int(row["id"]),
+        "name": row["name"],
+        "rule_type": row["rule_type"],
+        "parameters": parameters if isinstance(parameters, dict) else {},
+        "is_enabled": bool(row["is_enabled"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def list_behavior_rules(*, db_path: Optional[Path] = None) -> List[Dict[str, Any]]:
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        rows = conn.execute(
+            f"SELECT id, name, rule_type, parameters, is_enabled, created_at, updated_at FROM {RULE_TABLE_NAME} ORDER BY id ASC"
+        ).fetchall()
+        return [_rule_row_to_dict(row) for row in rows]
+
+
+def create_behavior_rule(rule: Dict[str, Any], *, db_path: Optional[Path] = None) -> Dict[str, Any]:
+    name = str(rule.get("name") or "").strip()
+    rule_type = str(rule.get("rule_type") or "").strip()
+    parameters = rule.get("parameters")
+    if not name or not rule_type or not isinstance(parameters, dict):
+        raise ValueError("Rule name, type, and parameters are required")
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        cursor = conn.execute(
+            f"INSERT INTO {RULE_TABLE_NAME} (name, rule_type, parameters, is_enabled) VALUES (?, ?, ?, ?)",
+            (name, rule_type, json.dumps(parameters, ensure_ascii=True, separators=(",", ":")), int(bool(rule.get("is_enabled", True)))),
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT id, name, rule_type, parameters, is_enabled, created_at, updated_at FROM {RULE_TABLE_NAME} WHERE id = ?",
+            (int(cursor.lastrowid),),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to fetch created behavior rule")
+        return _rule_row_to_dict(row)
+
+
+def update_behavior_rule(rule_id: int, rule: Dict[str, Any], *, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    fields: Dict[str, Any] = {}
+    if "name" in rule:
+        name = str(rule["name"] or "").strip()
+        if not name:
+            raise ValueError("Rule name cannot be empty")
+        fields["name"] = name
+    if "rule_type" in rule:
+        rule_type = str(rule["rule_type"] or "").strip()
+        if not rule_type:
+            raise ValueError("Rule type cannot be empty")
+        fields["rule_type"] = rule_type
+    if "parameters" in rule:
+        if not isinstance(rule["parameters"], dict):
+            raise ValueError("Rule parameters must be an object")
+        fields["parameters"] = json.dumps(rule["parameters"], ensure_ascii=True, separators=(",", ":"))
+    if "is_enabled" in rule:
+        fields["is_enabled"] = int(bool(rule["is_enabled"]))
+    if not fields:
+        raise ValueError("At least one rule field is required")
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        assignments = ", ".join(f"{column} = ?" for column in fields)
+        conn.execute(
+            f"UPDATE {RULE_TABLE_NAME} SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (*fields.values(), rule_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT id, name, rule_type, parameters, is_enabled, created_at, updated_at FROM {RULE_TABLE_NAME} WHERE id = ?",
+            (rule_id,),
+        ).fetchone()
+        return _rule_row_to_dict(row) if row is not None else None
+
+
+def delete_behavior_rule(rule_id: int, *, db_path: Optional[Path] = None) -> bool:
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        cursor = conn.execute(f"DELETE FROM {RULE_TABLE_NAME} WHERE id = ?", (rule_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def delete_imported_positions(exchange_id: str, exchange_name: str, symbols: Iterable[str]) -> int:
     """Replace only machine-generated closed positions for the synced markets."""
     normalized = sorted({str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()})
@@ -649,11 +845,16 @@ def delete_imported_positions(exchange_id: str, exchange_name: str, symbols: Ite
 __all__ = [
     "add_entries_if_new_external_ids",
     "add_entry_if_new_external_id",
+    "create_behavior_rule",
+    "delete_behavior_rule",
     "delete_entry",
     "delete_imported_positions",
     "existing_external_ids",
     "external_entry_exists",
     "list_entries",
+    "list_behavior_rules",
+    "update_behavior_rule",
+    "update_entry_behavior",
     "update_imported_entries_by_external_id",
     "update_imported_entry_by_external_id",
 ]

@@ -33,7 +33,7 @@ FastAPI
 - `frontend/src/features/journal/JournalSyncPanel.tsx`: 거래소·상품·종목 선택 UI
 - `frontend/src/features/journal/useExchangeConnection.ts`: 거래소 연결 상태·저장·삭제 mutation
 - `frontend/src/features/journal/exchangeQueryKeys.ts`: 거래소 상태 React Query key
-- `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·진입·청산 품질 분석
+- `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·진입·청산 품질, 계획/실수/규칙 준수 행동 분석
 - `frontend/src/pages/RiskLabPage.tsx`: 손절·Stop 최적화·N% Stop·SL/TP 분석
 - `frontend/src/features/journal/`: 기간·행 표시 수익률·리포트 조립. 기간 집계 공식은 백엔드를 사용
 - `frontend/src/features/tradeAnalysis/`: 브라우저 집계와 분석 UI
@@ -79,6 +79,7 @@ FastAPI
 - 기간 승률, 순손익, 투자금 가중 순수익률, PF, 연승·연패, 방향·종목별 성과는 `journal/performance.py`가 계산합니다.
 - 프런트엔드는 API 집계값을 표시하고, 개별 행의 표시용 수익률과 차트 좌표만 계산합니다.
 - `TradeAnalysisPage`의 최소 절대 순수익률 필터는 투입 증거금 대비 순수익률 절대값이 기준 이하인 종료 거래를 백엔드 품질 분석 표본과 프런트 상세 표본에서 함께 제외하며, 기본값 0%는 전체 거래입니다.
+- `behavior_analysis.py`는 기존 품질 분석의 진입 당시 확정봉 Regime과 사후 MFE/MAE를 재사용합니다. 계획 SL/TP·Setup·Mistake는 거래소 동기화 필드와 분리해 저장하며, 규칙 준수는 진입 전에 기록된 계획과 진입 당시 완료된 추세만 사용합니다.
 - 품질 분석 응답은 요약·Regime·홀딩·가상 청산·거래 항목별 Pydantic 모델로 검증합니다.
 
 ## 분석 시점

@@ -47,6 +47,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Trade-Journal-Free-Windows-x64
-          path: release/Trade-Journal-Free-Windows.zip
+          path: Windows/Trade-Journal-Free-Windows.zip
           if-no-files-found: error
           retention-days: 30

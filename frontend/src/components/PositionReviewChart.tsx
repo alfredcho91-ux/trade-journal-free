@@ -29,7 +29,16 @@ interface PositionReviewChartProps {
   exitPrice?: number;
   entryEvents?: TradeExecutionMarker[];
   takeProfitEvents?: TradeExecutionMarker[];
+  pathEvents?: TradePathChartMarker[];
   height?: number;
+}
+
+export interface TradePathChartMarker {
+  datetime: string;
+  price: number;
+  label: string;
+  position: 'aboveBar' | 'belowBar' | 'inBar';
+  color: string;
 }
 
 interface PriceAxisState {
@@ -105,6 +114,7 @@ export default function PositionReviewChart({
   exitPrice,
   entryEvents = [],
   takeProfitEvents = [],
+  pathEvents = [],
   height = 520,
 }: PositionReviewChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -367,6 +377,19 @@ export default function PositionReviewChart({
         text: isCompact ? event.label : `${event.label} ${formatPrice(event.price)}`,
       });
     });
+    const visiblePathEvents = pathEvents.flatMap((event) => {
+      const time = candleTimeAt(data, event.datetime);
+      return time == null ? [] : [{ ...event, time }];
+    });
+    visiblePathEvents.forEach((event) => {
+      markers.push({
+        time: event.time,
+        position: event.position,
+        color: event.color,
+        shape: 'circle',
+        text: isCompact ? '' : `${event.label} ${formatPrice(event.price)}`,
+      });
+    });
     const exitIsTakeProfit = exitMarkerTime != null && visibleTakeProfits.some(
       (event) => event.time === exitMarkerTime,
     );
@@ -426,7 +449,7 @@ export default function PositionReviewChart({
       data,
       entryPrice,
       exitPrice,
-      [...entryEvents, ...takeProfitEvents].map((event) => event.price),
+      [...entryEvents, ...takeProfitEvents, ...pathEvents].map((event) => event.price),
     );
     horizontalZoomRef.current = 1;
     applyPriceAxis();
@@ -441,6 +464,7 @@ export default function PositionReviewChart({
     exitPrice,
     exitTime,
     height,
+    pathEvents,
     takeProfitEvents,
   ]);
 

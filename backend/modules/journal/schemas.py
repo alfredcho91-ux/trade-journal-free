@@ -27,6 +27,12 @@ class JournalEntry(BaseModel):
     emotion: Optional[str] = None
     tags: Optional[str] = None
     mistakes: Optional[str] = None
+    planned_stop_pct: Optional[float] = Field(default=None, gt=0, le=100)
+    planned_target_pct: Optional[float] = Field(default=None, gt=0, le=500)
+    planned_entry_reason: Optional[str] = None
+    setup_tags: List[str] = Field(default_factory=list)
+    mistake_tags: List[str] = Field(default_factory=list)
+    plan_recorded_at: Optional[str] = None
     notes: Optional[str] = None
     source: Optional[str] = None
     external_id: Optional[str] = None
@@ -58,6 +64,56 @@ class JournalDeleteEnvelope(BaseModel):
     message: str
 
 
+class JournalBehaviorUpdate(BaseModel):
+    planned_stop_pct: Optional[float] = Field(default=None, gt=0, le=100)
+    planned_target_pct: Optional[float] = Field(default=None, gt=0, le=500)
+    planned_entry_reason: Optional[str] = Field(default=None, max_length=500)
+    setup_tags: Optional[List[str]] = Field(default=None, max_length=20)
+    mistake_tags: Optional[List[str]] = Field(default=None, max_length=20)
+
+
+class JournalBehaviorUpdateEnvelope(BaseModel):
+    success: bool
+    data: JournalRecord
+
+
+RuleType = Literal["trend_direction_forbid", "max_stop_pct", "min_rr", "no_scale_in"]
+
+
+class JournalBehaviorRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    rule_type: RuleType
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    is_enabled: bool = True
+
+
+class JournalBehaviorRuleUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    rule_type: Optional[RuleType] = None
+    parameters: Optional[Dict[str, Any]] = None
+    is_enabled: Optional[bool] = None
+
+
+class JournalBehaviorRule(BaseModel):
+    id: int
+    name: str
+    rule_type: RuleType
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    is_enabled: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class JournalBehaviorRulesEnvelope(BaseModel):
+    success: bool
+    data: List[JournalBehaviorRule]
+
+
+class JournalBehaviorRuleEnvelope(BaseModel):
+    success: bool
+    data: JournalBehaviorRule
+
+
 class JournalExcursionQuery(BaseModel):
     start_time: int = Field(ge=1)
     end_time: int = Field(ge=1)
@@ -67,6 +123,25 @@ class JournalQualityQuery(JournalExcursionQuery):
     """Quality-analysis filter expressed as a net return on invested margin."""
 
     min_abs_net_return_pct: float = Field(default=0.0, ge=0, le=100)
+
+
+class JournalBehaviorQuery(JournalQualityQuery):
+    """Same closed-trade range and return filter used by trade-quality analysis."""
+
+
+class JournalBehaviorCondition(BaseModel):
+    type: Literal["direction", "symbol", "regime", "setup", "mistake", "rule_status"]
+    value: str = Field(min_length=1, max_length=160)
+
+
+class JournalBehaviorComparisonRequest(JournalQualityQuery):
+    left: JournalBehaviorCondition
+    right: JournalBehaviorCondition
+
+
+class JournalBehaviorEnvelope(BaseModel):
+    success: bool
+    data: Dict[str, Any]
 
 
 class JournalSlTpQuery(JournalExcursionQuery):

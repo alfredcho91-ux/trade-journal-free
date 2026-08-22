@@ -7,6 +7,7 @@
 - Deepcoin, Binance, Bybit, OKX의 읽기 전용 API 연동
 - 종료 거래 저널, 거래 차트 복기, 분할 진입·익절 마커
 - 승패·진입·청산 품질과 대성공·대실패 거래 분석, 별도 Risk Lab의 손절·SL/TP 기대값 분석
+- 거래별 계획 SL/TP·Setup·Mistake 기록과 규칙 준수, 수익 누수, 조건 비교 분석
 - macOS 앱과 Windows x64 압축 배포판
 - 사용자 API Key는 브라우저 저장소나 프론트엔드 코드에 저장하지 않음
 
@@ -19,7 +20,7 @@ backend/venv/bin/python -m pip install -r packaging/requirements-build.txt
 ./packaging/build_macos_app.sh
 ```
 
-완성된 파일은 `release/Trade-Journal-Free-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 거래 DB는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다. API Key는 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
+완성된 파일은 바탕화면의 `Trade Journal Free/macOS/Trade-Journal-Free-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 거래 DB는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다. API Key는 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
 
 Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Free-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 거래 DB가 `%APPDATA%\Trade Journal Free`에, API Key는 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
 
@@ -58,6 +59,7 @@ Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를
 - Risk Lab: 손절 사후 분석, Stop 최적화, 코인 가격 기준 N% 손절 기대값, SL/TP 조합 시뮬레이션
 - 현재 시장과 과거 거래의 유사도 비교
 - 매매분석 상단의 최소 순수익률 필터: 투입 증거금 대비 순수익률 절대값이 입력값 이하인 종료 거래를 통계에서 제외
+- 거래 리포트: 실제 보유 구간의 최대 유리 움직임, 진입가 재도달, 이후 최대 불리 움직임과 실제 청산을 5분/15분봉으로 복기
 
 이 프로그램은 주문 생성·수정·취소·출금 API를 호출하지 않습니다. 모든 거래소 키는 반드시 Read Only로 생성하세요.
 

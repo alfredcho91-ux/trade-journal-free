@@ -10,6 +10,10 @@ import type {
   ExchangeSyncResult,
   JournalExcursionData,
   JournalCurrentMarketData,
+  JournalBehaviorAnalysisData,
+  JournalBehaviorComparisonData,
+  JournalBehaviorCondition,
+  JournalBehaviorRule,
   JournalQualityAnalysisData,
   JournalSlTpAnalysisData,
   JournalStopLossAnalysisData,
@@ -76,6 +80,86 @@ export async function getJournalQualityAnalysis(params: {
     return unwrapApiResponse(res, 'Failed to load trade quality analysis.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to load trade quality analysis.');
+  }
+}
+
+export async function getJournalBehaviorAnalysis(params: {
+  start_time: number;
+  end_time: number;
+  min_abs_net_return_pct?: number;
+}): Promise<JournalBehaviorAnalysisData> {
+  try {
+    const res = await api.get<ApiResponse<JournalBehaviorAnalysisData>>('/journal/behavior-analysis', { params, timeout: 120_000 });
+    return unwrapApiResponse(res, 'Failed to load trade behavior analysis.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load trade behavior analysis.');
+  }
+}
+
+export async function compareJournalBehavior(payload: {
+  start_time: number;
+  end_time: number;
+  min_abs_net_return_pct?: number;
+  left: JournalBehaviorCondition;
+  right: JournalBehaviorCondition;
+}): Promise<JournalBehaviorComparisonData> {
+  try {
+    const res = await api.post<ApiResponse<JournalBehaviorComparisonData>>('/journal/behavior-analysis/compare', payload, { timeout: 120_000 });
+    return unwrapApiResponse(res, 'Failed to compare trade behavior.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to compare trade behavior.');
+  }
+}
+
+export async function updateJournalBehavior(id: number, payload: {
+  planned_stop_pct?: number | null;
+  planned_target_pct?: number | null;
+  planned_entry_reason?: string | null;
+  setup_tags?: string[];
+  mistake_tags?: string[];
+}): Promise<JournalEntry> {
+  try {
+    const res = await api.patch<ApiResponse<JournalEntry>>(`/journal/${id}/behavior`, payload);
+    return unwrapApiResponse(res, 'Failed to update trade behavior.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to update trade behavior.');
+  }
+}
+
+export async function getJournalBehaviorRules(): Promise<JournalBehaviorRule[]> {
+  try {
+    const res = await api.get<ApiResponse<JournalBehaviorRule[]>>('/journal/behavior-rules');
+    return unwrapApiResponse(res, 'Failed to load behavior rules.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load behavior rules.');
+  }
+}
+
+export async function createJournalBehaviorRule(payload: Omit<JournalBehaviorRule, 'id' | 'created_at' | 'updated_at'>): Promise<JournalBehaviorRule> {
+  try {
+    const res = await api.post<ApiResponse<JournalBehaviorRule>>('/journal/behavior-rules', payload);
+    return unwrapApiResponse(res, 'Failed to create behavior rule.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to create behavior rule.');
+  }
+}
+
+export async function updateJournalBehaviorRule(id: number, payload: Partial<Omit<JournalBehaviorRule, 'id' | 'created_at' | 'updated_at'>>): Promise<JournalBehaviorRule> {
+  try {
+    const res = await api.patch<ApiResponse<JournalBehaviorRule>>(`/journal/behavior-rules/${id}`, payload);
+    return unwrapApiResponse(res, 'Failed to update behavior rule.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to update behavior rule.');
+  }
+}
+
+export async function deleteJournalBehaviorRule(id: number): Promise<boolean> {
+  try {
+    const res = await api.delete<ApiResponse<null>>(`/journal/behavior-rules/${id}`);
+    ensureApiSuccess(res, 'Failed to delete behavior rule.');
+    return true;
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to delete behavior rule.');
   }
 }
 

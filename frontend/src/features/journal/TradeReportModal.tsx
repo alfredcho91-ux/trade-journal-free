@@ -4,7 +4,7 @@ import { AlertCircle, Loader2, X } from 'lucide-react';
 
 import { getTradeReport } from '../../api/client';
 import { getDeepcoinTradeMarkers, getExchangeExecutions } from '../../api/journal';
-import PositionReviewChart from '../../components/PositionReviewChart';
+import PositionReviewChart, { type TradePathChartMarker } from '../../components/PositionReviewChart';
 import TradeIndicatorCharts from '../../components/TradeIndicatorCharts';
 import TradeReferenceSummary from '../../components/TradeReferenceSummary';
 import type { JournalEntry, TradeExcursion, TradeIndicatorTimeframeSnapshot, TradeQualityItem } from '../../types';
@@ -12,6 +12,13 @@ import { resolvePositionEntryTime } from '../../utils/positionReview';
 import { ENTRY_REASON_FIELDS, formatEntryReason } from './entryReasons';
 import { isClosedPosition } from './journalEntries';
 import { tradeOutcomeAssessment } from './tradeOutcomeAssessment';
+import TradeBehaviorEditor from './TradeBehaviorEditor';
+import {
+  buildTradePathSummary,
+  tradePathMarkerLabel,
+  tradePathSummaryText,
+  type TradePathInterval,
+} from './tradePathSummary';
 import TradeExitReview from '../tradeAnalysis/TradeExitReviewPanel';
 import {
   flattenSnapshotMetrics,
@@ -52,6 +59,22 @@ const REPORT_INTERVAL_MS: Record<ReportInterval, number> = {
   '1M': 2_592_000_000,
 };
 
+const PATH_INTERVAL_MS: Record<TradePathInterval, number> = {
+  '5m': 300_000,
+  '15m': 900_000,
+};
+const MAX_PATH_CANDLES = 950;
+
+function pathRequestConfig(entryMs: number, exitMs: number): { interval: TradePathInterval; limit: number } | null {
+  if (!Number.isFinite(entryMs) || !Number.isFinite(exitMs) || exitMs < entryMs) return null;
+  const duration = exitMs - entryMs;
+  for (const interval of ['5m', '15m'] as const) {
+    const durationBars = Math.ceil(duration / PATH_INTERVAL_MS[interval]);
+    if (durationBars <= MAX_PATH_CANDLES) return { interval, limit: Math.max(100, durationBars + 12) };
+  }
+  return null;
+}
+
 function coinFromJournalSymbol(symbol?: string): string | null {
   const value = symbol?.toUpperCase().replace(/[-_]/g, '/');
   return value?.split('/')[0] || null;
@@ -71,6 +94,7 @@ export default function TradeReportModal({
   qualityItem,
   isKo,
   onClose,
+  onBehaviorUpdated,
 }: {
   entry: JournalEntry;
   allEntries: JournalEntry[];
@@ -79,6 +103,7 @@ export default function TradeReportModal({
   qualityItem?: TradeQualityItem | null;
   isKo: boolean;
   onClose: () => void;
+  onBehaviorUpdated?: () => void;
 }) {
   const [reviewMoment, setReviewMoment] = useState<ReviewMoment>('entry');
   const [reportInterval, setReportInterval] = useState<ReportInterval>('4h');
@@ -161,6 +186,10 @@ export default function TradeReportModal({
     ? 1000
     : Math.min(1000, Math.max(300, durationBars + 120));
   const profileCandleLimit = reportInterval === '5m' ? 1000 : 300;
+  const pathConfig = useMemo(
+    () => pathRequestConfig(entryMs, exitMs),
+    [entryMs, exitMs],
+  );
   const endTime = Number.isFinite(exitMs)
     ? exitMs + REPORT_INTERVAL_MS[reportInterval] * 60
     : undefined;
@@ -182,6 +211,49 @@ export default function TradeReportModal({
     enabled: Boolean(coin && endTime),
     staleTime: 5 * 60_000,
   });
+  const pathQuery = useQuery({
+    queryKey: ['trade-path-summary', coin, pathConfig?.interval, pathConfig?.limit, entryMs, exitMs, entry.entry_price, entry.exit_price, entry.direction],
+    queryFn: () => getTradeReport(coin as string, pathConfig!.interval, {
+      limit: pathConfig!.limit,
+      end_time: exitMs + PATH_INTERVAL_MS[pathConfig!.interval] * 2,
+      as_of: entryMs,
+      profile_candles: 100,
+    }),
+    enabled: Boolean(
+      isClosedPosition(entry)
+      && coin
+      && pathConfig
+      && (entry.direction === 'Long' || entry.direction === 'Short')
+      && entry.entry_price != null && Number.isFinite(entry.entry_price)
+      && entry.exit_price != null && Number.isFinite(entry.exit_price),
+    ),
+    staleTime: 5 * 60_000,
+  });
+  const pathSummary = useMemo(() => {
+    if (
+      pathConfig == null || pathQuery.data == null || resolvedEntryTime.datetime == null || entry.datetime == null
+      || entry.entry_price == null || entry.exit_price == null || (entry.direction !== 'Long' && entry.direction !== 'Short')
+    ) return null;
+    return buildTradePathSummary({
+      candles: pathQuery.data.candles,
+      direction: entry.direction,
+      entry_time: resolvedEntryTime.datetime,
+      exit_time: entry.datetime,
+      entry_price: entry.entry_price,
+      exit_price: entry.exit_price,
+      interval: pathConfig.interval,
+    });
+  }, [entry.datetime, entry.direction, entry.entry_price, entry.exit_price, pathConfig, pathQuery.data, resolvedEntryTime.datetime]);
+  const pathEvents = useMemo<TradePathChartMarker[]>(() => {
+    if (pathSummary == null || (entry.direction !== 'Long' && entry.direction !== 'Short')) return [];
+    const favorablePosition = entry.direction === 'Long' ? 'aboveBar' : 'belowBar';
+    const adversePosition = entry.direction === 'Long' ? 'belowBar' : 'aboveBar';
+    return [
+      pathSummary.favorable_peak == null ? null : { datetime: new Date(pathSummary.favorable_peak.time).toISOString(), price: pathSummary.favorable_peak.price, label: tradePathMarkerLabel(pathSummary.favorable_peak, isKo), position: favorablePosition, color: '#a78bfa' },
+      pathSummary.entry_retest == null ? null : { datetime: new Date(pathSummary.entry_retest.time).toISOString(), price: pathSummary.entry_retest.price, label: tradePathMarkerLabel(pathSummary.entry_retest, isKo), position: 'inBar', color: '#fbbf24' },
+      pathSummary.adverse_peak_after_retest == null ? null : { datetime: new Date(pathSummary.adverse_peak_after_retest.time).toISOString(), price: pathSummary.adverse_peak_after_retest.price, label: tradePathMarkerLabel(pathSummary.adverse_peak_after_retest, isKo), position: adversePosition, color: '#f97316' },
+    ].filter((event): event is TradePathChartMarker => event != null);
+  }, [entry.direction, isKo, pathSummary]);
   const tradeMarkerQuery = useQuery({
     queryKey: [
       'deepcoin-trade-markers',
@@ -414,6 +486,9 @@ export default function TradeReportModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {isClosedPosition(entry) && (
+            <TradeBehaviorEditor entry={entry} isKo={isKo} onUpdated={onBehaviorUpdated} />
+          )}
+          {isClosedPosition(entry) && (
             <div className="mb-5 border-y border-dark-700 py-3">
               <div className="text-[11px] font-semibold text-dark-500">
                 {isKo ? '결과 판정' : 'Outcome Assessment'}
@@ -437,6 +512,22 @@ export default function TradeReportModal({
                     ? isKo ? 'MFE/MAE 판정 계산 중' : 'Calculating MFE/MAE assessment'
                     : isKo ? '판정 데이터 없음' : 'Assessment unavailable'}
                 </div>
+              )}
+            </div>
+          )}
+
+          {isClosedPosition(entry) && (
+            <div className="mb-5 border-y border-dark-700 py-3">
+              <div className="text-[11px] font-semibold text-dark-500">{isKo ? '보유 중 가격 흐름' : 'Price Path While Held'}</div>
+              {pathQuery.isLoading ? (
+                <div className="mt-1 flex items-center gap-2 text-xs text-dark-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />{isKo ? '실제 보유 구간의 가격 흐름을 계산 중' : 'Calculating the price path during the position'}</div>
+              ) : pathSummary ? (
+                <>
+                  <div className="mt-1 text-sm font-semibold leading-6 text-dark-200">{tradePathSummaryText(pathSummary, isKo)}</div>
+                  <div className="mt-1 text-[10px] text-dark-500">{pathSummary.interval} {isKo ? '봉의 실제 보유 구간만 사용 · 봉 고가/저가 기준 · 수수료·펀딩 제외' : 'bars fully inside the holding period · high/low basis · excludes fees and funding'}{pathQuery.data?.source ? ` · ${pathQuery.data.source}` : ''}</div>
+                </>
+              ) : (
+                <div className="mt-1 text-xs text-dark-500">{pathConfig == null ? (isKo ? '보유 시간이 길거나 진입·청산 시간이 없어 가격 흐름을 계산하지 못했습니다.' : 'The holding period is too long or entry/exit timing is unavailable.') : pathQuery.isError ? (isKo ? '가격 흐름 데이터를 불러오지 못했습니다.' : 'Could not load the price path data.') : (isKo ? '가격 흐름 분석 데이터 없음' : 'Price path analysis unavailable')}</div>
               )}
             </div>
           )}
@@ -551,6 +642,7 @@ export default function TradeReportModal({
                   exitPrice={entry.exit_price}
                   entryEvents={splitEntryMarkers}
                   takeProfitEvents={tradeMarkerQuery.data?.take_profits || exchangeExitMarkers}
+                  pathEvents={pathEvents}
                 />
                 {tradeMarkerQuery.data?.warnings.map((warning) => (
                   <div key={warning} className="border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">

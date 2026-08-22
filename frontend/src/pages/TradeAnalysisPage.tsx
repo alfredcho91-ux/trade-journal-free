@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, ChevronDown, Loader2, SlidersHorizontal } from 'lucide-react';
 
-import { getJournal, getJournalQualityAnalysis } from '../api/client';
+import { getJournal, getJournalBehaviorAnalysis, getJournalQualityAnalysis } from '../api/client';
 import {
   ANALYSIS_TIMEFRAMES,
   buildAnalyzedTrades,
@@ -30,6 +30,8 @@ import MajorFailureAnalysis from '../features/tradeAnalysis/MajorFailureAnalysis
 import MajorSuccessAnalysis from '../features/tradeAnalysis/MajorSuccessAnalysis';
 import OngoingPositionFills from '../features/tradeAnalysis/OngoingPositionFills';
 import TradeExitReviewList from '../features/tradeAnalysis/TradeExitReviewList';
+import TradeBehaviorAnalysis, { BehaviorLeakSummary } from '../features/tradeAnalysis/TradeBehaviorAnalysis';
+import TradeReportModal from '../features/journal/TradeReportModal';
 import { journalQueryKeys } from '../features/journal/journalQueryKeys';
 import { useLanguage, useSelectedCoin } from '../store/useStore';
 
@@ -130,6 +132,7 @@ export default function TradeAnalysisPage() {
   const [timeframe, setTimeframe] = useState<AnalysisTimeframe>('4h');
   const [minimumAbsNetReturnPct, setMinimumAbsNetReturnPct] = useState(0);
   const [periodError, setPeriodError] = useState<string | null>(null);
+  const [selectedBehaviorTradeId, setSelectedBehaviorTradeId] = useState<number | null>(null);
 
   const lastDailyRefreshDateRef = useRef(toDateInputValue(new Date()));
   const { data: entries = [], isLoading: isJournalLoading, isError: isJournalError, refetch: refetchJournal } = useQuery({
@@ -151,7 +154,21 @@ export default function TradeAnalysisPage() {
     retryDelay: (attempt) => Math.min(1_500 * 2 ** attempt, 6_000),
     refetchOnWindowFocus: true,
   });
+  const behaviorQuery = useQuery({
+    queryKey: journalQueryKeys.behaviorAnalysis(startTime, endTime, minimumAbsNetReturnPct),
+    queryFn: () => getJournalBehaviorAnalysis({
+      start_time: startTime as number,
+      end_time: endTime as number,
+      min_abs_net_return_pct: minimumAbsNetReturnPct,
+    }),
+    enabled: startTime != null && endTime != null && startTime <= endTime,
+    staleTime: 30 * 60_000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1_500 * 2 ** attempt, 6_000),
+    refetchOnWindowFocus: true,
+  });
   const { refetch: refetchQualityAnalysis } = qualityQuery;
+  const { refetch: refetchBehaviorAnalysis } = behaviorQuery;
   const refreshDaily = useCallback(() => {
     lastDailyRefreshDateRef.current = toDateInputValue(new Date());
     void refetchJournal();
@@ -161,8 +178,9 @@ export default function TradeAnalysisPage() {
       setPeriod(next);
     } else {
       void refetchQualityAnalysis();
+      void refetchBehaviorAnalysis();
     }
-  }, [refetchJournal, refetchQualityAnalysis, usesRollingPeriod]);
+  }, [refetchBehaviorAnalysis, refetchJournal, refetchQualityAnalysis, usesRollingPeriod]);
 
   useEffect(() => {
     let timeoutId: number;
@@ -219,6 +237,9 @@ export default function TradeAnalysisPage() {
   const winnerConditions = conditions.filter((item) => item.difference > 0).slice(0, 5);
   const loserConditions = conditions.filter((item) => item.difference < 0).slice(0, 5);
   const snapshotCoverage = selectedTrades.filter((trade) => trade.entrySnapshot?.timeframes?.[timeframe]?.status === 'complete').length;
+  const selectedBehaviorEntry = selectedBehaviorTradeId == null
+    ? undefined
+    : entries.find((entry) => entry.id === selectedBehaviorTradeId);
 
   const applyRollingPeriod = () => {
     const next = buildJournalPeriod(DEFAULT_ANALYSIS_DAYS);
@@ -376,6 +397,27 @@ export default function TradeAnalysisPage() {
         onRetry={() => void qualityQuery.refetch()}
       />}
 
+      {activeSection === 'overview' && <BehaviorLeakSummary
+        data={behaviorQuery.data}
+        isLoading={behaviorQuery.isLoading}
+        isError={behaviorQuery.isError}
+        isKo={isKo}
+        onRetry={() => void behaviorQuery.refetch()}
+        onSelectTrade={setSelectedBehaviorTradeId}
+      />}
+
+      {activeSection === 'entry' && <TradeBehaviorAnalysis
+        data={behaviorQuery.data}
+        isLoading={behaviorQuery.isLoading}
+        isError={behaviorQuery.isError}
+        startTime={startTime as number}
+        endTime={endTime as number}
+        minimumAbsNetReturnPct={minimumAbsNetReturnPct}
+        isKo={isKo}
+        onRetry={() => void behaviorQuery.refetch()}
+        onSelectTrade={setSelectedBehaviorTradeId}
+      />}
+
       {activeSection === 'entry' && <details className="group">
         <summary className="flex cursor-pointer list-none items-center justify-between border border-dark-700 bg-dark-900/30 px-4 py-3 hover:bg-dark-900/50">
           <span className="flex items-center gap-2 text-sm font-medium text-dark-200"><SlidersHorizontal className="h-4 w-4 text-primary-300" />{isKo ? '승패·보조지표 상세' : 'Win/Loss and Indicator Details'}</span>
@@ -453,6 +495,18 @@ export default function TradeAnalysisPage() {
           )}
         </div>
       </details>}
+      {selectedBehaviorEntry && <TradeReportModal
+        entry={selectedBehaviorEntry}
+        allEntries={entries}
+        qualityItem={qualityQuery.data?.items.find((item) => item.journal_id === selectedBehaviorEntry.id)}
+        isKo={isKo}
+        onClose={() => setSelectedBehaviorTradeId(null)}
+        onBehaviorUpdated={() => {
+          void refetchJournal();
+          void refetchQualityAnalysis();
+          void refetchBehaviorAnalysis();
+        }}
+      />}
     </div>
   );
 }

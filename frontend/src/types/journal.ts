@@ -589,6 +589,12 @@ export interface JournalEntry {
   emotion?: string;
   tags?: string;
   mistakes?: string;
+  planned_stop_pct?: number | null;
+  planned_target_pct?: number | null;
+  planned_entry_reason?: string | null;
+  setup_tags?: string[];
+  mistake_tags?: string[];
+  plan_recorded_at?: string | null;
   notes?: string;
   source?: string;
   external_id?: string;
@@ -603,4 +609,94 @@ export interface JournalEntry {
   pnl_calculation_version?: number;
   indicator_snapshot?: TradeIndicatorSnapshot;
   created_at?: string;
+}
+
+export type JournalBehaviorRuleType = 'trend_direction_forbid' | 'max_stop_pct' | 'min_rr' | 'no_scale_in';
+
+export interface JournalBehaviorRule {
+  id: number;
+  name: string;
+  rule_type: JournalBehaviorRuleType;
+  parameters: Record<string, unknown>;
+  is_enabled: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface JournalBehaviorCondition {
+  type: 'direction' | 'symbol' | 'regime' | 'setup' | 'mistake' | 'rule_status';
+  value: string;
+  label?: string;
+}
+
+export interface JournalBehaviorStats {
+  trade_count: number;
+  pnl_sample_count: number;
+  total_pnl?: number | null;
+  win_rate_pct?: number | null;
+  average_r?: number | null;
+  r_sample_count: number;
+  profit_factor?: number | null;
+  average_favorable_move_pct?: number | null;
+  average_adverse_move_pct?: number | null;
+  max_drawdown_pnl?: number | null;
+}
+
+export interface JournalBehaviorPlan {
+  planned_stop_pct?: number | null;
+  planned_target_pct?: number | null;
+  planned_rr?: number | null;
+  planned_entry_reason?: string | null;
+  plan_recorded_at?: string | null;
+  recording_phase: 'before_entry' | 'during_trade' | 'after_exit' | 'unknown';
+  eligible_for_exit_plan_review: boolean;
+  eligible_for_entry_rule_review: boolean;
+  actual_price_return_pct?: number | null;
+  maximum_favorable_move_pct?: number | null;
+  maximum_adverse_move_pct?: number | null;
+  stop_status: 'not_recorded' | 'within_exit' | 'touched_not_executed' | 'overrun';
+  target_status: 'not_recorded' | 'met' | 'gave_back_after_hit' | 'closed_before_target' | 'not_reached';
+}
+
+export interface JournalBehaviorItem {
+  journal_id: number;
+  symbol?: string | null;
+  direction?: string | null;
+  entry_datetime?: string | null;
+  exit_datetime?: string | null;
+  realized_pnl?: number | null;
+  r_multiple?: number | null;
+  mfe_pct?: number | null;
+  mae_pct?: number | null;
+  post_exit_opportunity_pct?: number | null;
+  profit_give_up_pct?: number | null;
+  quality_class?: string | null;
+  market_regime: { id?: string; alignment?: string; trade_bias?: string };
+  trend_states: Record<string, { direction?: string; status?: string }>;
+  setup_tags: string[];
+  mistake_tags: string[];
+  plan: JournalBehaviorPlan;
+  rule_checks: Array<{ rule_id?: number; rule_name?: string; rule_type?: string; status: 'compliant' | 'violation' | 'unknown'; reason: string }>;
+  rule_status: 'not_configured' | 'compliant' | 'violation' | 'unknown';
+  issues: Array<{ id: string; label: string }>;
+}
+
+export interface JournalBehaviorAnalysisData {
+  items: JournalBehaviorItem[];
+  summary: JournalBehaviorStats;
+  plan_summary: { recorded_trade_count: number; full_plan_trade_count: number; stop_overrun_count: number; target_giveback_count: number; post_exit_record_count: number };
+  setup_stats: Array<{ tag: string; evidence_journal_ids: number[] } & JournalBehaviorStats>;
+  mistake_stats: Array<{ tag: string; evidence_journal_ids: number[] } & JournalBehaviorStats>;
+  biggest_leaks: Array<{ id: string; label: string; loss_impact_pnl: number; loss_impact_r?: number | null; opportunity_sample_count: number; average_opportunity_pct?: number | null; conclusion_eligible: boolean; evidence_journal_ids: number[] } & JournalBehaviorStats>;
+  rule_status_stats: Record<'compliant' | 'violation' | 'unknown', JournalBehaviorStats>;
+  rules: JournalBehaviorRule[];
+  condition_options: JournalBehaviorCondition[];
+  minimum_conclusion_sample: number;
+  coverage: { selected_closed_positions: number; behavior_items: number; missing_quality_items: number };
+  warnings: string[];
+}
+
+export interface JournalBehaviorComparisonData {
+  left: { condition: JournalBehaviorCondition; stats: JournalBehaviorStats; evidence_journal_ids: number[] };
+  right: { condition: JournalBehaviorCondition; stats: JournalBehaviorStats; evidence_journal_ids: number[] };
 }
