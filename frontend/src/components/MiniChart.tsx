@@ -56,7 +56,7 @@ export function MiniChart({ t, v, volume, yRefs = [], height = 80, markers }: Mi
         x2={toX(index + 1)}
         y2={toY(value)}
         stroke={segmentTone(index + 1)}
-        strokeWidth="1"
+        strokeWidth="2"
         vectorEffect="non-scaling-stroke"
       />,
     ];

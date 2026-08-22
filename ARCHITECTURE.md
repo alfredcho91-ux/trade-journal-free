@@ -38,6 +38,7 @@ FastAPI
 - `frontend/src/features/journal/`: 기간·행 표시 수익률·리포트 조립. 기간 집계 공식은 백엔드를 사용
 - `frontend/src/features/tradeAnalysis/`: 브라우저 집계와 분석 UI
 - `frontend/src/components/PositionReviewChart.tsx`: Lightweight Charts 가격 차트
+- `frontend/src/components/MiniChart.tsx`: 거래 리포트 RSI·지표 미니 차트. RSI 값 선은 기준선보다 굵은 SVG stroke로 표시해 축소 화면 가독성을 유지
 
 ## 백엔드
 
