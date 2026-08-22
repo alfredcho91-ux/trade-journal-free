@@ -7,7 +7,6 @@ from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
-import requests
 
 from backend.modules.journal import repository
 from backend.modules.journal.trade_selection import (
@@ -20,7 +19,7 @@ from backend.modules.journal.trade_selection import (
     position_batches,
     timestamp_ms,
 )
-from backend.utils.data_service import fetch_binance_klines
+from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
 _timestamp_ms = timestamp_ms
 _finite_float = finite_float
@@ -101,18 +100,18 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
             if requested > MAX_EXCURSION_CANDLES:
                 warnings.append(f"{symbol}: a position exceeds the {MAX_EXCURSION_CANDLES}-candle analysis limit")
             requested = min(MAX_EXCURSION_CANDLES, max(1, requested))
-            try:
-                candles = fetch_binance_klines(
-                    symbol.replace("/", ""),
-                    EXCURSION_INTERVAL,
-                    total_candles=requested,
-                    end_time=latest_close,
-                )
-            except (ValueError, requests.RequestException):
-                candles = None
+            candles = load_journal_ohlcv(
+                symbol,
+                EXCURSION_INTERVAL,
+                total_candles=requested,
+                end_time=latest_close,
+                exchange=batch[0].get("exchange"),
+            )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: market data unavailable")
                 continue
+            if is_market_fallback(candles):
+                warnings.append(f"{symbol} {EXCURSION_INTERVAL}: {market_source(candles)}")
 
             for position in batch:
                 result = _trade_excursion(position, candles)

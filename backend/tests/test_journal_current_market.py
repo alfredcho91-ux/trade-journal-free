@@ -31,18 +31,18 @@ def test_current_market_snapshot_reuses_completed_indicator_and_trend_paths(monk
     as_of_ms = 1_800_000_000_000
     requested = []
 
-    def load_candles(symbol, interval, total_candles, end_time):
-        requested.append((symbol, interval, total_candles, end_time))
+    def load_candles(symbol, interval, *, total_candles, end_time, exchange=None):
+        requested.append((symbol, interval, total_candles, end_time, exchange))
         return _frame(as_of_ms, total_candles)
 
-    monkeypatch.setattr(current_market, "fetch_binance_klines", load_candles)
+    monkeypatch.setattr(current_market, "load_journal_ohlcv", load_candles)
 
     result = current_market.build_current_market_snapshot("btc", as_of_ms)
 
     payload = result["data"]
     assert result["success"] is True
     assert payload["symbol"] == "BTC/USDT"
-    assert set(payload["indicator_snapshot"]["timeframes"]) == {"1h", "2h", "4h", "1d"}
+    assert set(payload["indicator_snapshot"]["timeframes"]) == {"1h", "2h", "4h", "1d", "1w", "1M"}
     assert all(
         value["status"] == "complete"
         for value in payload["indicator_snapshot"]["timeframes"].values()
@@ -50,5 +50,5 @@ def test_current_market_snapshot_reuses_completed_indicator_and_trend_paths(monk
     assert set(payload["trend_states"]) == {"1w", "1d", "4h"}
     assert all(value["status"] == "complete" for value in payload["trend_states"].values())
     assert payload["market_regime"]["trade_bias"] == "up"
-    assert {item[1] for item in requested} == {"1h", "2h", "4h", "1d", "1w"}
-    assert all(item[0] == "BTCUSDT" and item[3] == as_of_ms for item in requested)
+    assert {item[1] for item in requested} == {"1h", "2h", "4h", "1d", "1w", "1M"}
+    assert all(item[0] == "BTC/USDT" and item[3] == as_of_ms and item[4] == "Deepcoin" for item in requested)

@@ -27,7 +27,7 @@ from backend.config.settings import PROJECT_ROOT
 from backend.utils.cache import DataCache
 
 MIN_REGIME_CONCLUSION_SAMPLE = 5
-QUALITY_ANALYSIS_CACHE_VERSION = 4
+QUALITY_ANALYSIS_CACHE_VERSION = 5
 QUALITY_ANALYSIS_CACHE = DataCache(
     ttl_minutes=10,
     cache_dir=str(PROJECT_ROOT / ".cache" / "journal_quality"),
@@ -59,6 +59,7 @@ def _performance_stats(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     late_count = sum(item.get("quality_class") == "good_entry_late_exit" for item in items)
     return {
         "trade_count": len(items),
+        "total_pnl": float(sum(pnls)) if pnls else None,
         "win_rate_pct": len(wins) / len(pnls) * 100 if pnls else None,
         "average_r": float(np.mean(r_values)) if r_values else None,
         "r_sample_count": len(r_values),
@@ -193,6 +194,7 @@ def _regime_stats(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _analysis_bundle(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Aggregate one comparable slice while preserving shared quality thresholds."""
+    performance = _performance_stats(items)
     regimes = _regime_stats(items)
     eligible_regimes = [
         item
@@ -223,7 +225,7 @@ def _analysis_bundle(items: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     return {
         "summary": {
-            "trade_count": len(items),
+            **performance,
             "best_regime": max(eligible_regimes, key=lambda item: item["average_pnl"]) if eligible_regimes else None,
             "worst_regime": min(eligible_regimes, key=lambda item: item["average_pnl"]) if eligible_regimes else None,
             "quality_counts": quality_counts,
@@ -348,8 +350,14 @@ def _run_uncached_quality_analysis(
             by_symbol[str(position["symbol"])].append(position)
 
     items: List[Dict[str, Any]] = []
+    market_data_sources = set()
     for symbol, symbol_positions in by_symbol.items():
         frames = load_market_frames(symbol, symbol_positions, warnings)
+        market_data_sources.update(
+            str(frame.attrs.get("market_source"))
+            for frame in frames.values()
+            if frame is not None and frame.attrs.get("market_source")
+        )
         for position in symbol_positions:
             item = _build_item(position, frames, excursions.get(int(position["id"])))
             if item is not None:
@@ -368,6 +376,7 @@ def _run_uncached_quality_analysis(
             "entry_trend_intervals": list(TREND_INTERVALS),
             "exit_interval": "4h",
             "minimum_regime_conclusion_sample": MIN_REGIME_CONCLUSION_SAMPLE,
+            "market_data_sources": sorted(market_data_sources),
             **analysis,
             "thresholds": thresholds,
             "direction_stats": _group_stats(items, "direction"),

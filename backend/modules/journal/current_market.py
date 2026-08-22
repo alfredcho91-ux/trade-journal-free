@@ -20,7 +20,7 @@ from backend.modules.journal.quality_market import (
     prepare_quality_frame,
 )
 from backend.utils.cache import DataCache
-from backend.utils.data_service import fetch_binance_klines
+from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 from backend.utils.error_handler import DataLoadError
 from backend.utils.validators import validate_coin_symbol
 
@@ -33,6 +33,8 @@ CURRENT_FRAME_CANDLES = {
     "2h": 245,
     "4h": 245,
     "1d": 245,
+    "1w": 205,
+    "1M": 125,
     "1w": 205,
 }
 
@@ -55,13 +57,12 @@ def _timestamp_to_iso(timestamp_ms: int) -> str:
 
 def _current_hour_key(coin: str, as_of_ms: int) -> str:
     hour = pd.Timestamp(as_of_ms, unit="ms", tz="UTC").floor("h").isoformat()
-    return f"v1:{coin}:{hour}"
+    return f"v2:{coin}:{hour}"
 
 
 def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
     """Build indicators and trend states using candles completed before ``as_of_ms``."""
     normalized_coin = validate_coin_symbol(coin)
-    symbol = f"{normalized_coin}USDT"
     event = _CurrentMarketEvent(
         external_id=f"current:{normalized_coin}:{as_of_ms}",
         timestamp_ms=as_of_ms,
@@ -71,11 +72,12 @@ def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
     warnings = []
 
     for interval, candle_count in CURRENT_FRAME_CANDLES.items():
-        frame = fetch_binance_klines(
-            symbol,
+        frame = load_journal_ohlcv(
+            f"{normalized_coin}/USDT",
             interval,
             total_candles=candle_count,
             end_time=as_of_ms,
+            exchange="Deepcoin",
         )
         if frame is None or frame.empty:
             warnings.append(f"{normalized_coin} {interval}: market data unavailable")
@@ -133,7 +135,8 @@ def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
             "as_of": _timestamp_to_iso(as_of_ms),
             "indicator_snapshot": {
                 "version": 1,
-                "market_source": "binance_spot_klines",
+                "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
+                "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
                 "reference": "last_completed_candle_before_current_hour_refresh",
                 "event_type": "current_market",
                 "event_time": _timestamp_to_iso(as_of_ms),

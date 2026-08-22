@@ -9,7 +9,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-import requests
 
 from backend.config.settings import PROJECT_ROOT
 from backend.modules.journal import repository
@@ -23,7 +22,7 @@ from backend.modules.journal.quality_analysis import run_journal_quality_analysi
 from backend.modules.journal.quality_market import finite, finite_timestamp
 from backend.modules.journal.trade_selection import closed_positions, position_batches
 from backend.utils.cache import DataCache
-from backend.utils.data_service import fetch_binance_klines
+from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
 FIXED_STOP_CANDIDATES = tuple(round(value * 0.25, 2) for value in range(1, 17))
 ATR_STOP_MULTIPLIERS = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
@@ -362,18 +361,18 @@ def _build_path_items(
             if requested > MAX_EXCURSION_CANDLES:
                 warnings.append(f"{symbol}: a position exceeds the {MAX_EXCURSION_CANDLES}-candle optimization limit")
             requested = min(MAX_EXCURSION_CANDLES, max(1, requested))
-            try:
-                candles = fetch_binance_klines(
-                    symbol.replace("/", ""),
-                    EXCURSION_INTERVAL,
-                    total_candles=requested,
-                    end_time=latest,
-                )
-            except (ValueError, requests.RequestException):
-                candles = None
+            candles = load_journal_ohlcv(
+                symbol,
+                EXCURSION_INTERVAL,
+                total_candles=requested,
+                end_time=latest,
+                exchange=batch[0].get("exchange"),
+            )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: stop optimization market data unavailable")
                 continue
+            if is_market_fallback(candles):
+                warnings.append(f"{symbol} {EXCURSION_INTERVAL}: {market_source(candles)}")
             for position in batch:
                 entry_time = finite_timestamp(position.get("entry_datetime"))
                 exit_time = finite_timestamp(position.get("datetime"))

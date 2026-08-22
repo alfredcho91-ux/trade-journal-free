@@ -7,11 +7,12 @@ import { getDeepcoinTradeMarkers, getExchangeExecutions } from '../../api/journa
 import PositionReviewChart from '../../components/PositionReviewChart';
 import TradeIndicatorCharts from '../../components/TradeIndicatorCharts';
 import TradeReferenceSummary from '../../components/TradeReferenceSummary';
-import type { JournalEntry, TradeExcursion, TradeIndicatorTimeframeSnapshot } from '../../types';
+import type { JournalEntry, TradeExcursion, TradeIndicatorTimeframeSnapshot, TradeQualityItem } from '../../types';
 import { resolvePositionEntryTime } from '../../utils/positionReview';
 import { ENTRY_REASON_FIELDS, formatEntryReason } from './entryReasons';
 import { isClosedPosition } from './journalEntries';
 import { tradeOutcomeAssessment } from './tradeOutcomeAssessment';
+import TradeExitReview from '../tradeAnalysis/TradeExitReviewPanel';
 import {
   flattenSnapshotMetrics,
   formatSnapshotNumber,
@@ -26,10 +27,19 @@ function formatSignedNumber(value: number | null | undefined, maximumFractionDig
   return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits })}`;
 }
 
-type ReviewMoment = 'entry' | 'exit';
-type ReportInterval = '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '1d';
+function macdCrossLabel(
+  value: 'golden' | 'dead' | 'none' | undefined,
+  isKo: boolean,
+): string {
+  if (value === 'golden') return isKo ? '골든크로스' : 'Golden cross';
+  if (value === 'dead') return isKo ? '데드크로스' : 'Dead cross';
+  return '-';
+}
 
-const REPORT_INTERVALS: ReportInterval[] = ['5m', '15m', '30m', '1h', '2h', '4h', '1d'];
+type ReviewMoment = 'entry' | 'exit';
+type ReportInterval = '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '1d' | '1w' | '1M';
+
+const REPORT_INTERVALS: ReportInterval[] = ['5m', '15m', '30m', '1h', '2h', '4h', '1d', '1w', '1M'];
 const REPORT_INTERVAL_MS: Record<ReportInterval, number> = {
   '5m': 300_000,
   '15m': 900_000,
@@ -38,6 +48,8 @@ const REPORT_INTERVAL_MS: Record<ReportInterval, number> = {
   '2h': 7_200_000,
   '4h': 14_400_000,
   '1d': 86_400_000,
+  '1w': 604_800_000,
+  '1M': 2_592_000_000,
 };
 
 function coinFromJournalSymbol(symbol?: string): string | null {
@@ -56,6 +68,7 @@ export default function TradeReportModal({
   allEntries,
   excursion,
   excursionLoading = false,
+  qualityItem,
   isKo,
   onClose,
 }: {
@@ -63,6 +76,7 @@ export default function TradeReportModal({
   allEntries: JournalEntry[];
   excursion?: TradeExcursion | null;
   excursionLoading?: boolean;
+  qualityItem?: TradeQualityItem | null;
   isKo: boolean;
   onClose: () => void;
 }) {
@@ -200,6 +214,30 @@ export default function TradeReportModal({
 
   const knownDefinitions: SnapshotIndicatorDefinition[] = [
     {
+      id: 'rsi',
+      label: 'RSI',
+      group: isKo ? '모멘텀' : 'Momentum',
+      hasData: (snapshot) => snapshot.rsi != null,
+    },
+    {
+      id: 'macd',
+      label: 'MACD',
+      group: isKo ? '모멘텀' : 'Momentum',
+      hasData: (snapshot) => snapshot.macd?.line != null || snapshot.macd?.signal != null,
+    },
+    {
+      id: 'stoch_rsi',
+      label: 'Stoch RSI',
+      group: isKo ? '모멘텀' : 'Momentum',
+      hasData: (snapshot) => snapshot.stoch_rsi?.k != null || snapshot.stoch_rsi?.d != null,
+    },
+    {
+      id: 'slow_stochastic',
+      label: 'Slow Stochastic',
+      group: isKo ? '모멘텀' : 'Momentum',
+      hasData: (snapshot) => Object.values(snapshot.slow_stochastic || {}).some((value) => value.k != null || value.d != null),
+    },
+    {
       id: 'vpvr',
       label: 'VPVR',
       group: isKo ? '가격·거래량' : 'Price · Volume',
@@ -251,6 +289,33 @@ export default function TradeReportModal({
     snapshot: TradeIndicatorTimeframeSnapshot,
     indicatorId: string,
   ): Array<{ label: string; value: string }> => {
+    if (indicatorId === 'rsi') {
+      return [{ label: 'RSI', value: formatSnapshotNumber(snapshot.rsi) }];
+    }
+
+    if (indicatorId === 'macd') {
+      return [
+        { label: isKo ? 'MACD 선' : 'MACD line', value: formatSnapshotNumber(snapshot.macd?.line, 6) },
+        { label: isKo ? '신호선' : 'Signal line', value: formatSnapshotNumber(snapshot.macd?.signal, 6) },
+        { label: isKo ? '막대' : 'Histogram', value: formatSnapshotNumber(snapshot.macd?.histogram, 6) },
+        { label: isKo ? '교차 신호' : 'Cross', value: macdCrossLabel(snapshot.macd?.cross, isKo) },
+      ];
+    }
+
+    if (indicatorId === 'stoch_rsi') {
+      return [
+        { label: 'K', value: formatSnapshotNumber(snapshot.stoch_rsi?.k) },
+        { label: 'D', value: formatSnapshotNumber(snapshot.stoch_rsi?.d) },
+      ];
+    }
+
+    if (indicatorId === 'slow_stochastic') {
+      return Object.entries(snapshot.slow_stochastic || {}).flatMap(([setting, value]) => [
+        { label: `${setting} K`, value: formatSnapshotNumber(value.k) },
+        { label: `${setting} D`, value: formatSnapshotNumber(value.d) },
+      ]);
+    }
+
     if (indicatorId === 'vpvr') {
       const vpvr = snapshot.vpvr;
       return [
@@ -279,7 +344,7 @@ export default function TradeReportModal({
     return [];
   };
 
-  const intervals = Object.keys(timeframes);
+  const intervals = REPORT_INTERVALS.filter((interval) => timeframes[interval] != null);
   const metricLabels = selectedIndicator
     ? Array.from(
         new Set(
@@ -376,6 +441,8 @@ export default function TradeReportModal({
             </div>
           )}
 
+          {isClosedPosition(entry) && <TradeExitReview qualityItem={qualityItem} isKo={isKo} />}
+
           <div className="mb-5 grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -431,7 +498,7 @@ export default function TradeReportModal({
 
           <section className="mb-5">
             <div className="mb-3 flex flex-col gap-3 border-y border-dark-700 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="grid grid-cols-4 border border-dark-700 bg-dark-900/40 p-1 sm:grid-cols-7">
+              <div className="grid grid-cols-3 border border-dark-700 bg-dark-900/40 p-1 sm:grid-cols-9">
                 {REPORT_INTERVALS.map((interval) => (
                   <button
                     key={interval}
@@ -514,7 +581,10 @@ export default function TradeReportModal({
             <>
               <div className="mb-4">
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-xs font-semibold text-white">{momentTitle}</div>
+                  <div>
+                    <div className="text-xs font-semibold text-white">{momentTitle}{isKo ? ' 당시 시장 상황' : ' market snapshot'}</div>
+                    <div className="mt-0.5 text-[10px] text-dark-500">{isKo ? '주봉·월봉은 해당 시점 전에 마감된 봉과 보조지표 기준입니다.' : 'Weekly and monthly values use candles completed before the selected moment.'}</div>
+                  </div>
                   {reviewMoment === 'entry' && isClosedPosition(entry) && matchedEntry && (
                     <span className={`text-[10px] ${resolvedEntryTime.confidence === 'estimated' ? 'text-amber-300' : 'text-dark-500'}`}>
                       {resolvedEntryTime.confidence === 'estimated'

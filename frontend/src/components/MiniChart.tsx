@@ -18,12 +18,6 @@ export function MiniChart({ t, v, volume, yRefs = [], height = 80, markers }: Mi
   const h = height - 16;
   const toX = (index: number) => (index / (v.length - 1 || 1)) * 100;
   const toY = (value: number) => 12 + (max - value) / range * (h - 8);
-  const pts = v.map((val, i) => {
-    const x = toX(i);
-    const y = typeof val === 'number' && !Number.isNaN(val) ? toY(val) : 12 + h / 2;
-    return `${x},${y}`;
-  }).join(' ');
-
   const volumeByTime = new Map<string, number>();
   if (volume) {
     const length = Math.min(volume.t.length, volume.v.length);
@@ -36,44 +30,42 @@ export function MiniChart({ t, v, volume, yRefs = [], height = 80, markers }: Mi
   }
 
   const volumeValues = t.map((time) => volumeByTime.get(time));
-  const rsiVolumeMarkers = volume
-    ? v.flatMap((value, index) => {
-      if (typeof value !== 'number' || Number.isNaN(value) || (value > 30 && value < 70)) return [];
+  const segmentTone = (index: number): string => {
+    const value = v[index];
+    const currentVolume = volumeValues[index];
+    if (typeof value !== 'number' || Number.isNaN(value) || currentVolume == null) return '#3b82f6';
+    const recentVolumes = volumeValues
+      .slice(Math.max(0, index - 19), index + 1)
+      .filter((item): item is number => item != null);
+    const averageVolume = recentVolumes.reduce((sum, item) => sum + item, 0) / recentVolumes.length;
+    const hasVolumeExpansion = averageVolume > 0 && currentVolume / averageVolume >= 1.5;
+    if (!hasVolumeExpansion) return '#3b82f6';
+    if (value >= 70) return '#22c55e';
+    if (value <= 30) return '#ef4444';
+    return '#3b82f6';
+  };
 
-      const currentVolume = volumeValues[index];
-      if (currentVolume == null) return [];
-
-      const recentVolumes = volumeValues
-        .slice(Math.max(0, index - 19), index + 1)
-        .filter((item): item is number => item != null);
-      const averageVolume = recentVolumes.reduce((sum, item) => sum + item, 0) / recentVolumes.length;
-      const volumeRatio = averageVolume > 0 ? currentVolume / averageVolume : 1;
-      const intensity = Math.max(0.35, Math.min(1, 0.35 + volumeRatio * 0.3));
-      const radius = Math.max(1.2, Math.min(3.6, 1.2 + volumeRatio));
-      const isOverbought = value >= 70;
-
-      return (
-        <circle
-          key={`${t[index]}-${value}`}
-          cx={toX(index)}
-          cy={toY(value)}
-          r={radius}
-          fill={isOverbought ? '#f87171' : '#34d399'}
-          fillOpacity={intensity}
-          stroke={isOverbought ? '#fecaca' : '#a7f3d0'}
-          strokeWidth="0.45"
-        >
-          <title>{`${isOverbought ? 'Overbought' : 'Oversold'} · ${volumeRatio.toFixed(1)}x volume`}</title>
-        </circle>
-      );
-    })
-    : [];
+  const rsiSegments = v.slice(1).flatMap((value, index) => {
+    const previous = v[index];
+    if (typeof previous !== 'number' || Number.isNaN(previous) || typeof value !== 'number' || Number.isNaN(value)) return [];
+    return [
+      <line
+        key={`${t[index]}-${t[index + 1]}`}
+        x1={toX(index)}
+        y1={toY(previous)}
+        x2={toX(index + 1)}
+        y2={toY(value)}
+        stroke={segmentTone(index + 1)}
+        strokeWidth="1"
+        vectorEffect="non-scaling-stroke"
+      />,
+    ];
+  });
 
   return (
     <div className="relative w-full" style={{ height: `${height}px` }}>
       <svg viewBox={`0 0 100 ${height}`} className="block h-full w-full" preserveAspectRatio="none">
-        {rsiVolumeMarkers}
-        <polyline fill="none" stroke="#3b82f6" strokeWidth="1" vectorEffect="non-scaling-stroke" points={pts} />
+        {rsiSegments}
         {yRefs.map((r, i) => {
           const y = toY(r);
           const isMid = r === 50;

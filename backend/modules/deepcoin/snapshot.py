@@ -10,16 +10,18 @@ import pandas as pd
 import requests
 
 from backend.config.settings import TIMEFRAME_TO_MINUTES
-from backend.utils.data_service import fetch_binance_klines
+from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 from core.indicator_pipelines import compute_trend_judgment_indicators
 from core.vpvr import calculate_vpvr
 
-SNAPSHOT_INTERVALS = ("1h", "2h", "4h", "1d")
+SNAPSHOT_INTERVALS = ("1h", "2h", "4h", "1d", "1w", "1M")
 SNAPSHOT_VPVR_CANDLES = {
     "1h": 240,
     "2h": 240,
     "4h": 240,
     "1d": 180,
+    "1w": 180,
+    "1M": 120,
 }
 SNAPSHOT_BIN_COUNT = 24
 
@@ -135,11 +137,12 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
         latest_event_time = max(item.timestamp_ms for item in coin_events)
         for interval in SNAPSHOT_INTERVALS:
             try:
-                frames[interval] = fetch_binance_klines(
-                    f"{coin}USDT",
+                frames[interval] = load_journal_ohlcv(
+                    f"{coin}/USDT",
                     interval,
                     total_candles=snapshot_candle_count(coin_events, interval),
                     end_time=latest_event_time,
+                    exchange="Deepcoin",
                 )
             except (ValueError, requests.RequestException):
                 frames[interval] = None
@@ -158,7 +161,8 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
 
             snapshots[event.external_id] = {
                 "version": 1,
-                "market_source": "binance_spot_klines",
+                "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
+                "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
                 "reference": f"last_completed_candle_before_deepcoin_{event.event_type}",
                 "event_type": event.event_type,
                 "event_time": _timestamp_to_iso(event.timestamp_ms),

@@ -1,10 +1,10 @@
 # Architecture
 
-Trade Journal Free는 저널과 거래 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
+Trade Journal Free는 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
 ```text
 Browser / Desktop WebView
-  -> React: /journal, /trade-analysis
+  -> React: /journal, /trade-analysis, /risk-lab
   -> same-origin /api
 FastAPI
   -> journal: 저장·기간 성과·MFE/MAE·품질·손절·SL/TP 분석
@@ -27,13 +27,14 @@ FastAPI
 
 ## 프런트엔드
 
-- `frontend/src/App.tsx`: 두 화면, 코인 선택, 언어 전환만 제공
+- `frontend/src/App.tsx`: 데스크톱 왼쪽 메뉴의 세 화면, 코인 선택, 언어 전환 제공
 - `frontend/src/pages/JournalPage.tsx`: 저널 쿼리·기간·모달 상태 조립
 - `frontend/src/features/journal/ExchangeConnectionModal.tsx`: API 입력과 연결 검증 UI
 - `frontend/src/features/journal/JournalSyncPanel.tsx`: 거래소·상품·종목 선택 UI
 - `frontend/src/features/journal/useExchangeConnection.ts`: 거래소 연결 상태·저장·삭제 mutation
 - `frontend/src/features/journal/exchangeQueryKeys.ts`: 거래소 상태 React Query key
-- `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·품질·손절·SL/TP 분석
+- `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·진입·청산 품질 분석
+- `frontend/src/pages/RiskLabPage.tsx`: 손절·Stop 최적화·N% Stop·SL/TP 분석
 - `frontend/src/features/journal/`: 기간·행 표시 수익률·리포트 조립. 기간 집계 공식은 백엔드를 사용
 - `frontend/src/features/tradeAnalysis/`: 브라우저 집계와 분석 UI
 - `frontend/src/components/PositionReviewChart.tsx`: Lightweight Charts 가격 차트
@@ -54,7 +55,7 @@ FastAPI
 - `backend/modules/deepcoin/`: Deepcoin 고유 서명 API와 TP/SL 주문 상세
 - `backend/modules/journal/`: SQLite 저장소와 분석 서비스
 - `backend/modules/indicators/`: 거래 리포트와 시장 지표
-- `backend/utils/data_service.py`: Binance Spot OHLCV 조회와 캐시
+- `backend/modules/journal/market_data.py`: Deepcoin SWAP 우선 OHLCV와 Binance Spot fallback 출처 표기
 - `core/indicator_pipelines.py`: 공용 지표 계산
 - `core/vpvr.py`: kline 기반 Volume Profile
 

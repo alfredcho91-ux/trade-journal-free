@@ -47,7 +47,7 @@ def _candles():
 
 def test_excursions_use_only_candles_fully_inside_trade(monkeypatch, isolated_store):
     position = _add_position()
-    monkeypatch.setattr("backend.modules.journal.analysis.fetch_binance_klines", lambda *args, **kwargs: _candles())
+    monkeypatch.setattr("backend.modules.journal.analysis.load_journal_ohlcv", lambda *args, **kwargs: _candles())
 
     result = run_journal_excursions_service(1, 2_000_000_000_000)
     item = result["data"]["items"][0]
@@ -70,7 +70,7 @@ def test_short_adverse_excursion_is_classified_as_poor_entry(monkeypatch, isolat
     frame = _candles()
     frame.loc[:, "high"] = [150.0, 106.0, 105.0]
     frame.loc[:, "low"] = [50.0, 99.0, 100.0]
-    monkeypatch.setattr("backend.modules.journal.analysis.fetch_binance_klines", lambda *args, **kwargs: frame)
+    monkeypatch.setattr("backend.modules.journal.analysis.load_journal_ohlcv", lambda *args, **kwargs: frame)
 
     item = run_journal_excursions_service(1, 2_000_000_000_000)["data"]["items"][0]
 
@@ -82,7 +82,7 @@ def test_short_adverse_excursion_is_classified_as_poor_entry(monkeypatch, isolat
 
 def test_excursions_filter_by_close_time(monkeypatch, isolated_store):
     _add_position()
-    monkeypatch.setattr("backend.modules.journal.analysis.fetch_binance_klines", lambda *args, **kwargs: _candles())
+    monkeypatch.setattr("backend.modules.journal.analysis.load_journal_ohlcv", lambda *args, **kwargs: _candles())
 
     result = run_journal_excursions_service(1, 2)
 

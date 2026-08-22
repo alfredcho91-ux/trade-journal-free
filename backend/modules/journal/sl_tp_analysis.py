@@ -9,14 +9,13 @@ from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import pandas as pd
-import requests
 
 from backend.config.settings import PROJECT_ROOT
 from backend.modules.journal import repository
 from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.trade_selection import closed_positions, finite_float, position_batches, timestamp_ms
 from backend.utils.cache import DataCache
-from backend.utils.data_service import fetch_binance_klines
+from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
 PATH_INTERVAL = "5m"
 PATH_INTERVAL_MS = 5 * 60 * 1000
@@ -416,18 +415,18 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
             if requested > MAX_PATH_CANDLES:
                 warnings.append(f"{symbol}: a position exceeds the {MAX_PATH_CANDLES}-candle SL/TP limit")
             requested = min(MAX_PATH_CANDLES, max(1, requested))
-            try:
-                candles = fetch_binance_klines(
-                    symbol.replace("/", ""),
-                    PATH_INTERVAL,
-                    total_candles=requested,
-                    end_time=latest,
-                )
-            except (ValueError, requests.RequestException):
-                candles = None
+            candles = load_journal_ohlcv(
+                symbol,
+                PATH_INTERVAL,
+                total_candles=requested,
+                end_time=latest,
+                exchange=batch[0].get("exchange"),
+            )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: SL/TP market data unavailable")
                 continue
+            if is_market_fallback(candles):
+                warnings.append(f"{symbol} {PATH_INTERVAL}: {market_source(candles)}")
 
             for position in batch:
                 entry_time = timestamp_ms(position.get("entry_datetime"))

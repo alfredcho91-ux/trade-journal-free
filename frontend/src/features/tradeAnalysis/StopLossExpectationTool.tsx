@@ -57,7 +57,7 @@ export default function StopLossExpectationTool({ trades, direction, isLoading, 
             {isKo ? 'N% 손절 기대값 계산기' : 'N% Stop Expectancy Calculator'}
           </h2>
           <p className="mt-1 text-[11px] text-dark-500">
-            {isKo ? '선택 기간의 실제 15분봉 MAE 경로를 같은 손절 기준으로 다시 계산' : 'Replays the selected trades with one stop threshold using actual 15m MAE'}
+            {isKo ? '선택한 기간의 거래를 15분봉 가격 흐름으로 다시 살펴보고, 같은 손절 기준을 적용해 계산합니다' : 'Rechecks the selected trades using 15m price movements and the same stop-loss rule'}
           </p>
         </div>
         <span className="font-mono text-xs text-dark-400">{direction.toUpperCase()} · n={result.tradeCount}</span>

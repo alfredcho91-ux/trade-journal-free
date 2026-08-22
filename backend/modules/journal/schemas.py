@@ -208,6 +208,11 @@ class QualityGroup(QualityPerformance):
 
 class QualitySummary(BaseModel):
     trade_count: int
+    total_pnl: Optional[float] = None
+    win_rate_pct: Optional[float] = None
+    average_r: Optional[float] = None
+    average_pnl: Optional[float] = None
+    profit_factor: Optional[float] = None
     best_regime: Optional[QualityRegime] = None
     worst_regime: Optional[QualityRegime] = None
     quality_counts: Dict[str, int]
@@ -255,6 +260,7 @@ class JournalQualityData(QualityAnalysisSlice):
     entry_trend_intervals: List[Literal["1w", "1d", "4h"]]
     exit_interval: Literal["4h"]
     minimum_regime_conclusion_sample: int
+    market_data_sources: List[str] = Field(default_factory=list)
     thresholds: Dict[str, Optional[Union[float, str]]]
     direction_stats: List[QualityGroup]
     direction_breakdown: Dict[str, QualityAnalysisSlice]
