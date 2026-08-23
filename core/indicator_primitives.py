@@ -175,7 +175,7 @@ def compute_vwap_rolling(df: pd.DataFrame, window: int = 20) -> pd.Series:
 
 def compute_vwap_anchored(
     df: pd.DataFrame,
-    anchor: Literal["day", "week", "month", "quarter", "year"],
+    anchor: Literal["day", "week", "month"],
     timestamp_column: str = "open_dt",
 ) -> Optional[float]:
     """Calculate HLC3 VWAP from the selected UTC calendar anchor to the latest bar."""
@@ -197,11 +197,6 @@ def compute_vwap_anchored(
         start = reference.normalize() - pd.Timedelta(days=reference.weekday())
     elif anchor == "month":
         start = reference.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    elif anchor == "quarter":
-        quarter_month = ((reference.month - 1) // 3) * 3 + 1
-        start = reference.replace(month=quarter_month, day=1, hour=0, minute=0, second=0, microsecond=0)
-    elif anchor == "year":
-        start = reference.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
     else:
         raise ValueError(f"Unsupported VWAP anchor: {anchor}")
     period = df.loc[timestamps >= start]

@@ -4,7 +4,7 @@ import pytest
 from backend.modules.indicators import service as indicator_service
 from backend.modules.indicators.reverse_calc import get_indicator_projections
 from backend.modules.indicators.service import run_indicator_projection_service
-from core.indicator_primitives import compute_rsi_wilder, compute_vwap_anchored, compute_vwap_rolling
+from core.indicator_primitives import compute_rsi_wilder, compute_vwap_anchored
 
 
 def _trade_report_frame(rows: int = 560) -> pd.DataFrame:
@@ -59,7 +59,6 @@ def test_trade_report_uses_only_completed_candles_before_reference(monkeypatch):
     assert payload["vpvr"]["candle_count"] == 300
     assert payload["vpvr"]["current_price"] == pytest.approx(frame.iloc[-61]["close"])
     assert payload["vwaps"]["vwaps"][0]["anchor"] == "day"
-    assert payload["vwaps"]["rolling_vwaps"][0]["window"] == 200
     assert payload["latest"]["rsi"] is not None
     assert len(payload["series"]["macd"]["v"]) > 0
     assert all(timestamp.endswith("Z") for timestamp in payload["series"]["macd"]["t"])
@@ -81,7 +80,6 @@ def test_indicator_projections_include_the_current_wilder_rsi():
 
     assert result["current_rsi"] == pytest.approx(compute_rsi_wilder(closes, 14).iloc[-1])
     assert result["vwaps"] == [{"anchor": "day", "value": pytest.approx(compute_vwap_anchored(frame, "day"))}]
-    assert result["rolling_vwaps"] == []
 
 
 def test_indicator_projection_service_uses_binance_klines(monkeypatch):
@@ -105,16 +103,10 @@ def test_indicator_projection_service_uses_binance_klines(monkeypatch):
 
     result = run_indicator_projection_service("BTCUSDT", "2h")
 
-    assert requested == {"symbol": "BTCUSDT", "interval": "2h", "total_candles": 201}
+    assert requested == {"symbol": "BTCUSDT", "interval": "2h", "total_candles": 101}
     assert result["current_price"] == 318.0
     assert result["current_rsi"] == pytest.approx(100.0)
     assert [vwap["anchor"] for vwap in result["vwaps"]] == ["day", "week"]
-    assert result["rolling_vwaps"] == [
-        {
-            "window": 200,
-            "value": pytest.approx(compute_vwap_rolling(frame.iloc[:-1], 200).iloc[-1]),
-        }
-    ]
 
 
 def test_indicator_projection_service_uses_monthly_vwap_for_daily_candles(monkeypatch):
@@ -143,8 +135,5 @@ def test_indicator_projection_service_uses_monthly_vwap_for_daily_candles(monkey
 
     completed = frame.iloc[:-1]
     assert requested == {"symbol": "BTCUSDT", "interval": "1d", "total_candles": 367}
-    assert [vwap["anchor"] for vwap in result["vwaps"]] == ["month", "quarter", "year"]
+    assert [vwap["anchor"] for vwap in result["vwaps"]] == ["month"]
     assert result["vwaps"][0]["value"] == pytest.approx(compute_vwap_anchored(completed, "month"))
-    assert result["vwaps"][1]["value"] == pytest.approx(compute_vwap_anchored(completed, "quarter"))
-    assert result["vwaps"][2]["value"] == pytest.approx(compute_vwap_anchored(completed, "year"))
-    assert result["rolling_vwaps"] == []

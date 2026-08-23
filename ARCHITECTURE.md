@@ -89,4 +89,4 @@ FastAPI
 
 ## VWAP 분석 경계
 
-`core/indicator_primitives.py`의 `compute_vwap_standard_deviation`이 월간 Anchored VWAP, HLC3, Length 14 표준편차, 실제 사용 완료봉 수(`sample_count`), 현재 σ 위치와 1σ·2σ·3σ 밴드를 공통 계산합니다. 선택된 거래 리포트 타임프레임별로 독립 계산하며, 응답의 `vwap_deviation`에 VWAP·표준편차·표본 수·σ·구간·밴드를 담습니다. 종료 포지션의 진입 분석 스냅샷은 종료 시각이 아니라 알려진 최초 진입 시각(`cTime`)까지의 완료봉만 사용합니다. 기존 VPVR와 롤링 VWAP 계약은 변경하지 않습니다.
+`core/indicator_primitives.py`의 `compute_vwap_standard_deviation`이 월간 Anchored VWAP, HLC3, Length 14 표준편차, 실제 사용 완료봉 수(`sample_count`), 현재 σ 위치와 1σ·2σ·3σ 밴드를 공통 계산합니다. 선택된 거래 리포트 타임프레임별로 독립 계산하며, 응답의 `vwap_deviation`에 VWAP·표준편차·표본 수·σ·구간·밴드를 담습니다. 별도 기간 VWAP도 일간·주간·월간 앵커만 반환합니다. 종료 포지션의 진입 분석 스냅샷은 종료 시각이 아니라 알려진 최초 진입 시각(`cTime`)까지의 완료봉만 사용합니다. VPVR는 별도 거래량 프로파일 계약으로 유지합니다.

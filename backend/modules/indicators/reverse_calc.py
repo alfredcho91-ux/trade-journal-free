@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Any, Dict, Literal, Optional, Sequence
 
-from core.indicator_primitives import compute_rsi_wilder, compute_vwap_anchored, compute_vwap_rolling, compute_vwap_standard_deviation
+from core.indicator_primitives import compute_rsi_wilder, compute_vwap_anchored, compute_vwap_standard_deviation
 
 def calculate_required_price_for_rsi(closes: pd.Series, target_rsi: float = 30.0, period: int = 14) -> Optional[float]:
     """
@@ -49,8 +49,7 @@ def calculate_required_price_for_rsi(closes: pd.Series, target_rsi: float = 30.0
 
 def get_indicator_projections(
     df: pd.DataFrame,
-    vwap_anchors: Sequence[Literal["day", "week", "month", "quarter", "year"]] = ("day",),
-    rolling_vwap_windows: Sequence[int] = (),
+    vwap_anchors: Sequence[Literal["day", "week", "month"]] = ("day",),
 ) -> Dict[str, Any]:
     """
     데이터프레임을 받아 주요 지표들의 도달 예상 가격을 반환합니다.
@@ -65,17 +64,6 @@ def get_indicator_projections(
     vwaps = [
         {"anchor": anchor, "value": compute_vwap_anchored(df, anchor=anchor)}
         for anchor in vwap_anchors
-    ]
-    rolling_vwaps = [
-        {
-            "window": window,
-            "value": (
-                None
-                if pd.isna(value := compute_vwap_rolling(df, window=window).iloc[-1])
-                else float(value)
-            ),
-        }
-        for window in rolling_vwap_windows
     ]
     vwap_deviation = compute_vwap_standard_deviation(df, anchor="month", length=14)
 
@@ -94,7 +82,6 @@ def get_indicator_projections(
         "current_price": current_price,
         "current_rsi": current_rsi,
         "vwaps": vwaps,
-        "rolling_vwaps": rolling_vwaps,
         "vwap_deviation": vwap_deviation,
         "projections": sanitized_projections
     }

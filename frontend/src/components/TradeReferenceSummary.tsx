@@ -13,8 +13,6 @@ const ANCHOR_LABELS: Record<string, { ko: string; en: string }> = {
   day: { ko: '일간 VWAP', en: 'Daily VWAP' },
   week: { ko: '주간 VWAP', en: 'Weekly VWAP' },
   month: { ko: '월간 VWAP', en: 'Monthly VWAP' },
-  quarter: { ko: '분기 VWAP', en: 'Quarterly VWAP' },
-  year: { ko: '연간 VWAP', en: 'Yearly VWAP' },
 };
 
 export default function TradeReferenceSummary({
@@ -51,13 +49,6 @@ export default function TradeReferenceSummary({
     metrics.push({
       label: ANCHOR_LABELS[anchor]?.[isKo ? 'ko' : 'en'] || `${anchor} VWAP`,
       value: formatPrice(value),
-    });
-  });
-  vwaps?.rolling_vwaps.forEach(({ window, value }) => {
-    metrics.push({
-      label: isKo ? `${window}봉 VWAP` : `${window}-bar VWAP`,
-      value: formatPrice(value),
-      tone: 'text-bull',
     });
   });
   const gapPct = vwapDeviation && vwapDeviation.vwap !== 0

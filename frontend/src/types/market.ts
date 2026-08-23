@@ -105,11 +105,7 @@ export interface TradeReportVWAPData {
   current_price: number;
   current_rsi: number | null;
   vwaps: Array<{
-    anchor: 'day' | 'week' | 'month' | 'quarter' | 'year';
-    value: number | null;
-  }>;
-  rolling_vwaps: Array<{
-    window: number;
+    anchor: 'day' | 'week' | 'month';
     value: number | null;
   }>;
   vwap_deviation?: AnchoredVwapDeviation | null;

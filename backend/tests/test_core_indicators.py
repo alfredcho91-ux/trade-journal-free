@@ -108,7 +108,6 @@ def test_compute_trend_indicators_contains_expected_columns():
         "stoch_rsi_5k",
         "stoch_rsi_10k",
         "stoch_rsi_20k",
-        "vwap_20",
         "supertrend",
         "supertrend_dir",
     ]

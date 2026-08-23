@@ -125,12 +125,7 @@ class IndicatorProjectionValues(BaseModel):
 
 
 class IndicatorProjectionVWAP(BaseModel):
-    anchor: Literal["day", "week", "month", "quarter", "year"]
-    value: Optional[float] = None
-
-
-class IndicatorProjectionRollingVWAP(BaseModel):
-    window: int
+    anchor: Literal["day", "week", "month"]
     value: Optional[float] = None
 
 
@@ -151,7 +146,6 @@ class IndicatorProjectionPayload(BaseModel):
     current_price: float
     current_rsi: Optional[float] = None
     vwaps: List[IndicatorProjectionVWAP]
-    rolling_vwaps: List[IndicatorProjectionRollingVWAP]
     vwap_deviation: Optional[IndicatorProjectionVWAPDeviation] = None
     projections: IndicatorProjectionValues
 
@@ -166,7 +160,6 @@ class IndicatorProjectionEnvelope(BaseModel):
 __all__ = [
     "IndicatorProjectionEnvelope",
     "IndicatorProjectionPayload",
-    "IndicatorProjectionRollingVWAP",
     "IndicatorProjectionValues",
     "IndicatorProjectionVWAP",
     "IndicatorProjectionVWAPDeviation",

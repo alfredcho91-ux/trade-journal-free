@@ -15,7 +15,6 @@ from .indicator_primitives import (
     compute_slow_stochastic,
     compute_stoch_rsi,
     compute_supertrend,
-    compute_vwap_rolling,
     set_bollinger_columns,
 )
 
@@ -324,7 +323,6 @@ def compute_trend_indicators(df: pd.DataFrame) -> pd.DataFrame:
     Quant Lab 등 공용 분석용 지표 계산 (레거시 함수명 유지)
     - 3 Stoch RSI (5-3-3, 10-6-6, 20-12-12)
     - RSI(14), MACD, ADX (compute_live_indicators)
-    - VWAP(롤링 20)
     - Supertrend(10, 3)
     """
     d = compute_live_indicators(df.copy())
@@ -335,7 +333,6 @@ def compute_trend_indicators(df: pd.DataFrame) -> pd.DataFrame:
     d["stoch_rsi_5k"], d["stoch_rsi_5d"] = sk1, sd1
     d["stoch_rsi_10k"], d["stoch_rsi_10d"] = sk2, sd2
     d["stoch_rsi_20k"], d["stoch_rsi_20d"] = sk3, sd3
-    d["vwap_20"] = compute_vwap_rolling(d, 20)
     st, dr = compute_supertrend(d, 10, 3.0)
     d["supertrend"] = st
     d["supertrend_dir"] = dr
@@ -355,7 +352,6 @@ def compute_trend_judgment_indicators(df: pd.DataFrame) -> pd.DataFrame:
     추세판단 페이지 전용 지표 계산
     - 3 Slow Stochastic (20-12-12, 10-6-6, 5-3-3)
     - RSI(14), MACD, ADX (compute_live_indicators)
-    - VWAP(롤링 20)
     - Supertrend(10, 3)
     """
     d = compute_live_indicators(df.copy())
@@ -377,7 +373,6 @@ def compute_trend_judgment_indicators(df: pd.DataFrame) -> pd.DataFrame:
     )
     d["stoch_rsi_k"], d["stoch_rsi_d"] = stoch_rsi_k, stoch_rsi_d
 
-    d["vwap_20"] = compute_vwap_rolling(d, 20)
     st, dr = compute_supertrend(d, 10, 3.0)
     d["supertrend"] = st
     d["supertrend_dir"] = dr

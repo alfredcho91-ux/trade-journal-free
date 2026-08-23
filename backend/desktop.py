@@ -29,6 +29,23 @@ def _open_browser(url: str) -> None:
     webbrowser.open(url, new=1)
 
 
+def _server_config(port: int) -> uvicorn.Config:
+    """Create a server config safe for PyInstaller windowed builds.
+
+    Windows windowed executables can start without stdout or stderr. Uvicorn's
+    default logging setup probes those streams for terminal color support.
+    """
+    return uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        access_log=False,
+        log_config=None,
+        use_colors=False,
+    )
+
+
 def main() -> None:
     """Start the local-only server and open it in the user's default browser."""
     with DesktopInstance(APP_DATA_DIR) as instance:
@@ -45,13 +62,7 @@ def main() -> None:
         if os.getenv("TRADE_JOURNAL_NO_BROWSER", "").strip().lower() not in {"1", "true", "yes"}:
             threading.Thread(target=_open_browser, args=(url,), daemon=True).start()
 
-        config = uvicorn.Config(
-            app,
-            host="127.0.0.1",
-            port=port,
-            log_level="warning",
-            access_log=False,
-        )
+        config = _server_config(port)
         try:
             uvicorn.Server(config).run()
         except KeyboardInterrupt:
