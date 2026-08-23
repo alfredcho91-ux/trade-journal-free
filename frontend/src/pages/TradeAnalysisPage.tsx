@@ -115,7 +115,7 @@ function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; is
     <section className="border border-dark-700 bg-dark-900/20 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">진입 후 최대 이익·손실 움직임</h2>
+          <h2 className="text-sm font-semibold text-white">진입 후 가격 흐름</h2>
           <div className="mt-0.5 text-[11px] text-dark-500">
             {isKo ? '15분봉 · 진입 이후부터 종료 이전까지 완전히 포함된 봉 기준' : '15m candles fully contained between entry and exit'}
           </div>
@@ -124,8 +124,8 @@ function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; is
       </div>
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-y border-dark-800 py-2 text-xs text-dark-400">
         <span>{isKo ? '계산 가능' : 'Available'} <strong className="font-mono text-dark-200">{withExcursion.length}/{trades.length}</strong></span>
-        <span>{isKo ? '최대 이익 움직임' : 'MFE'} <strong className="font-mono text-bull">+{plain(qualitySummary.averageMfePct)}%</strong></span>
-        <span>{isKo ? '최대 손실 움직임' : 'MAE'} <strong className="font-mono text-bear">-{plain(qualitySummary.averageMaePct)}%</strong></span>
+        <span>{isKo ? '진입 후 최대 유리폭' : 'Maximum favorable move'} <strong className="font-mono text-bull">+{plain(qualitySummary.averageMfePct)}%</strong></span>
+        <span>{isKo ? '진입 후 최대 불리폭' : 'Maximum adverse move'} <strong className="font-mono text-bear">-{plain(qualitySummary.averageMaePct)}%</strong></span>
         <span>{isKo ? '종료 아쉬움' : 'Exit Miss'} <strong className="font-mono text-amber-300">{goodEntryPoorExit.length}</strong></span>
         <span>{isKo ? '진입 불리' : 'Poor Entry'} <strong className="font-mono text-bear">{poorEntry.length}</strong></span>
       </div>
@@ -136,8 +136,8 @@ function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; is
               <tr className="border-b border-dark-700">
                 <th className="py-2 text-left">{isKo ? '거래' : 'Trade'}</th>
                 <th className="py-2 text-left">{isKo ? '분류' : 'Class'}</th>
-                <th className="py-2 text-right">{isKo ? '최대 이익' : 'MFE'}</th>
-                <th className="py-2 text-right">{isKo ? '최대 손실' : 'MAE'}</th>
+                <th className="py-2 text-right">{isKo ? '최대 유리폭' : 'Max favorable'}</th>
+                <th className="py-2 text-right">{isKo ? '최대 불리폭' : 'Max adverse'}</th>
                 <th className="py-2 text-right">{isKo ? '실제 가격 움직임' : 'Realized Move'}</th>
               </tr>
             </thead>
@@ -388,22 +388,6 @@ export default function TradeAnalysisPage() {
 
       <OngoingPositionFills entries={ongoingEntries} isKo={isKo} />
 
-      {activeSection === 'entry' && <CurrentMarketSimilarityPanel
-        coin={selectedCoin}
-        allEntries={entries}
-        trades={allTrades}
-        qualityItems={qualityQuery.data?.items || []}
-        isHistoryLoading={isJournalLoading || qualityQuery.isLoading}
-        isKo={isKo}
-      />}
-
-      {activeSection === 'entry' && <TradeExitReviewList
-        entries={entries}
-        qualityItems={qualityQuery.data?.items || []}
-        direction={direction}
-        isKo={isKo}
-      />}
-
       <section className="flex flex-wrap items-center justify-between gap-3 border-y border-dark-700 py-2">
         <div><div className="text-xs font-medium text-dark-200">{isKo ? '분석 방향' : 'Analysis Direction'}</div><div className="mt-0.5 text-[10px] text-dark-500">{isKo ? '아래 진입·청산 품질 통계에 적용' : 'Applied to entry and exit quality statistics'}</div></div>
         <div className="grid min-w-64 grid-cols-2 border border-dark-700 bg-dark-900/35 p-1" aria-label={isKo ? '거래 방향' : 'Trade direction'}>
@@ -419,22 +403,6 @@ export default function TradeAnalysisPage() {
           ))}
         </div>
       </section>
-
-      {activeSection === 'overview' && <MajorSuccessAnalysis
-        trades={allTrades}
-        qualityItems={qualityQuery.data?.items || []}
-        allEntries={entries}
-        isLoading={isJournalLoading || qualityQuery.isLoading}
-        isKo={isKo}
-      />}
-
-      {activeSection === 'overview' && <MajorFailureAnalysis
-        trades={allTrades}
-        qualityItems={qualityQuery.data?.items || []}
-        allEntries={entries}
-        isLoading={isJournalLoading || qualityQuery.isLoading}
-        isKo={isKo}
-      />}
 
       {activeSection === 'overview' && <TradeQualityAnalysis
         data={qualityQuery.data}
@@ -457,37 +425,67 @@ export default function TradeAnalysisPage() {
         onSelectTrade={setSelectedBehaviorTradeId}
       />}
 
-      {activeSection === 'entry' && <TradeQualityAnalysis
-        data={qualityQuery.data}
-        isLoading={qualityQuery.isLoading || qualityQuery.isFetching}
-        isError={qualityQuery.isError}
-        isKo={isKo}
-        direction={direction}
-        onRetry={() => void qualityQuery.refetch()}
-        showOverview={false}
-        onSelectRegime={setSelectedRegimeId}
-      />}
-
-      {activeSection === 'entry' && selectedRegimeId && <TradeEvidenceList
-        regimeId={selectedRegimeId}
-        direction={direction}
+      {activeSection === 'overview' && <MajorSuccessAnalysis
+        trades={allTrades}
         qualityItems={qualityQuery.data?.items || []}
-        entries={entries}
+        allEntries={entries}
+        isLoading={isJournalLoading || qualityQuery.isLoading}
         isKo={isKo}
-        onClose={() => setSelectedRegimeId(null)}
       />}
 
-      {activeSection === 'entry' && <TradeBehaviorAnalysis
-        data={behaviorQuery.data}
-        isLoading={behaviorQuery.isLoading}
-        isError={behaviorQuery.isError}
-        startTime={startTime as number}
-        endTime={endTime as number}
-        minimumAbsNetReturnPct={minimumAbsNetReturnPct}
+      {activeSection === 'overview' && <MajorFailureAnalysis
+        trades={allTrades}
+        qualityItems={qualityQuery.data?.items || []}
+        allEntries={entries}
+        isLoading={isJournalLoading || qualityQuery.isLoading}
         isKo={isKo}
-        onRetry={() => void behaviorQuery.refetch()}
-        onSelectTrade={setSelectedBehaviorTradeId}
       />}
+
+      {activeSection === 'entry' && <>
+        <CurrentMarketSimilarityPanel
+          coin={selectedCoin}
+          allEntries={entries}
+          trades={allTrades}
+          qualityItems={qualityQuery.data?.items || []}
+          isHistoryLoading={isJournalLoading || qualityQuery.isLoading}
+          isKo={isKo}
+        />
+        <TradeQualityAnalysis
+          data={qualityQuery.data}
+          isLoading={qualityQuery.isLoading || qualityQuery.isFetching}
+          isError={qualityQuery.isError}
+          isKo={isKo}
+          direction={direction}
+          onRetry={() => void qualityQuery.refetch()}
+          showOverview={false}
+          onSelectRegime={setSelectedRegimeId}
+        />
+        <TradeExitReviewList
+          entries={entries}
+          qualityItems={qualityQuery.data?.items || []}
+          direction={direction}
+          isKo={isKo}
+        />
+        {selectedRegimeId && <TradeEvidenceList
+          regimeId={selectedRegimeId}
+          direction={direction}
+          qualityItems={qualityQuery.data?.items || []}
+          entries={entries}
+          isKo={isKo}
+          onClose={() => setSelectedRegimeId(null)}
+        />}
+        <TradeBehaviorAnalysis
+          data={behaviorQuery.data}
+          isLoading={behaviorQuery.isLoading}
+          isError={behaviorQuery.isError}
+          startTime={startTime as number}
+          endTime={endTime as number}
+          minimumAbsNetReturnPct={minimumAbsNetReturnPct}
+          isKo={isKo}
+          onRetry={() => void behaviorQuery.refetch()}
+          onSelectTrade={setSelectedBehaviorTradeId}
+        />
+      </>}
 
       {activeSection === 'entry' && <details className="group" open>
         <summary className="flex cursor-pointer list-none items-center justify-between border border-dark-700 bg-dark-900/30 px-4 py-3 hover:bg-dark-900/50">

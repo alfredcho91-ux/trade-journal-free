@@ -104,7 +104,7 @@ export default function CurrentMarketSimilarityPanel({
           </h2>
           <div className="mt-1 text-[11px] text-dark-500">
             {query.data
-              ? `${query.data.symbol} · ${trendDirectionLabel(query.data.trend_states)} · ${formatDate(query.data.as_of, isKo, true)}`
+              ? `${query.data.symbol} · ${trendDirectionLabel(query.data.trend_states)} · ${formatDate(query.data.as_of, isKo, true)} · ${query.data.indicator_snapshot.market_source_fallback ? (isKo ? 'Binance Spot 대체 데이터 포함' : 'Binance Spot fallback included') : query.data.indicator_snapshot.market_source || '-'}`
               : `${coin}/USDT`}
           </div>
         </div>
