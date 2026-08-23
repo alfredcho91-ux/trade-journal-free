@@ -2,7 +2,7 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 배포 버전: `v1.0.11`
+현재 배포 버전: `v1.0.12`
 
 ```text
 Browser / Desktop WebView
@@ -30,7 +30,7 @@ FastAPI
 ## 프런트엔드
 
 - `frontend/src/App.tsx`: 데스크톱 왼쪽 메뉴의 네 화면, 코인 선택, 언어 전환 제공
-- `frontend/src/pages/JournalPage.tsx`: 저널 쿼리·기간·모달 상태 조립
+- `frontend/src/pages/JournalPage.tsx`: 저널 쿼리·기간·모달 상태 조립. 거래소 동기화 성공 뒤 거래 목록·기간 성과·품질 분석을 즉시 다시 조회하며, 종료 포지션이 없으면 체결 동기화 성공과 분석 가능 여부를 구분해 안내
 - `frontend/src/features/journal/ExchangeConnectionModal.tsx`: API 입력과 연결 검증 UI
 - `frontend/src/features/journal/JournalSyncPanel.tsx`: 거래소·상품·종목 선택 UI
 - `frontend/src/features/journal/useExchangeConnection.ts`: 거래소 연결 상태·저장·삭제 mutation. 아직 연결되지 않았던 거래소의 첫 저장 성공 시 최근 30일을 한 번 자동 동기화하도록 `JournalPage`에 알림

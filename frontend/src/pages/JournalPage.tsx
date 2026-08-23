@@ -605,13 +605,53 @@ export default function JournalPage() {
   const exchangeSyncMutation = useMutation({
     mutationFn: syncExchange,
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries });
-      await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
-      setSyncMessage(
-        isKo
-          ? `동기화 완료: 체결 ${result.imported}건 저장, 종료 포지션 ${result.positions_imported}건 저장 · 기존 기록 ${result.fills_updated + result.positions_updated}건의 지표 기준 갱신${result.warnings.length ? ' · 일부 스냅샷 또는 조회 범위를 확인하세요.' : ''}`
-          : `Sync complete: ${result.imported} fills imported, ${result.positions_imported} closed positions imported · refreshed indicator references for ${result.fills_updated + result.positions_updated} existing records${result.warnings.length ? ' · Review snapshot or range warnings.' : ''}`,
-      );
+      setSyncMessage(isKo ? '거래 동기화 완료 · 분석 결과를 갱신하고 있습니다.' : 'Trade sync complete · Refreshing analysis results.');
+
+      await queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries, refetchType: 'none' });
+      await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => (
+        queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
+      )));
+
+      try {
+        const latestEntries = await queryClient.fetchQuery({
+          queryKey: journalQueryKeys.entries,
+          queryFn: getJournal,
+          staleTime: 0,
+        });
+        const [qualityResult, performanceResult] = await Promise.all([
+          qualityQuery.refetch(),
+          performanceQuery.refetch(),
+        ]);
+        const periodClosedCount = latestEntries.filter((entry) => (
+          isClosedPosition(entry) && isJournalEntryWithinPeriod(entry, historyPeriod)
+        )).length;
+        const analyzedCount = qualityResult.data?.items.length || 0;
+        const performanceClosedCount = performanceResult.data?.closed_trade_count || periodClosedCount;
+        const firstWarning = result.warnings[0];
+
+        if (periodClosedCount === 0) {
+          setSyncMessage(isKo
+            ? `체결 ${result.imported}건을 저장했지만 선택 기간에 분석할 종료 포지션을 받지 못했습니다. 체결 기록만으로는 거래 분석을 만들지 않습니다.${firstWarning ? ` · 거래소 응답: ${firstWarning}` : ''}`
+            : `Saved ${result.imported} fills, but no closed positions were available in the selected period. Fill records alone are not used to create trade analysis.${firstWarning ? ` · Exchange response: ${firstWarning}` : ''}`);
+          return;
+        }
+
+        if (qualityResult.isError) {
+          setSyncMessage(isKo
+            ? `종료 거래 ${performanceClosedCount}건은 동기화됐지만 상세 분석 갱신에 실패했습니다. 잠시 후 다시 동기화해 주세요.${firstWarning ? ` · 거래소 응답: ${firstWarning}` : ''}`
+            : `${performanceClosedCount} closed trades were synced, but detailed analysis refresh failed. Please retry shortly.${firstWarning ? ` · Exchange response: ${firstWarning}` : ''}`);
+          return;
+        }
+
+        setSyncMessage(isKo
+          ? `동기화·자동 분석 완료: 종료 거래 ${performanceClosedCount}건 중 ${analyzedCount}건 분석 · 새 체결 ${result.imported}건, 새 종료 포지션 ${result.positions_imported}건${firstWarning ? ` · 거래소 응답: ${firstWarning}` : ''}`
+          : `Sync and automatic analysis complete: analyzed ${analyzedCount} of ${performanceClosedCount} closed trades · ${result.imported} new fills, ${result.positions_imported} new closed positions${firstWarning ? ` · Exchange response: ${firstWarning}` : ''}`);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setSyncMessage(isKo
+          ? `거래 동기화는 완료됐지만 분석 결과를 다시 불러오지 못했습니다: ${detail}`
+          : `Trade sync completed, but analysis results could not be refreshed: ${detail}`);
+      }
     },
   });
 
