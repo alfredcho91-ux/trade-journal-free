@@ -11,6 +11,7 @@ def test_free_edition_exposes_only_journal_analysis_routes():
     }
     expected = {
         ("GET", "/api/health"),
+        ("POST", "/api/desktop/shutdown"),
         ("GET", "/api/journal"),
         ("DELETE", "/api/journal/{entry_id}"),
         ("GET", "/api/journal/current-market"),

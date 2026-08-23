@@ -104,6 +104,8 @@ chmod +x bootstrap.sh dev.sh start.sh
 - Frontend: `http://localhost:5181`
 - Backend/OpenAPI: `http://localhost:8011/docs`
 
+배포 앱을 종료할 때는 화면 오른쪽 위의 전원 아이콘을 누르세요. 브라우저만 닫는 것과 달리 로컬 서버까지 정상 종료합니다. 종료해도 운영체제 보안 저장소의 API Key는 삭제되지 않으며, 연결을 완전히 지우려면 매매일지의 `API 연결` 창에서 별도로 삭제해야 합니다.
+
 기본 포트는 전체 Quant-Lab 앱(`5173/8000`)과 동시에 실행해도 충돌하지 않도록 분리되어 있습니다. `.env`의 `JOURNAL_FRONTEND_PORT`, `JOURNAL_BACKEND_PORT`로 변경할 수 있습니다.
 
 ## 환경 변수

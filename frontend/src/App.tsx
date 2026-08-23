@@ -1,5 +1,5 @@
-import { Suspense, lazy, type ReactNode } from 'react';
-import { BarChart3, BookOpen, GitCompareArrows, Languages, Mail, ShieldAlert } from 'lucide-react';
+import { Suspense, lazy, useState, type ReactNode } from 'react';
+import { BarChart3, BookOpen, GitCompareArrows, Languages, Mail, Power, ShieldAlert } from 'lucide-react';
 
 import { MARKET_COINS } from './constants/market';
 import { BrowserRouter, Navigate } from './router';
@@ -31,6 +31,17 @@ function Shell({ children }: { children: ReactNode }) {
   const setLanguage = useSetLanguage();
   const setSelectedCoin = useSetSelectedCoin();
   const isKo = language === 'ko';
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
+
+  const shutdownDesktop = async () => {
+    if (isShuttingDown || !window.confirm(isKo ? 'Trade Journal을 종료할까요?' : 'Close Trade Journal?')) return;
+    setIsShuttingDown(true);
+    try {
+      await fetch('/api/desktop/shutdown', { method: 'POST' });
+    } finally {
+      setTimeout(() => setIsShuttingDown(false), 1500);
+    }
+  };
 
   const tabs = [
     { path: '/journal', label: isKo ? '매매일지' : 'Journal', icon: BookOpen },
@@ -100,6 +111,16 @@ function Shell({ children }: { children: ReactNode }) {
               aria-label={isKo ? 'Switch to English' : '한국어로 전환'}
             >
               <Languages className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={shutdownDesktop}
+              disabled={isShuttingDown}
+              className="flex h-9 w-9 items-center justify-center border border-dark-700 bg-dark-900 text-dark-300 hover:border-bear/60 hover:text-bear disabled:cursor-wait disabled:opacity-60"
+              title={isKo ? '프로그램 종료' : 'Close application'}
+              aria-label={isKo ? '프로그램 종료' : 'Close application'}
+            >
+              <Power className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>

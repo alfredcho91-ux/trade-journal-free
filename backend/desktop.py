@@ -63,10 +63,14 @@ def main() -> None:
             threading.Thread(target=_open_browser, args=(url,), daemon=True).start()
 
         config = _server_config(port)
+        server = uvicorn.Server(config)
+        app.state.desktop_server = server
         try:
-            uvicorn.Server(config).run()
+            server.run()
         except KeyboardInterrupt:
             pass
+        finally:
+            app.state.desktop_server = None
 
 
 if __name__ == "__main__":

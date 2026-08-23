@@ -107,6 +107,20 @@ async def validation_error_handler(_request: Request, exc: RequestValidationErro
 def health():
     return {"success": True, "data": {"service": "trade-journal-free"}}
 
+
+@app.post("/api/desktop/shutdown", dependencies=[])
+def desktop_shutdown(request: Request):
+    """Stop only the local packaged server; never remove exchange credentials."""
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "testclient"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local requests only")
+
+    server = getattr(request.app.state, "desktop_server", None)
+    if server is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Desktop shutdown is unavailable")
+    server.should_exit = True
+    return {"success": True, "data": {"shutting_down": True}}
+
 app.include_router(journal_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
