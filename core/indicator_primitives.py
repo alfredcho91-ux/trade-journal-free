@@ -272,6 +272,7 @@ def compute_vwap_standard_deviation(
     return {
         "anchor": "month",
         "length": length,
+        "sample_count": int(len(sample)),
         "source": "HLC3",
         "vwap": float(vwap),
         "standard_deviation": standard_deviation,

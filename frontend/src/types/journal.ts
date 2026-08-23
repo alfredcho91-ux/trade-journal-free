@@ -1,8 +1,10 @@
 // 매매 일지 타입
+import type { AnchoredVwapDeviation } from './indicators';
 
 export interface TradeIndicatorPair {
   k?: number | null;
   d?: number | null;
+  cross?: 'golden' | 'dead' | 'none';
 }
 
 export interface TradeIndicatorTimeframeSnapshot {
@@ -20,6 +22,7 @@ export interface TradeIndicatorTimeframeSnapshot {
   slow_stochastic?: Record<string, TradeIndicatorPair>;
   stoch_rsi?: TradeIndicatorPair;
   vpvr?: {
+    purpose?: 'volume_profile';
     candles?: number;
     bin_count?: number;
     poc_low?: number | null;
@@ -29,6 +32,7 @@ export interface TradeIndicatorTimeframeSnapshot {
     value_area_high?: number | null;
     vwap?: number | null;
   };
+  anchored_vwap?: AnchoredVwapDeviation | null;
 }
 
 export interface TradeIndicatorSnapshot {
@@ -36,7 +40,7 @@ export interface TradeIndicatorSnapshot {
   market_source?: string;
   market_source_fallback?: boolean;
   reference?: string;
-  event_type?: 'fill' | 'position_close' | 'current_market';
+  event_type?: 'fill' | 'position_entry' | 'position_close' | 'current_market';
   event_time?: string;
   fill_time?: string;
   timeframes?: Record<string, TradeIndicatorTimeframeSnapshot>;
@@ -548,6 +552,7 @@ export interface DeepcoinSyncResult {
   positions_fetched: number;
   positions_imported: number;
   positions_updated: number;
+  fills_updated: number;
   positions_skipped: number;
   positions_ignored: number;
   warnings: string[];

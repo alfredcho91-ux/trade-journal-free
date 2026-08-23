@@ -8,6 +8,7 @@ import PositionReviewChart, { type TradePathChartMarker } from '../../components
 import TradeIndicatorCharts from '../../components/TradeIndicatorCharts';
 import TradeReferenceSummary from '../../components/TradeReferenceSummary';
 import type { JournalEntry, TradeExcursion, TradeIndicatorTimeframeSnapshot, TradeQualityItem } from '../../types';
+import { anchoredVwapSampleLabel, anchoredVwapZoneLabel } from '../../utils/indicatorLabels';
 import { resolvePositionEntryTime } from '../../utils/positionReview';
 import { ENTRY_REASON_FIELDS, formatEntryReason } from './entryReasons';
 import { isClosedPosition } from './journalEntries';
@@ -325,9 +326,15 @@ export default function TradeReportModal({
     },
     {
       id: 'vwap',
-      label: 'VWAP',
+      label: isKo ? '기간 VWAP' : 'Period VWAP',
       group: isKo ? '가격·거래량' : 'Price · Volume',
       hasData: (snapshot) => snapshot.vpvr?.vwap != null,
+    },
+    {
+      id: 'anchored_vwap',
+      label: isKo ? '월간 VWAP 위치' : 'Monthly VWAP position',
+      group: isKo ? '가격·거래량' : 'Price · Volume',
+      hasData: (snapshot) => snapshot.anchored_vwap?.vwap != null,
     },
   ];
 
@@ -378,6 +385,7 @@ export default function TradeReportModal({
       return [
         { label: 'K', value: formatSnapshotNumber(snapshot.stoch_rsi?.k) },
         { label: 'D', value: formatSnapshotNumber(snapshot.stoch_rsi?.d) },
+        { label: isKo ? '교차 신호' : 'Cross', value: macdCrossLabel(snapshot.stoch_rsi?.cross, isKo) },
       ];
     }
 
@@ -385,6 +393,7 @@ export default function TradeReportModal({
       return Object.entries(snapshot.slow_stochastic || {}).flatMap(([setting, value]) => [
         { label: `${setting} K`, value: formatSnapshotNumber(value.k) },
         { label: `${setting} D`, value: formatSnapshotNumber(value.d) },
+        { label: `${setting} ${isKo ? '교차' : 'Cross'}`, value: macdCrossLabel(value.cross, isKo) },
       ]);
     }
 
@@ -405,7 +414,17 @@ export default function TradeReportModal({
     }
 
     if (indicatorId === 'vwap') {
-      return [{ label: 'VWAP', value: formatSnapshotNumber(snapshot.vpvr?.vwap) }];
+      return [{ label: isKo ? '기간 VWAP' : 'Period VWAP', value: formatSnapshotNumber(snapshot.vpvr?.vwap) }];
+    }
+
+    if (indicatorId === 'anchored_vwap') {
+      const vwap = snapshot.anchored_vwap;
+      return [
+        { label: 'VWAP', value: formatSnapshotNumber(vwap?.vwap) },
+        { label: isKo ? '현재 위치' : 'Current position', value: vwap?.sigma == null ? '-' : `${vwap.sigma >= 0 ? '+' : ''}${vwap.sigma.toFixed(2)}σ` },
+        { label: isKo ? '구간' : 'Zone', value: vwap ? anchoredVwapZoneLabel(vwap.zone, isKo) : '-' },
+        { label: isKo ? '계산 표본' : 'Sample', value: vwap ? anchoredVwapSampleLabel(vwap, isKo) : '-' },
+      ];
     }
 
     if (indicatorId.startsWith('extra:')) {
@@ -500,7 +519,7 @@ export default function TradeReportModal({
                   </div>
                   <div className="mt-1 text-xs leading-5 text-dark-300">{outcomeAssessment.explanation}</div>
                   <div className="mt-1 text-[11px] font-mono text-dark-500">
-                    MFE +{formatSnapshotNumber(excursion?.mfe_pct)}% · MAE -{formatSnapshotNumber(excursion?.mae_pct)}% · {isKo ? '종료' : 'Exit'} {formatSignedNumber(excursion?.realized_move_pct, 2)}%
+                    {isKo ? '보유 중 최대 수익' : 'Best move while held'} +{formatSnapshotNumber(excursion?.mfe_pct)}% · {isKo ? '보유 중 최대 손실' : 'Worst move while held'} -{formatSnapshotNumber(excursion?.mae_pct)}% · {isKo ? '종료' : 'Exit'} {formatSignedNumber(excursion?.realized_move_pct, 2)}%
                   </div>
                   <div className="mt-0.5 text-[10px] text-dark-500">
                     {isKo ? '15분봉 가격 움직임 기준 · 수수료·펀딩 제외' : '15m price-move basis · excludes fees and funding'}
@@ -509,7 +528,7 @@ export default function TradeReportModal({
               ) : (
                 <div className="mt-1 text-xs text-dark-500">
                   {excursionLoading
-                    ? isKo ? 'MFE/MAE 판정 계산 중' : 'Calculating MFE/MAE assessment'
+                    ? isKo ? '보유 중 가격 움직임을 계산하고 있습니다' : 'Calculating held-price movement'
                     : isKo ? '판정 데이터 없음' : 'Assessment unavailable'}
                 </div>
               )}

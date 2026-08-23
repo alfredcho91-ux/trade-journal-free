@@ -11,6 +11,7 @@ import requests
 
 from backend.config.settings import TIMEFRAME_TO_MINUTES
 from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from core.indicator_primitives import compute_vwap_standard_deviation
 from core.indicator_pipelines import compute_trend_judgment_indicators
 from core.vpvr import calculate_vpvr
 
@@ -89,7 +90,24 @@ def indicator_snapshot_for_event(
     macd_signal = _json_number(row.get("macd_signal"))
     previous_macd = _json_number(previous.get("macd")) if previous is not None else None
     previous_signal = _json_number(previous.get("macd_signal")) if previous is not None else None
+
+    def stochastic_snapshot(key: str) -> Dict[str, Optional[float] | str]:
+        current_k = _json_number(row.get(f"slow_stoch_{key}k"))
+        current_d = _json_number(row.get(f"slow_stoch_{key}d"))
+        previous_k = _json_number(previous.get(f"slow_stoch_{key}k")) if previous is not None else None
+        previous_d = _json_number(previous.get(f"slow_stoch_{key}d")) if previous is not None else None
+        return {
+            "k": current_k,
+            "d": current_d,
+            "cross": _cross_label(current_k, current_d, previous_k, previous_d),
+        }
+
+    stoch_rsi_k = _json_number(row.get("stoch_rsi_k"))
+    stoch_rsi_d = _json_number(row.get("stoch_rsi_d"))
+    previous_stoch_rsi_k = _json_number(previous.get("stoch_rsi_k")) if previous is not None else None
+    previous_stoch_rsi_d = _json_number(previous.get("stoch_rsi_d")) if previous is not None else None
     vpvr = calculate_vpvr(completed.tail(required), bin_count=SNAPSHOT_BIN_COUNT, price_range=None)
+    anchored_vwap = compute_vwap_standard_deviation(completed, anchor="month", length=14)
     poc_low = _json_number(vpvr.get("poc_price_low"))
     poc_high = _json_number(vpvr.get("poc_price_high"))
 
@@ -105,15 +123,17 @@ def indicator_snapshot_for_event(
             "cross": _cross_label(macd, macd_signal, previous_macd, previous_signal),
         },
         "slow_stochastic": {
-            "5-3-3": {"k": _json_number(row.get("slow_stoch_5k")), "d": _json_number(row.get("slow_stoch_5d"))},
-            "10-6-6": {"k": _json_number(row.get("slow_stoch_10k")), "d": _json_number(row.get("slow_stoch_10d"))},
-            "20-12-12": {"k": _json_number(row.get("slow_stoch_20k")), "d": _json_number(row.get("slow_stoch_20d"))},
+            "5-3-3": stochastic_snapshot("5"),
+            "10-6-6": stochastic_snapshot("10"),
+            "20-12-12": stochastic_snapshot("20"),
         },
         "stoch_rsi": {
-            "k": _json_number(row.get("stoch_rsi_k")),
-            "d": _json_number(row.get("stoch_rsi_d")),
+            "k": stoch_rsi_k,
+            "d": stoch_rsi_d,
+            "cross": _cross_label(stoch_rsi_k, stoch_rsi_d, previous_stoch_rsi_k, previous_stoch_rsi_d),
         },
         "vpvr": {
+            "purpose": "volume_profile",
             "candles": required,
             "bin_count": SNAPSHOT_BIN_COUNT,
             "poc_low": poc_low,
@@ -123,6 +143,7 @@ def indicator_snapshot_for_event(
             "value_area_high": _json_number(vpvr.get("value_area_high")),
             "vwap": _json_number(vpvr.get("vwap")),
         },
+        "anchored_vwap": anchored_vwap,
     }
 
 
@@ -160,7 +181,7 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
                     timeframes[interval] = {"status": "unavailable", "reason": "calculation_failed"}
 
             snapshots[event.external_id] = {
-                "version": 1,
+                "version": 2,
                 "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
                 "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
                 "reference": f"last_completed_candle_before_deepcoin_{event.event_type}",
@@ -168,7 +189,12 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
                 "event_time": _timestamp_to_iso(event.timestamp_ms),
                 "timeframes": timeframes,
             }
-            time_key = "fill_time" if event.event_type == "fill" else "position_close_time"
+            if event.event_type == "fill":
+                time_key = "fill_time"
+            elif event.event_type == "position_entry":
+                time_key = "entry_time"
+            else:
+                time_key = "position_close_time"
             snapshots[event.external_id][time_key] = _timestamp_to_iso(event.timestamp_ms)
     return snapshots
 

@@ -5,7 +5,7 @@ import type {
   TradeQualityItem,
 } from '../../types';
 import type { AnalyzedTrade } from './tradeAnalysis';
-import { tradeNetReturnPct } from './tradeAnalysis';
+import { anchoredVwapSigma, tradeNetReturnPct } from './tradeAnalysis';
 
 const INDICATOR_TIMEFRAME_WEIGHTS: Record<string, number> = {
   '1h': 0.15,
@@ -79,11 +79,7 @@ function indicatorFrameSimilarity(
     { score: closeness(finite(current.slow_stochastic?.['10-6-6']?.k), finite(historical.slow_stochastic?.['10-6-6']?.k), 40), weight: 0.2 / 3 },
     { score: closeness(finite(current.slow_stochastic?.['20-12-12']?.k), finite(historical.slow_stochastic?.['20-12-12']?.k), 40), weight: 0.2 / 3 },
     { score: closeness(normalizedMacdHistogram(current), normalizedMacdHistogram(historical), 0.5), weight: 0.2 },
-    { score: closeness(
-      relativeDistance(current.close, current.vpvr?.vwap),
-      relativeDistance(historical.close, historical.vpvr?.vwap),
-      4,
-    ), weight: 0.15 },
+    { score: closeness(anchoredVwapSigma(current), anchoredVwapSigma(historical), 2), weight: 0.15 },
     { score: closeness(
       relativeDistance(current.close, current.vpvr?.poc_mid),
       relativeDistance(historical.close, historical.vpvr?.poc_mid),

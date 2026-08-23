@@ -92,6 +92,10 @@ function relativeDistance(value: number | null | undefined, reference: number | 
   return ((safeValue - safeReference) / safeReference) * 100;
 }
 
+export function anchoredVwapSigma(snapshot: TradeIndicatorTimeframeSnapshot): number | null {
+  return finite(snapshot.anchored_vwap?.sigma);
+}
+
 export const INDICATOR_METRICS: MetricDefinition[] = [
   { id: 'rsi', label: 'RSI', value: (snapshot) => finite(snapshot.rsi) },
   { id: 'stoch_rsi', label: 'Stoch RSI K', value: (snapshot) => finite(snapshot.stoch_rsi?.k) },
@@ -99,7 +103,7 @@ export const INDICATOR_METRICS: MetricDefinition[] = [
   { id: 'stoch_10', label: 'Slow Stoch 10-6-6 K', value: (snapshot) => finite(snapshot.slow_stochastic?.['10-6-6']?.k) },
   { id: 'stoch_20', label: 'Slow Stoch 20-12-12 K', value: (snapshot) => finite(snapshot.slow_stochastic?.['20-12-12']?.k) },
   { id: 'macd_hist', label: 'MACD Hist', value: (snapshot) => finite(snapshot.macd?.histogram) },
-  { id: 'vwap_distance', label: 'VWAP 대비 가격', value: (snapshot) => relativeDistance(snapshot.close, snapshot.vpvr?.vwap) },
+  { id: 'vwap_sigma', label: '월간 VWAP 위치 (σ)', value: anchoredVwapSigma },
   { id: 'vpvr_poc_distance', label: 'VPVR POC 대비 가격', value: (snapshot) => relativeDistance(snapshot.close, snapshot.vpvr?.poc_mid) },
 ];
 
@@ -296,13 +300,13 @@ const CONDITIONS: ConditionDefinition[] = [
     const value = finite(snapshot.macd?.histogram);
     return value == null ? null : value < 0;
   } },
-  { id: 'above_vwap', label: '가격이 VWAP 위', test: (snapshot) => {
-    const distance = relativeDistance(snapshot.close, snapshot.vpvr?.vwap);
-    return distance == null ? null : distance >= 0;
+  { id: 'above_vwap', label: '월간 VWAP 중심 위', test: (snapshot) => {
+    const sigma = anchoredVwapSigma(snapshot);
+    return sigma == null ? null : sigma >= 0;
   } },
-  { id: 'below_vwap', label: '가격이 VWAP 아래', test: (snapshot) => {
-    const distance = relativeDistance(snapshot.close, snapshot.vpvr?.vwap);
-    return distance == null ? null : distance < 0;
+  { id: 'below_vwap', label: '월간 VWAP 중심 아래', test: (snapshot) => {
+    const sigma = anchoredVwapSigma(snapshot);
+    return sigma == null ? null : sigma < 0;
   } },
   { id: 'inside_value_area', label: '가격이 VPVR Value Area 내부', test: (snapshot) => {
     const close = finite(snapshot.close);

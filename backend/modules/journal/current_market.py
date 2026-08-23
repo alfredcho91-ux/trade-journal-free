@@ -134,7 +134,7 @@ def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
             "symbol": f"{normalized_coin}/USDT",
             "as_of": _timestamp_to_iso(as_of_ms),
             "indicator_snapshot": {
-                "version": 1,
+                "version": 2,
                 "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
                 "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
                 "reference": "last_completed_candle_before_current_hour_refresh",

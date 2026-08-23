@@ -1,10 +1,10 @@
 import logging
-from typing import Annotated, Dict, Literal, Optional
+from typing import Annotated, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
 from backend.modules.indicators.schemas import (
+    IndicatorProjectionEnvelope,
     TradeReportEnvelope,
     TradeReportQueryParams,
     VPVREnvelope,
@@ -46,49 +46,6 @@ async def get_trade_report(
         query.profile_candles,
         query.bin_count,
     )
-
-
-class IndicatorProjectionValues(BaseModel):
-    rsi_30: Optional[float] = None
-    rsi_70: Optional[float] = None
-
-
-class IndicatorProjectionVWAP(BaseModel):
-    anchor: Literal["day", "week", "month", "quarter", "year"]
-    value: Optional[float] = None
-
-
-class IndicatorProjectionRollingVWAP(BaseModel):
-    window: int
-    value: Optional[float] = None
-
-
-class IndicatorProjectionVWAPDeviation(BaseModel):
-    anchor: Literal["month"]
-    length: int
-    source: str
-    vwap: float
-    standard_deviation: float
-    current_price: float
-    sigma: Optional[float] = None
-    zone: str
-    bands: Dict[str, float]
-
-
-class IndicatorProjectionPayload(BaseModel):
-    current_price: float
-    current_rsi: Optional[float] = None
-    vwaps: list[IndicatorProjectionVWAP]
-    rolling_vwaps: list[IndicatorProjectionRollingVWAP]
-    vwap_deviation: Optional[IndicatorProjectionVWAPDeviation] = None
-    projections: IndicatorProjectionValues
-
-
-class IndicatorProjectionEnvelope(BaseModel):
-    success: bool
-    coin: str
-    interval: str
-    data: IndicatorProjectionPayload
 
 
 @router.get("/projection", response_model=IndicatorProjectionEnvelope)

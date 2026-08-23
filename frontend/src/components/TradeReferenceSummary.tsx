@@ -1,6 +1,7 @@
 import { BarChart3 } from 'lucide-react';
 
 import type { TradeReportVWAPData, VPVRData } from '../types';
+import { anchoredVwapSampleLabel, anchoredVwapZoneLabel } from '../utils/indicatorLabels';
 
 function formatPrice(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
@@ -14,16 +15,6 @@ const ANCHOR_LABELS: Record<string, { ko: string; en: string }> = {
   month: { ko: '월간 VWAP', en: 'Monthly VWAP' },
   quarter: { ko: '분기 VWAP', en: 'Quarterly VWAP' },
   year: { ko: '연간 VWAP', en: 'Yearly VWAP' },
-};
-
-const VWAP_ZONE_LABELS: Record<string, { ko: string; en: string }> = {
-  center: { ko: 'VWAP 중심권', en: 'VWAP center range' },
-  upper_expansion: { ko: '상단 확장', en: 'Upper expansion' },
-  strong_upper: { ko: '강한 상단 이격', en: 'Strong upper extension' },
-  extreme_upper: { ko: '극단적 상단 이격', en: 'Extreme upper extension' },
-  lower_expansion: { ko: '하단 확장', en: 'Lower expansion' },
-  strong_lower: { ko: '강한 하단 이격', en: 'Strong lower extension' },
-  extreme_lower: { ko: '극단적 하단 이격', en: 'Extreme lower extension' },
 };
 
 export default function TradeReferenceSummary({
@@ -94,9 +85,9 @@ export default function TradeReferenceSummary({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-xs font-semibold text-white">{isKo ? '월간 Anchored VWAP · 표준편차 밴드' : 'Monthly Anchored VWAP · deviation bands'}</h3>
-              <p className="mt-1 text-[10px] text-dark-500">HLC3 · {isKo ? '최근 최대 14개 완료봉' : 'up to 14 completed bars'}</p>
+              <p className="mt-1 text-[10px] text-dark-500">{anchoredVwapSampleLabel(vwapDeviation, isKo)}</p>
             </div>
-            <span className="font-mono text-sm font-semibold text-primary-300">{vwapDeviation.sigma == null ? '—' : `${vwapDeviation.sigma >= 0 ? '+' : ''}${vwapDeviation.sigma.toFixed(2)}σ`} · {VWAP_ZONE_LABELS[vwapDeviation.zone]?.[isKo ? 'ko' : 'en'] || vwapDeviation.zone}</span>
+            <span className="font-mono text-sm font-semibold text-primary-300">{vwapDeviation.sigma == null ? '—' : `${vwapDeviation.sigma >= 0 ? '+' : ''}${vwapDeviation.sigma.toFixed(2)}σ`} · {anchoredVwapZoneLabel(vwapDeviation.zone, isKo)}</span>
           </div>
           <dl className="mt-3 grid grid-cols-3 border border-dark-800 text-xs">
             <div className="px-3 py-2"><dt className="text-dark-500">VWAP</dt><dd className="mt-1 font-mono font-semibold text-dark-100">{formatPrice(vwapDeviation.vwap)}</dd></div>

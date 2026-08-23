@@ -618,8 +618,8 @@ export default function JournalPage() {
       await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
       setSyncMessage(
         isKo
-          ? `동기화 완료: 체결 ${result.imported}건 저장, 종료 포지션 ${result.positions_imported}건 저장·${result.positions_updated}건 재계산${result.warnings.length ? ' · 일부 스냅샷 또는 조회 범위를 확인하세요.' : ''}`
-          : `Sync complete: ${result.imported} fills imported, ${result.positions_imported} closed positions imported and ${result.positions_updated} recalculated${result.warnings.length ? ' · Review snapshot or range warnings.' : ''}`,
+          ? `동기화 완료: 체결 ${result.imported}건 저장, 종료 포지션 ${result.positions_imported}건 저장 · 기존 기록 ${result.fills_updated + result.positions_updated}건의 지표 기준 갱신${result.warnings.length ? ' · 일부 스냅샷 또는 조회 범위를 확인하세요.' : ''}`
+          : `Sync complete: ${result.imported} fills imported, ${result.positions_imported} closed positions imported · refreshed indicator references for ${result.fills_updated + result.positions_updated} existing records${result.warnings.length ? ' · Review snapshot or range warnings.' : ''}`,
       );
     },
   });

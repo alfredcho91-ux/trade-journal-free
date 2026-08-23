@@ -573,6 +573,22 @@ def _closed_position_journal_row(
     }
 
 
+def _snapshot_event_for_position(position: _PreparedFill) -> _PreparedFill:
+    """Use the known opening time for entry analysis, never the close timestamp."""
+    if position.event_type != "position_close":
+        return position
+    entry_timestamp_ms = _timestamp_ms(position.raw.get("cTime"))
+    if entry_timestamp_ms is None or entry_timestamp_ms > position.timestamp_ms:
+        return position
+    return _PreparedFill(
+        raw=position.raw,
+        external_id=position.external_id,
+        timestamp_ms=entry_timestamp_ms,
+        coin=position.coin,
+        event_type="position_entry",
+    )
+
+
 def get_deepcoin_status_service() -> Dict[str, Any]:
     return {
         "success": True,
@@ -729,31 +745,41 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
     ])
     new_fills = [fill for fill in prepared if fill.external_id not in existing_ids]
     new_positions = [position for position in prepared_positions if position.external_id not in existing_ids]
+    existing_fills = [fill for fill in prepared if fill.external_id in existing_ids]
     existing_positions = [position for position in prepared_positions if position.external_id in existing_ids]
     skipped = len(prepared) - len(new_fills)
+    snapshot_events = [
+        *prepared,
+        *(_snapshot_event_for_position(position) for position in prepared_positions),
+    ]
+    snapshots = _build_indicator_snapshots(snapshot_events) if snapshot_events else {}
+    fills_updated = update_imported_entries_by_external_id([
+        _journal_row(fill, snapshots.get(fill.external_id, {}), normalized_type)
+        for fill in existing_fills
+    ])
     positions_updated = update_imported_entries_by_external_id([
-        _closed_position_journal_row(position, None)
+        _closed_position_journal_row(position, snapshots.get(position.external_id))
         for position in existing_positions
     ])
     positions_skipped = len(existing_positions) - positions_updated
 
     new_events = [*new_fills, *new_positions]
-    snapshots = _build_indicator_snapshots(new_events) if new_events else {}
     imported = 0
     positions_imported = 0
     complete_snapshots = 0
     partial_snapshots = 0
     new_entries: List[Tuple[_PreparedFill, Dict[str, Any]]] = []
     for event in new_events:
-        fallback_reference = f"last_completed_candle_before_deepcoin_{event.event_type}"
+        snapshot_event = _snapshot_event_for_position(event)
+        fallback_reference = f"last_completed_candle_before_deepcoin_{snapshot_event.event_type}"
         snapshot = snapshots.get(
             event.external_id,
             {
-                "version": 1,
+                "version": 2,
                 "market_source": "binance_spot_klines",
                 "reference": fallback_reference,
-                "event_type": event.event_type,
-                "event_time": _timestamp_to_iso(event.timestamp_ms),
+                "event_type": snapshot_event.event_type,
+                "event_time": _timestamp_to_iso(snapshot_event.timestamp_ms),
                 "timeframes": {},
             },
         )
@@ -817,6 +843,7 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
             "positions_fetched": len(raw_positions),
             "positions_imported": positions_imported,
             "positions_updated": positions_updated,
+            "fills_updated": fills_updated,
             "positions_skipped": positions_skipped,
             "positions_ignored": positions_ignored,
             "warnings": warnings,

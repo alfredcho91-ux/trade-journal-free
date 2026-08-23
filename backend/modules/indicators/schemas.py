@@ -119,7 +119,57 @@ class TradeReportEnvelope(BaseModel):
     data: Dict[str, Any]
 
 
+class IndicatorProjectionValues(BaseModel):
+    rsi_30: Optional[float] = None
+    rsi_70: Optional[float] = None
+
+
+class IndicatorProjectionVWAP(BaseModel):
+    anchor: Literal["day", "week", "month", "quarter", "year"]
+    value: Optional[float] = None
+
+
+class IndicatorProjectionRollingVWAP(BaseModel):
+    window: int
+    value: Optional[float] = None
+
+
+class IndicatorProjectionVWAPDeviation(BaseModel):
+    anchor: Literal["month"]
+    length: int
+    sample_count: int
+    source: str
+    vwap: float
+    standard_deviation: float
+    current_price: float
+    sigma: Optional[float] = None
+    zone: str
+    bands: Dict[str, float]
+
+
+class IndicatorProjectionPayload(BaseModel):
+    current_price: float
+    current_rsi: Optional[float] = None
+    vwaps: List[IndicatorProjectionVWAP]
+    rolling_vwaps: List[IndicatorProjectionRollingVWAP]
+    vwap_deviation: Optional[IndicatorProjectionVWAPDeviation] = None
+    projections: IndicatorProjectionValues
+
+
+class IndicatorProjectionEnvelope(BaseModel):
+    success: bool
+    coin: str
+    interval: str
+    data: IndicatorProjectionPayload
+
+
 __all__ = [
+    "IndicatorProjectionEnvelope",
+    "IndicatorProjectionPayload",
+    "IndicatorProjectionRollingVWAP",
+    "IndicatorProjectionValues",
+    "IndicatorProjectionVWAP",
+    "IndicatorProjectionVWAPDeviation",
     "VPVRSourceData",
     "VPVRSourceEnvelope",
     "VPVRSourcePathParams",

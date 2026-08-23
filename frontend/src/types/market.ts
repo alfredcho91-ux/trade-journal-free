@@ -1,4 +1,5 @@
 // 시장 데이터 타입
+import type { AnchoredVwapDeviation } from './indicators';
 
 export interface MarketPrice {
   last: number;
@@ -111,17 +112,7 @@ export interface TradeReportVWAPData {
     window: number;
     value: number | null;
   }>;
-  vwap_deviation?: {
-    anchor: 'month';
-    length: number;
-    source: string;
-    vwap: number;
-    standard_deviation: number;
-    current_price: number;
-    sigma: number | null;
-    zone: string;
-    bands: Record<string, number>;
-  } | null;
+  vwap_deviation?: AnchoredVwapDeviation | null;
   projections: {
     rsi_30: number | null;
     rsi_70: number | null;

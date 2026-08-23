@@ -9,6 +9,7 @@ import pytest
 
 from backend.config.settings import DeepcoinCredentials
 from backend.modules.deepcoin import service as deepcoin_service
+from backend.modules.deepcoin import snapshot as deepcoin_snapshot
 from backend.modules.journal import repository as journal_repository
 from backend.modules.journal.service import get_journal_service
 
@@ -45,6 +46,42 @@ def test_deepcoin_headers_follow_the_documented_hmac_prehash():
     assert headers["DC-ACCESS-SIGN"] == expected
     assert headers["DC-ACCESS-KEY"] == "key"
     assert headers["DC-ACCESS-PASSPHRASE"] == "passphrase"
+
+
+def test_closed_position_snapshot_uses_the_recorded_entry_time():
+    position = deepcoin_service._PreparedFill(
+        raw={"cTime": "1722761000000"},
+        external_id="deepcoin:position:entry-time",
+        timestamp_ms=1722762000000,
+        coin="BTC",
+        event_type="position_close",
+    )
+
+    snapshot_event = deepcoin_service._snapshot_event_for_position(position)
+
+    assert snapshot_event.event_type == "position_entry"
+    assert snapshot_event.timestamp_ms == 1722761000000
+
+
+def test_entry_snapshot_records_entry_time_not_close_time(monkeypatch):
+    event = deepcoin_service._PreparedFill(
+        raw={},
+        external_id="deepcoin:position:entry-time",
+        timestamp_ms=1722761000000,
+        coin="BTC",
+        event_type="position_entry",
+    )
+    monkeypatch.setattr(
+        deepcoin_snapshot,
+        "load_journal_ohlcv",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("no market data")),
+    )
+
+    payload = deepcoin_snapshot.build_indicator_snapshots([event])[event.external_id]
+
+    assert payload["event_type"] == "position_entry"
+    assert payload["entry_time"] == payload["event_time"]
+    assert "position_close_time" not in payload
 
 
 def test_deepcoin_fills_split_saturated_time_windows(monkeypatch):
