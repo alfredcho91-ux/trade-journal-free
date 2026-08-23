@@ -1,0 +1,39 @@
+Trade Journal Free - Windows test build
+========================================
+
+This is an unsigned test build. Windows Microsoft Defender SmartScreen may show:
+"Windows protected your PC" / "Microsoft Defender SmartScreen prevented an
+unrecognized app from starting."
+
+Windows 테스트 버전 안내
+-------------------------
+처음 실행할 때 Microsoft Defender SmartScreen에
+"인식할 수 없는 앱의 시작을 차단했습니다"라는 문구가 표시될 수 있습니다.
+테스트 파일의 게시자를 Windows가 아직 확인하지 못했다는 뜻입니다.
+
+Only continue when this ZIP came from the official repository:
+https://github.com/alfredcho91-ux/trade-journal-free
+
+How to start
+------------
+1. If Windows shows a Blocked or Unblock option in the ZIP file properties,
+   right-click the ZIP, choose Properties, check Unblock, and click Apply.
+2. Extract the ZIP completely.
+3. Run "Trade Journal Free.exe" from the extracted folder.
+4. On the SmartScreen screen, click "More info" and then "Run anyway".
+5. The app opens a local browser page. Use that page to connect and sync a
+   read-only exchange API.
+
+Do not disable SmartScreen or Windows real-time protection. If the file did not
+come from the official repository, or appears modified, do not run it.
+
+실행 방법
+---------
+1. ZIP 파일을 우클릭하고 속성을 엽니다. 차단 해제가 보이면 체크한 뒤
+   적용을 누릅니다.
+2. ZIP 압축을 완전히 풀고 "Trade Journal Free.exe"를 실행합니다.
+3. SmartScreen 화면에서 "추가 정보"를 누른 뒤 "실행"을 선택합니다.
+4. 앱 실행 후 열리는 로컬 브라우저 화면에서 사용합니다.
+
+SmartScreen 또는 Windows 실시간 보호를 끄지 마세요. 공식 저장소에서 받은
+파일이 아니거나 변조된 것으로 보이면 실행하지 마세요.

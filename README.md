@@ -36,6 +36,17 @@ Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를
 
 `WINDOWS_SIGNING_REQUIRED=true`인데 인증서가 없거나 검증에 실패하면 Windows 배포 빌드는 실패합니다. 개인 테스트 빌드는 이 변수를 비워 둘 수 있지만, unsigned 파일에는 SmartScreen 경고가 표시될 수 있습니다. 인증서와 비밀번호는 `.env`, 코드, GitHub Actions 로그에 직접 넣지 않습니다.
 
+### Windows 테스트 버전 실행 안내
+
+현재 제공되는 Windows 테스트 버전은 코드 서명이 없을 수 있습니다. 따라서 처음 실행할 때 Microsoft Defender SmartScreen에 **“인식할 수 없는 앱의 시작을 차단했습니다”**라는 메시지가 표시될 수 있습니다. 이는 테스트 파일의 게시자를 Windows가 아직 확인하지 못했다는 뜻입니다. 반드시 공식 [trade-journal-free 저장소](https://github.com/alfredcho91-ux/trade-journal-free)의 다운로드 파일인지 확인하세요.
+
+1. 내려받은 `Trade-Journal-Free-Windows.zip`을 우클릭하고 `속성`을 엽니다. `차단 해제` 항목이 보이면 체크한 뒤 `적용`을 누릅니다.
+2. ZIP 압축을 풀고 압축을 푼 폴더에서 `Trade Journal Free.exe`를 실행합니다.
+3. SmartScreen 화면이 나타나면 `추가 정보`를 누른 뒤 `실행`을 선택합니다.
+4. 앱이 실행되면 브라우저에 열리는 로컬 화면에서 거래소 연결과 동기화를 진행합니다.
+
+SmartScreen을 끄거나 Windows 실시간 보호를 해제할 필요는 없습니다. 파일 출처가 공식 저장소와 다르거나 파일이 변조된 것으로 보이면 실행하지 마세요.
+
 ## 지원 거래소
 
 | 거래소 | 연동 방식 | Passphrase |

@@ -68,6 +68,7 @@ try {
 
 Move-Item (Join-Path $ProjectDir "dist\Trade Journal Free") $WindowsAppDir
 Remove-Item -Recurse -Force (Join-Path $ProjectDir "dist"), (Join-Path $ProjectDir "build")
+Copy-Item (Join-Path $PSScriptRoot "WINDOWS-START-HERE.txt") (Join-Path $WindowsAppDir "WINDOWS-START-HERE.txt") -Force
 
 & (Join-Path $PSScriptRoot "sign_windows_artifact.ps1") -AppDirectory $WindowsAppDir
 
