@@ -588,21 +588,6 @@ export default function JournalPage() {
     [excursionQuery.data?.items],
   );
 
-  const {
-    exchangeStatuses,
-    selectedExchangeStatus,
-    connect,
-    disconnect,
-    connectionError,
-    isConnecting,
-    isDisconnecting,
-  } = useExchangeConnection({
-    selectedExchange,
-    isKo,
-    onMessage: setSyncMessage,
-    onConnectionChanged: () => setConnectionOpen(false),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: deleteJournalEntry,
     onSuccess: async () => {
@@ -620,6 +605,43 @@ export default function JournalPage() {
         isKo
           ? `동기화 완료: 체결 ${result.imported}건 저장, 종료 포지션 ${result.positions_imported}건 저장 · 기존 기록 ${result.fills_updated + result.positions_updated}건의 지표 기준 갱신${result.warnings.length ? ' · 일부 스냅샷 또는 조회 범위를 확인하세요.' : ''}`
           : `Sync complete: ${result.imported} fills imported, ${result.positions_imported} closed positions imported · refreshed indicator references for ${result.fills_updated + result.positions_updated} existing records${result.warnings.length ? ' · Review snapshot or range warnings.' : ''}`,
+      );
+    },
+  });
+
+  const startExchangeSync = (days: number, message?: string) => {
+    setSyncMessage(message || null);
+    exchangeSyncMutation.mutate({
+      exchange: selectedExchange,
+      inst_type: exchangeInstType,
+      lookback_days: days,
+      symbols: exchangeSymbols.split(',').map((value) => value.trim()).filter(Boolean),
+    });
+  };
+
+  const {
+    exchangeStatuses,
+    selectedExchangeStatus,
+    connect,
+    disconnect,
+    connectionError,
+    isConnecting,
+    isDisconnecting,
+  } = useExchangeConnection({
+    selectedExchange,
+    isKo,
+    onMessage: setSyncMessage,
+    onConnectionChanged: (isInitialConnection) => {
+      setConnectionOpen(false);
+      if (!isInitialConnection) return;
+
+      const configuredDays = lookbackDaysFromStart(historyPeriod.start);
+      const lookbackDays = Math.min(90, Math.max(1, configuredDays || 30));
+      startExchangeSync(
+        lookbackDays,
+        isKo
+          ? `연결 완료: 최근 ${lookbackDays}일 거래를 한 번 자동 동기화합니다.`
+          : `Connection complete: automatically syncing the most recent ${lookbackDays} days once.`,
       );
     },
   });
@@ -671,15 +693,7 @@ export default function JournalPage() {
         syncMessage={syncMessage}
         syncError={exchangeSyncMutation.error}
         period={historyPeriod}
-        onSyncDays={(days) => {
-          setSyncMessage(null);
-          exchangeSyncMutation.mutate({
-            exchange: selectedExchange,
-            inst_type: exchangeInstType,
-            lookback_days: days,
-            symbols: exchangeSymbols.split(',').map((value) => value.trim()).filter(Boolean),
-          });
-        }}
+        onSyncDays={(days) => startExchangeSync(days)}
         onPeriodApply={setHistoryPeriod}
         performance={performanceQuery.data}
       />

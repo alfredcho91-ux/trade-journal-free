@@ -31,7 +31,7 @@ FastAPI
 - `frontend/src/pages/JournalPage.tsx`: 저널 쿼리·기간·모달 상태 조립
 - `frontend/src/features/journal/ExchangeConnectionModal.tsx`: API 입력과 연결 검증 UI
 - `frontend/src/features/journal/JournalSyncPanel.tsx`: 거래소·상품·종목 선택 UI
-- `frontend/src/features/journal/useExchangeConnection.ts`: 거래소 연결 상태·저장·삭제 mutation
+- `frontend/src/features/journal/useExchangeConnection.ts`: 거래소 연결 상태·저장·삭제 mutation. 아직 연결되지 않았던 거래소의 첫 저장 성공 시 최근 30일을 한 번 자동 동기화하도록 `JournalPage`에 알림
 - `frontend/src/features/journal/exchangeQueryKeys.ts`: 거래소 상태 React Query key
 - `frontend/src/pages/TradeAnalysisPage.tsx`: 승패·대성공·대실패·진입·청산 품질, 계획/실수/규칙 준수 행동 분석
 - `frontend/src/pages/RiskLabPage.tsx`: 손절·Stop 최적화·N% Stop·SL/TP 분석
