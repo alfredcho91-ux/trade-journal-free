@@ -65,7 +65,10 @@ def get_indicator_projections(
         {"anchor": anchor, "value": compute_vwap_anchored(df, anchor=anchor)}
         for anchor in vwap_anchors
     ]
-    vwap_deviation = compute_vwap_standard_deviation(df, anchor="month", length=14)
+    vwap_deviations = [
+        compute_vwap_standard_deviation(df, anchor=anchor, length=14)
+        for anchor in ("day", "week", "month")
+    ]
 
     projections = {
         "rsi_30": calculate_required_price_for_rsi(closes, target_rsi=30.0), # type: ignore
@@ -82,6 +85,8 @@ def get_indicator_projections(
         "current_price": current_price,
         "current_rsi": current_rsi,
         "vwaps": vwaps,
-        "vwap_deviation": vwap_deviation,
+        # Keep the monthly field for older clients while exposing all supported anchors.
+        "vwap_deviation": vwap_deviations[-1],
+        "vwap_deviations": vwap_deviations,
         "projections": sanitized_projections
     }

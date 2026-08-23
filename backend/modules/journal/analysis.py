@@ -86,14 +86,14 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
         raise ValueError("start_time must be before end_time")
 
     positions = _closed_positions(repository.list_entries(), start_time, end_time)
-    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         if position.get("symbol"):
             by_market[market_group_key(position)].append(position)
 
     excursions: List[Dict[str, Any]] = []
     warnings: List[str] = []
-    for (exchange, symbol), symbol_positions in by_market.items():
+    for (exchange, instrument_type, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(_position_batches(symbol_positions), start=1):
             earliest_entry = min(_timestamp_ms(item["entry_datetime"]) or end_time for item in batch)
             latest_close = max(_timestamp_ms(item["datetime"]) or start_time for item in batch)
@@ -107,6 +107,7 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
                 total_candles=requested,
                 end_time=latest_close,
                 exchange=exchange,
+                instrument_type=instrument_type,
             )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: market data unavailable")

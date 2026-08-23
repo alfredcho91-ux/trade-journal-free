@@ -51,7 +51,7 @@ function Shell({ children }: { children: ReactNode }) {
   ];
 
   const navigation = (vertical = false) => (
-    <nav className={vertical ? 'flex flex-col gap-1' : 'flex h-10 items-stretch border border-dark-700'} aria-label="Primary">
+    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-4 border border-dark-700'} aria-label="Primary">
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path;
         return (
@@ -61,11 +61,11 @@ function Shell({ children }: { children: ReactNode }) {
             onClick={() => navigate(path)}
             className={vertical
               ? `flex min-h-10 items-center gap-2 border-l-2 px-3 text-sm font-medium transition-colors ${active ? 'border-primary-400 bg-primary-500/15 text-primary-200' : 'border-transparent text-dark-400 hover:bg-dark-800 hover:text-white'}`
-              : `flex min-w-28 items-center justify-center gap-2 px-4 text-sm font-medium transition-colors ${active ? 'bg-primary-500 text-white' : 'bg-dark-900 text-dark-300 hover:bg-dark-800 hover:text-white'}`
+              : `flex min-w-0 items-center justify-center gap-1 px-1 text-[11px] font-medium transition-colors ${active ? 'bg-primary-500 text-white' : 'bg-dark-900 text-dark-300 hover:bg-dark-800 hover:text-white'}`
             }
           >
-            <Icon className="h-4 w-4" aria-hidden="true" />
-            {label}
+            <Icon className={`${vertical ? 'h-4 w-4' : 'h-3.5 w-3.5'} shrink-0`} aria-hidden="true" />
+            <span className="truncate">{label}</span>
           </button>
         );
       })}
@@ -73,7 +73,7 @@ function Shell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen bg-dark-900 text-dark-100">
+    <div className="min-h-screen overflow-x-hidden bg-dark-900 text-dark-100">
       <header className="sticky top-0 z-40 border-b border-dark-700 bg-dark-950/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
           <button

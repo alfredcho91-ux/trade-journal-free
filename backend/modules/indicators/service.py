@@ -10,6 +10,7 @@ import pandas as pd
 from core.indicator_pipelines import compute_trend_judgment_indicators
 from core.vpvr import calculate_vpvr
 from backend.modules.indicators.reverse_calc import get_indicator_projections
+from backend.modules.journal.market_data import load_journal_ohlcv, market_source
 from backend.utils.data_service import BINANCE_TFS, fetch_binance_klines
 from backend.utils.error_handler import DataLoadError
 from backend.utils.response_builder import success_response
@@ -253,25 +254,29 @@ def run_trade_report_service(
     as_of: Optional[int] = None,
     profile_candles: int = 300,
     bin_count: int = 24,
+    exchange: Optional[str] = None,
+    instrument_type: str = "SWAP",
 ) -> Dict[str, Any]:
     """Build one historical chart report without using post-trade data in references."""
     normalized_coin = validate_coin_symbol(coin)
     if interval not in BINANCE_TFS:
         raise ValueError(f"Unsupported Binance interval: {interval}")
 
-    raw = fetch_binance_klines(
-        f"{normalized_coin}USDT",
+    raw = load_journal_ohlcv(
+        f"{normalized_coin}/USDT",
         interval,
         total_candles=limit + TRADE_REPORT_WARMUP_CANDLES,
         end_time=end_time,
+        exchange=exchange,
+        instrument_type=instrument_type,
     )
     if raw is None or raw.empty:
-        raise DataLoadError("Binance OHLCV data is temporarily unavailable")
+        raise DataLoadError("Trade-exchange OHLCV data is temporarily unavailable")
 
     now_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
     completed = raw.loc[pd.to_numeric(raw["close_time"], errors="coerce") < now_ms].copy()
     if completed.empty:
-        raise DataLoadError("No completed Binance candles were available")
+        raise DataLoadError("No completed exchange candles were available")
 
     indicators = compute_trend_judgment_indicators(completed)
     chart_frame = indicators.tail(limit).copy()
@@ -289,7 +294,7 @@ def run_trade_report_service(
         profile_frame = reference_frame.tail(profile_candles)
         profile = calculate_vpvr(profile_frame, bin_count=bin_count, price_range=None)
         profile_payload = {
-            "source": "binance",
+            "source": market_source(raw),
             "symbol": f"{normalized_coin}/USDT",
             "interval": interval,
             "requested_candles": profile_candles,
@@ -312,7 +317,7 @@ def run_trade_report_service(
 
     return success_response(
         data={
-            "source": "Binance Spot API",
+            "source": market_source(raw),
             "symbol": f"{normalized_coin}/USDT",
             "interval": interval,
             "count": len(chart_frame),

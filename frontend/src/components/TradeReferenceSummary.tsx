@@ -25,7 +25,9 @@ export default function TradeReferenceSummary({
   isKo: boolean;
 }) {
   const metrics: Array<{ label: string; value: string; tone?: string }> = [];
-  const vwapDeviation = vwaps?.vwap_deviation;
+  const vwapDeviations = vwaps?.vwap_deviations?.length
+    ? vwaps.vwap_deviations
+    : vwaps?.vwap_deviation ? [vwaps.vwap_deviation] : [];
   if (vpvr) {
     metrics.push(
       {
@@ -45,15 +47,6 @@ export default function TradeReferenceSummary({
       },
     );
   }
-  vwaps?.vwaps.forEach(({ anchor, value }) => {
-    metrics.push({
-      label: ANCHOR_LABELS[anchor]?.[isKo ? 'ko' : 'en'] || `${anchor} VWAP`,
-      value: formatPrice(value),
-    });
-  });
-  const gapPct = vwapDeviation && vwapDeviation.vwap !== 0
-    ? (vwapDeviation.current_price - vwapDeviation.vwap) / vwapDeviation.vwap * 100
-    : null;
 
   return (
     <section className="border border-dark-700 bg-dark-900/35">
@@ -71,23 +64,18 @@ export default function TradeReferenceSummary({
           {isKo ? '선택 시점의 기준값이 없습니다.' : 'No point-in-time references are available.'}
         </div>
       )}
-      {vwapDeviation && (
+      {vwapDeviations.length > 0 && (
         <section className="border-t border-dark-700 px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-xs font-semibold text-white">{isKo ? '월간 Anchored VWAP · 표준편차 밴드' : 'Monthly Anchored VWAP · deviation bands'}</h3>
-              <p className="mt-1 text-[10px] text-dark-500">{anchoredVwapSampleLabel(vwapDeviation, isKo)}</p>
+              <h3 className="text-xs font-semibold text-white">{isKo ? '일간 · 주간 · 월간 Anchored VWAP 표준편차' : 'Daily · Weekly · Monthly Anchored VWAP deviation'}</h3>
+              <p className="mt-1 text-[10px] text-dark-500">{isKo ? '각 앵커의 VWAP 대비 현재 위치입니다. HLC3 · 최근 완료봉 14개 표준편차 기준.' : 'Current location relative to each anchored VWAP. HLC3 with a 14 completed-candle deviation window.'}</p>
             </div>
-            <span className="font-mono text-sm font-semibold text-primary-300">{vwapDeviation.sigma == null ? '—' : `${vwapDeviation.sigma >= 0 ? '+' : ''}${vwapDeviation.sigma.toFixed(2)}σ`} · {anchoredVwapZoneLabel(vwapDeviation.zone, isKo)}</span>
           </div>
-          <dl className="mt-3 grid grid-cols-3 border border-dark-800 text-xs">
-            <div className="px-3 py-2"><dt className="text-dark-500">VWAP</dt><dd className="mt-1 font-mono font-semibold text-dark-100">{formatPrice(vwapDeviation.vwap)}</dd></div>
-            <div className="border-x border-dark-800 px-3 py-2"><dt className="text-dark-500">{isKo ? '기준 시점 가격' : 'Reference price'}</dt><dd className="mt-1 font-mono font-semibold text-white">{formatPrice(vwapDeviation.current_price)}</dd></div>
-            <div className="px-3 py-2"><dt className="text-dark-500">{isKo ? 'VWAP 대비' : 'vs VWAP'}</dt><dd className={`mt-1 font-mono font-semibold ${gapPct != null && gapPct >= 0 ? 'text-bull' : 'text-bear'}`}>{gapPct == null ? '-' : `${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(2)}%`}</dd></div>
-          </dl>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {[1, 2, 3].map((band) => <div key={band} className="grid grid-cols-2 gap-2 border border-dark-800 bg-dark-950/35 px-3 py-2 text-[11px]"><span className="text-bear">-{band}σ <strong className="ml-1 font-mono text-dark-200">{formatPrice(vwapDeviation.bands[String(-band)])}</strong></span><span className="text-right text-bull">+{band}σ <strong className="ml-1 font-mono text-dark-200">{formatPrice(vwapDeviation.bands[String(band)])}</strong></span></div>)}
-          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-3">{vwapDeviations.map((vwapDeviation) => {
+            const gapPct = vwapDeviation.vwap !== 0 ? (vwapDeviation.current_price - vwapDeviation.vwap) / vwapDeviation.vwap * 100 : null;
+            return <article key={vwapDeviation.anchor} className="border border-dark-800 bg-dark-950/35 p-3 text-xs"><div className="flex items-center justify-between gap-2"><strong className="text-dark-100">{ANCHOR_LABELS[vwapDeviation.anchor]?.[isKo ? 'ko' : 'en'] || `${vwapDeviation.anchor} VWAP`}</strong><span className="font-mono font-semibold text-primary-300">{vwapDeviation.sigma == null ? '—' : `${vwapDeviation.sigma >= 0 ? '+' : ''}${vwapDeviation.sigma.toFixed(2)}σ`}</span></div><div className="mt-1 text-[10px] text-dark-500">{anchoredVwapZoneLabel(vwapDeviation.zone, isKo)} · {anchoredVwapSampleLabel(vwapDeviation, isKo)}</div><dl className="mt-3 grid grid-cols-2 gap-y-2"><div><dt className="text-dark-500">VWAP</dt><dd className="mt-0.5 font-mono text-dark-100">{formatPrice(vwapDeviation.vwap)}</dd></div><div><dt className="text-dark-500">{isKo ? 'VWAP 대비' : 'vs VWAP'}</dt><dd className={`mt-0.5 font-mono ${gapPct != null && gapPct >= 0 ? 'text-bull' : 'text-bear'}`}>{gapPct == null ? '-' : `${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(2)}%`}</dd></div></dl><div className="mt-3 grid grid-cols-2 gap-1 text-[10px]"><span className="text-bear">-1σ {formatPrice(vwapDeviation.bands['-1'])}</span><span className="text-bull">+1σ {formatPrice(vwapDeviation.bands['1'])}</span><span className="text-bear">-2σ {formatPrice(vwapDeviation.bands['-2'])}</span><span className="text-bull">+2σ {formatPrice(vwapDeviation.bands['2'])}</span><span className="text-bear">-3σ {formatPrice(vwapDeviation.bands['-3'])}</span><span className="text-bull">+3σ {formatPrice(vwapDeviation.bands['3'])}</span></div></article>;
+          })}</div>
         </section>
       )}
     </section>

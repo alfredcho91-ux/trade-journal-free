@@ -42,11 +42,11 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
 
     snapshot_events = [
         *[
-            SnapshotEvent(position["entry_external_id"], position["entry_timestamp_ms"], position["coin"], "position_entry")
+            SnapshotEvent(position["entry_external_id"], position["entry_timestamp_ms"], position["coin"], "position_entry", exchange_name, inst_type)
             for position in positions
         ],
         *[
-            SnapshotEvent(position["external_id"], position["timestamp_ms"], position["coin"], "position_close")
+            SnapshotEvent(position["external_id"], position["timestamp_ms"], position["coin"], "position_close", exchange_name, inst_type)
             for position in positions
         ],
     ]

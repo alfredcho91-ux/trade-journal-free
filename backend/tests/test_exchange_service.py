@@ -121,3 +121,66 @@ def test_exchange_status_distinguishes_storage_error(monkeypatch):
     result = service.exchange_status_service()
 
     assert result["data"]["exchanges"][0]["credential_error"] == "Protected credential storage is unavailable"
+
+
+def test_open_positions_uses_live_exchange_apis_not_raw_fill_history(monkeypatch):
+    configured = service._Credentials("key", "secret", "passphrase")
+    monkeypatch.setattr(service, "_credentials", lambda exchange_id: configured if exchange_id in {"deepcoin", "bybit"} else None)
+    monkeypatch.setattr(service, "_deepcoin_open_positions", lambda _credentials: [{
+        "position_id": "deepcoin-btc", "exchange": "deepcoin", "symbol": "BTC/USDT",
+        "direction": "Long", "size": 0.1,
+    }])
+    monkeypatch.setattr(service, "_ccxt_open_positions", lambda exchange_id, _credentials: [{
+        "position_id": f"{exchange_id}-eth", "exchange": exchange_id, "symbol": "ETH/USDT",
+        "direction": "Short", "size": 1.0,
+    }])
+
+    result = service.exchange_open_positions_service()
+
+    assert result["success"] is True
+    assert [(item["exchange"], item["symbol"]) for item in result["data"]["positions"]] == [
+        ("bybit", "ETH/USDT"),
+        ("deepcoin", "BTC/USDT"),
+    ]
+    assert result["data"]["unavailable_exchanges"] == []
+
+
+def test_open_positions_isolates_credential_storage_failure(monkeypatch):
+    configured = service._Credentials("key", "secret", "passphrase")
+
+    def load(exchange_id):
+        if exchange_id == "deepcoin":
+            raise credentials.CredentialStorageError("protected storage unavailable")
+        return configured if exchange_id == "bybit" else None
+
+    monkeypatch.setattr(service, "_credentials", load)
+    monkeypatch.setattr(service, "_ccxt_open_positions", lambda exchange_id, _credentials: [{
+        "position_id": f"{exchange_id}-btc", "exchange": exchange_id, "symbol": "BTC/USDT",
+        "direction": "Long", "size": 1.0,
+    }])
+
+    result = service.exchange_open_positions_service()
+
+    assert result["data"]["unavailable_exchanges"] == ["deepcoin"]
+    assert result["data"]["positions"][0]["exchange"] == "bybit"
+
+
+def test_ccxt_without_position_endpoint_is_unavailable(monkeypatch):
+    class Client:
+        name = "Test Exchange"
+        has = {"fetchPositions": False}
+
+        def load_markets(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(service, "_exchange_client", lambda *_args: Client())
+
+    try:
+        service._ccxt_open_positions("bybit", service._Credentials("key", "secret"))
+    except service.DataLoadError:
+        pass
+    else:
+        raise AssertionError("unsupported position lookup must not be reported as an empty account")

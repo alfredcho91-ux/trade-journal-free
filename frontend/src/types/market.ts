@@ -109,6 +109,7 @@ export interface TradeReportVWAPData {
     value: number | null;
   }>;
   vwap_deviation?: AnchoredVwapDeviation | null;
+  vwap_deviations?: AnchoredVwapDeviation[];
   projections: {
     rsi_30: number | null;
     rsi_70: number | null;

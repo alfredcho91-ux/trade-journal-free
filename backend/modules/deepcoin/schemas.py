@@ -43,6 +43,24 @@ class DeepcoinSyncEnvelope(BaseModel):
     data: DeepcoinSyncData
 
 
+class DeepcoinOpenPosition(BaseModel):
+    position_id: str
+    symbol: str
+    direction: Literal["Long", "Short"]
+    size: float
+    average_price: Optional[float] = None
+    last_price: Optional[float] = None
+    unrealized_pnl: Optional[float] = None
+    leverage: Optional[float] = None
+    opened_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class DeepcoinOpenPositionsEnvelope(BaseModel):
+    success: bool
+    data: List[DeepcoinOpenPosition] = Field(default_factory=list)
+
+
 class DeepcoinTradeMarker(BaseModel):
     datetime: str
     price: float
@@ -65,6 +83,8 @@ class DeepcoinTradeMarkersEnvelope(BaseModel):
 __all__ = [
     "DeepcoinStatusData",
     "DeepcoinStatusEnvelope",
+    "DeepcoinOpenPosition",
+    "DeepcoinOpenPositionsEnvelope",
     "DeepcoinTradeMarker",
     "DeepcoinTradeMarkersData",
     "DeepcoinTradeMarkersEnvelope",

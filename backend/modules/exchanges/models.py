@@ -55,6 +55,8 @@ class SnapshotEvent:
     timestamp_ms: int
     coin: str
     event_type: str
+    exchange: str = "Deepcoin"
+    instrument_type: str = "SWAP"
 
 
 @dataclass(frozen=True)

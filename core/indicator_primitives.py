@@ -213,16 +213,16 @@ def compute_vwap_anchored(
 
 def compute_vwap_standard_deviation(
     df: pd.DataFrame,
-    anchor: Literal["month"] = "month",
+    anchor: Literal["day", "week", "month"] = "month",
     length: int = 14,
     timestamp_column: str = "open_dt",
 ) -> Optional[dict[str, object]]:
-    """Return monthly anchored HLC3 VWAP, bands, and current sigma position."""
-    if anchor != "month" or length <= 0:
-        raise ValueError("Only the month anchor and a positive length are supported")
+    """Return anchored HLC3 VWAP, bands, and current sigma position."""
+    if anchor not in {"day", "week", "month"} or length <= 0:
+        raise ValueError("VWAP anchor must be day, week, or month and length must be positive")
     if df.empty or not {"high", "low", "close", "volume"}.issubset(df.columns):
         return None
-    vwap = compute_vwap_anchored(df, anchor="month", timestamp_column=timestamp_column)
+    vwap = compute_vwap_anchored(df, anchor=anchor, timestamp_column=timestamp_column)
     if vwap is None:
         return None
     timestamps = pd.to_datetime(
@@ -231,8 +231,13 @@ def compute_vwap_standard_deviation(
         utc=True,
     )
     reference = timestamps.iloc[-1] if isinstance(timestamps, pd.Series) else timestamps[-1]
-    month_start = reference.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    period = df.loc[timestamps >= month_start]
+    if anchor == "day":
+        start = reference.normalize()
+    elif anchor == "week":
+        start = reference.normalize() - pd.Timedelta(days=reference.weekday())
+    else:
+        start = reference.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    period = df.loc[timestamps >= start]
     typical = (period["high"] + period["low"] + period["close"]) / 3.0
     sample = pd.DataFrame({"typical": typical, "volume": period["volume"]}).tail(length)
     sample = sample.replace([np.inf, -np.inf], np.nan).dropna()
@@ -265,7 +270,7 @@ def compute_vwap_standard_deviation(
         zone = "center"
     bands = {str(multiplier): vwap + standard_deviation * multiplier for multiplier in (-3, -2, -1, 1, 2, 3)}
     return {
-        "anchor": "month",
+        "anchor": anchor,
         "length": length,
         "sample_count": int(len(sample)),
         "source": "HLC3",

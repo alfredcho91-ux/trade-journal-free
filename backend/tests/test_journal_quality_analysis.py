@@ -82,3 +82,23 @@ def test_return_filter_uses_absolute_net_return_on_invested_margin():
     assert metadata["basis"] == "net_return_on_invested_margin"
     assert metadata["excluded_below_threshold_count"] == 2
     assert metadata["excluded_return_unavailable_count"] == 1
+
+
+def test_return_filter_does_not_assume_unleveraged_margin_for_derivative_position():
+    positions = [{
+        "id": 1,
+        "source": "bybit_position",
+        "direction": "Long",
+        "entry_price": 100.0,
+        "exit_price": 110.0,
+        "realized_pnl": 10.0,
+        "fee": 0.0,
+        "funding_fee": 0.0,
+        "leverage": None,
+        "invested_amount": None,
+    }]
+
+    included, metadata = _filter_positions_by_net_return(positions, 1.0)
+
+    assert included == []
+    assert metadata["excluded_return_unavailable_count"] == 1

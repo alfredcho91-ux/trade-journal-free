@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, ChevronDown, Loader2, SlidersHorizontal } from 'lucide-react';
 
-import { getJournal, getJournalBehaviorAnalysis, getJournalQualityAnalysis } from '../api/client';
+import { getExchangeOpenPositions, getJournal, getJournalBehaviorAnalysis, getJournalQualityAnalysis } from '../api/client';
 import {
   ANALYSIS_TIMEFRAMES,
   buildAnalyzedTrades,
@@ -262,7 +262,13 @@ export default function TradeAnalysisPage() {
     const returnPct = netReturnPct(entry);
     return returnPct != null && Math.abs(returnPct) > minimumAbsNetReturnPct;
   }), [minimumAbsNetReturnPct, periodEntries]);
-  const ongoingEntries = periodEntries;
+  const openPositionsQuery = useQuery({
+    queryKey: ['exchanges', 'open-positions'],
+    queryFn: getExchangeOpenPositions,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: false,
+  });
   const allTrades = useMemo(() => {
     const periodIds = new Set(analysisEntries.map((entry) => entry.id));
     const excursions = qualityQuery.data?.items
@@ -386,7 +392,13 @@ export default function TradeAnalysisPage() {
         ))}
       </nav>
 
-      <OngoingPositionFills entries={ongoingEntries} isKo={isKo} />
+      <OngoingPositionFills
+        entries={entries}
+        openPositions={openPositionsQuery.data?.positions || []}
+        unavailableExchanges={openPositionsQuery.data?.unavailable_exchanges || []}
+        hasLoadError={openPositionsQuery.isError}
+        isKo={isKo}
+      />
 
       <section className="flex flex-wrap items-center justify-between gap-3 border-y border-dark-700 py-2">
         <div><div className="text-xs font-medium text-dark-200">{isKo ? '분석 방향' : 'Analysis Direction'}</div><div className="mt-0.5 text-[10px] text-dark-500">{isKo ? '아래 진입·청산 품질 통계에 적용' : 'Applied to entry and exit quality statistics'}</div></div>

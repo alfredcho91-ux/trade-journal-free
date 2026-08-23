@@ -399,7 +399,7 @@ def _path_cache_key(start_time: int, end_time: int, positions: List[Dict[str, An
 
 
 def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
-    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         symbol = position.get("symbol")
         if symbol:
@@ -407,7 +407,7 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
 
     items: List[Dict[str, Any]] = []
     warnings: List[str] = []
-    for (exchange, symbol), symbol_positions in by_market.items():
+    for (exchange, instrument_type, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(position_batches(symbol_positions), start=1):
             earliest = min(timestamp_ms(item.get("entry_datetime")) or 0 for item in batch)
             latest = max(timestamp_ms(item.get("datetime")) or 0 for item in batch)
@@ -421,6 +421,7 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
                 total_candles=requested,
                 end_time=latest,
                 exchange=exchange,
+                instrument_type=instrument_type,
             )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: SL/TP market data unavailable")

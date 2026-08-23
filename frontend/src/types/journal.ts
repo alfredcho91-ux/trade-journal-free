@@ -558,6 +558,28 @@ export interface DeepcoinSyncResult {
   warnings: string[];
 }
 
+export interface DeepcoinOpenPosition {
+  position_id: string;
+  symbol: string;
+  direction: 'Long' | 'Short';
+  size: number;
+  average_price?: number | null;
+  last_price?: number | null;
+  unrealized_pnl?: number | null;
+  leverage?: number | null;
+  opened_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ExchangeOpenPosition extends DeepcoinOpenPosition {
+  exchange: ExchangeId;
+}
+
+export interface ExchangeOpenPositionsData {
+  positions: ExchangeOpenPosition[];
+  unavailable_exchanges: ExchangeId[];
+}
+
 export interface TradeExecutionMarker {
   datetime: string;
   price: number;

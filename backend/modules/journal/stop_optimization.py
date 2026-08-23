@@ -347,13 +347,13 @@ def _build_path_items(
     quality_items: Dict[int, Dict[str, Any]],
     warnings: List[str],
 ) -> List[Dict[str, Any]]:
-    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         if position.get("symbol"):
             by_market[market_group_key(position)].append(position)
 
     items = []
-    for (exchange, symbol), symbol_positions in by_market.items():
+    for (exchange, instrument_type, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(position_batches(symbol_positions), start=1):
             earliest = min(finite_timestamp(item.get("entry_datetime")) or 0 for item in batch)
             latest = max(finite_timestamp(item.get("datetime")) or 0 for item in batch)
@@ -367,6 +367,7 @@ def _build_path_items(
                 total_candles=requested,
                 end_time=latest,
                 exchange=exchange,
+                instrument_type=instrument_type,
             )
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: stop optimization market data unavailable")

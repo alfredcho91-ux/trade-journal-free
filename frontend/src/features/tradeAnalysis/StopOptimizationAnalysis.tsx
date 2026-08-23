@@ -188,6 +188,7 @@ export default function StopOptimizationAnalysis({ data, direction, isLoading, i
         <p className="mt-1 text-[11px] text-dark-500">승리 보존율, PF, 평균 R, Drawdown을 함께 반영 · 굵은 행이 선택값</p>
         <div className="mt-3"><CandidateTable candidates={analysis.fixed_candidates} selected={recommendation?.selected_pct} /></div>
       </details>
+      {data.warnings.length > 0 && <div className="space-y-0.5 border-t border-dark-700 p-4 text-[11px] text-amber-300">{data.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
 
       <details className="border-b border-dark-700 p-4" open>
         <summary className="cursor-pointer text-xs font-semibold text-white">ATR Stop 후보 비교</summary>

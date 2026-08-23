@@ -35,14 +35,16 @@ def test_trade_report_uses_only_completed_candles_before_reference(monkeypatch):
     frame = _trade_report_frame()
     as_of = int(frame.iloc[-61]["close_time"]) + 1
 
-    def _mock_fetch(symbol, interval, total_candles, end_time):
-        assert symbol == "BTCUSDT"
+    def _mock_load(symbol, interval, *, total_candles, end_time=None, exchange=None, instrument_type="SWAP"):
+        assert symbol == "BTC/USDT"
         assert interval == "1h"
         assert total_candles == 550
         assert end_time == int(frame.iloc[-1]["close_time"])
+        assert exchange is None
+        assert instrument_type == "SWAP"
         return frame
 
-    monkeypatch.setattr(indicator_service, "fetch_binance_klines", _mock_fetch)
+    monkeypatch.setattr(indicator_service, "load_journal_ohlcv", _mock_load)
 
     result = indicator_service.run_trade_report_service(
         "BTC",

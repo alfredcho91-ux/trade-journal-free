@@ -477,14 +477,14 @@ def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Di
         symbols = [str(position["symbol"]) for position in stop_positions if position.get("symbol")]
         events_by_symbol, trigger_coverage = _load_stop_events(symbols, warnings)
         matched = _match_confirmed_stops(stop_positions, events_by_symbol)
-        matched_by_market: Dict[tuple[str, str], List[Tuple[Dict[str, Any], Dict[str, Any]]]] = defaultdict(list)
+        matched_by_market: Dict[tuple[str, str, str], List[Tuple[Dict[str, Any], Dict[str, Any]]]] = defaultdict(list)
         for position, event in matched:
             matched_by_market[market_group_key(position)].append((position, event))
 
         items: List[Dict[str, Any]] = []
-        for (_exchange, symbol), pairs in matched_by_market.items():
+        for (_exchange, instrument_type, symbol), pairs in matched_by_market.items():
             grouped_positions = [position for position, _ in pairs]
-            frames = load_market_frames(symbol, grouped_positions, warnings)
+            frames = load_market_frames(symbol, grouped_positions, warnings, instrument_type)
             if "4h" not in frames:
                 continue
             for position, event in pairs:

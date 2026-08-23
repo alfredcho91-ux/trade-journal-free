@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 import pandas as pd
 import requests
@@ -149,11 +149,13 @@ def indicator_snapshot_for_event(
 
 def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str, Any]]:
     snapshots: Dict[str, Dict[str, Any]] = {}
-    events_by_coin: Dict[str, List[SnapshotEvent]] = {}
+    events_by_market: Dict[Tuple[str, str, str], List[SnapshotEvent]] = {}
     for event in events:
-        events_by_coin.setdefault(event.coin, []).append(event)
+        exchange = str(getattr(event, "exchange", "Deepcoin") or "Deepcoin")
+        instrument_type = str(getattr(event, "instrument_type", "SWAP") or "SWAP").upper()
+        events_by_market.setdefault((event.coin, exchange, instrument_type), []).append(event)
 
-    for coin, coin_events in events_by_coin.items():
+    for (coin, exchange, instrument_type), coin_events in events_by_market.items():
         frames: Dict[str, Optional[pd.DataFrame]] = {}
         latest_event_time = max(item.timestamp_ms for item in coin_events)
         for interval in SNAPSHOT_INTERVALS:
@@ -163,7 +165,8 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
                     interval,
                     total_candles=snapshot_candle_count(coin_events, interval),
                     end_time=latest_event_time,
-                    exchange="Deepcoin",
+                    exchange=exchange,
+                    instrument_type=instrument_type,
                 )
             except (ValueError, requests.RequestException):
                 frames[interval] = None
@@ -184,7 +187,7 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
                 "version": 2,
                 "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
                 "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
-                "reference": f"last_completed_candle_before_deepcoin_{event.event_type}",
+                "reference": f"last_completed_candle_before_{exchange.lower()}_{event.event_type}",
                 "event_type": event.event_type,
                 "event_time": _timestamp_to_iso(event.timestamp_ms),
                 "timeframes": timeframes,

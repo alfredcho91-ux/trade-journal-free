@@ -282,6 +282,8 @@ def _net_return_pct(entry: Dict[str, Any]) -> Optional[float]:
         leverage = finite(entry.get("leverage"))
         if notional is None:
             return None
+        if source.endswith("_position") and (leverage is None or leverage <= 0):
+            return None
         invested = notional / leverage if leverage is not None and leverage > 0 else notional
 
     return (net_pnl / invested) * 100 if invested > 0 else None
@@ -423,15 +425,15 @@ def _run_uncached_quality_analysis(
     excursion_data = excursion_response["data"]
     excursions = {item["journal_id"]: item for item in excursion_data["items"]}
     warnings = list(excursion_data.get("warnings") or [])
-    by_market: Dict[tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    by_market: Dict[tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
         if position.get("symbol"):
             by_market[market_group_key(position)].append(position)
 
     items: List[Dict[str, Any]] = []
     market_data_sources = set()
-    for (_exchange, symbol), symbol_positions in by_market.items():
-        frames = load_market_frames(symbol, symbol_positions, warnings)
+    for (_exchange, instrument_type, symbol), symbol_positions in by_market.items():
+        frames = load_market_frames(symbol, symbol_positions, warnings, instrument_type)
         market_data_sources.update(
             str(frame.attrs.get("market_source"))
             for frame in frames.values()

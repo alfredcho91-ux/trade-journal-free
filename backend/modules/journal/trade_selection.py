@@ -33,11 +33,17 @@ def finite_float(value: Any) -> Optional[float]:
     return result if math.isfinite(result) else None
 
 
-def market_group_key(entry: Dict[str, Any]) -> tuple[str, str]:
+def instrument_type(entry: Dict[str, Any]) -> str:
+    """Recover the synced market type without guessing from a symbol alone."""
+    tags = {tag.strip().lower() for tag in str(entry.get("tags") or "").split(",")}
+    return "SPOT" if "spot" in tags else "SWAP"
+
+
+def market_group_key(entry: Dict[str, Any]) -> tuple[str, str, str]:
     """Keep positions from different exchanges out of the same OHLCV analysis."""
     exchange = str(entry.get("exchange") or "unknown").strip().lower()
     symbol = str(entry.get("symbol") or "").strip().upper()
-    return exchange, symbol
+    return exchange, instrument_type(entry), symbol
 
 
 def closed_positions(

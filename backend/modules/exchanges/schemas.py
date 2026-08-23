@@ -97,11 +97,36 @@ class ExchangeExecutionEnvelope(BaseModel):
     data: List[ExchangeExecution]
 
 
+class ExchangeOpenPosition(BaseModel):
+    position_id: str
+    exchange: ExchangeId
+    symbol: str
+    direction: Literal["Long", "Short"]
+    size: float
+    average_price: Optional[float] = None
+    last_price: Optional[float] = None
+    unrealized_pnl: Optional[float] = None
+    leverage: Optional[float] = None
+    opened_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ExchangeOpenPositionsData(BaseModel):
+    positions: List[ExchangeOpenPosition] = Field(default_factory=list)
+    unavailable_exchanges: List[ExchangeId] = Field(default_factory=list)
+
+
+class ExchangeOpenPositionsEnvelope(BaseModel):
+    success: bool
+    data: ExchangeOpenPositionsData
+
+
 __all__ = [
     "ExchangeId",
     "ExchangeCredentialsRequest",
     "ExchangeCredentialDeleteEnvelope",
     "ExchangeExecutionEnvelope",
+    "ExchangeOpenPositionsEnvelope",
     "ExchangeListEnvelope",
     "ExchangeStatus",
     "ExchangeSyncEnvelope",

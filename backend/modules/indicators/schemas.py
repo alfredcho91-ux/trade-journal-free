@@ -112,6 +112,8 @@ class TradeReportQueryParams(BaseModel):
     as_of: Optional[int] = Field(default=None, ge=1)
     profile_candles: int = Field(default=300, ge=50, le=1000)
     bin_count: int = Field(default=24, ge=8, le=100)
+    exchange: Optional[Literal["deepcoin", "binance", "bybit", "okx"]] = None
+    instrument_type: Literal["SWAP", "SPOT"] = "SWAP"
 
 
 class TradeReportEnvelope(BaseModel):
@@ -130,7 +132,7 @@ class IndicatorProjectionVWAP(BaseModel):
 
 
 class IndicatorProjectionVWAPDeviation(BaseModel):
-    anchor: Literal["month"]
+    anchor: Literal["day", "week", "month"]
     length: int
     sample_count: int
     source: str
@@ -147,6 +149,7 @@ class IndicatorProjectionPayload(BaseModel):
     current_rsi: Optional[float] = None
     vwaps: List[IndicatorProjectionVWAP]
     vwap_deviation: Optional[IndicatorProjectionVWAPDeviation] = None
+    vwap_deviations: List[IndicatorProjectionVWAPDeviation] = Field(default_factory=list)
     projections: IndicatorProjectionValues
 
 

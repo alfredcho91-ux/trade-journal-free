@@ -178,10 +178,21 @@ export function buildAnalyzedTrades(entries: JournalEntry[], excursions: TradeEx
     const holdingMinutes = Number.isFinite(entryMs) && Number.isFinite(exitMs) && exitMs >= entryMs
       ? (exitMs - entryMs) / 60_000
       : null;
-    const snapshot = resolution.matchedEntry?.indicator_snapshot || null;
+    const matchedSnapshot = resolution.matchedEntry?.indicator_snapshot || null;
+    const positionSnapshot = entry.indicator_snapshot || null;
+    const snapshot = matchedSnapshot || (
+      positionSnapshot?.event_type === 'position_entry' || positionSnapshot?.reference?.includes('_position_entry')
+        ? positionSnapshot
+        : null
+    );
     const isEntrySnapshot = Boolean(
       snapshot &&
-      (snapshot.event_type === 'fill' || snapshot.reference?.includes('_fill')),
+      (
+        snapshot.event_type === 'fill' ||
+        snapshot.event_type === 'position_entry' ||
+        snapshot.reference?.includes('_fill') ||
+        snapshot.reference?.includes('_position_entry')
+      ),
     );
     return {
       entry,

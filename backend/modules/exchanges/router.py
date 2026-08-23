@@ -9,6 +9,7 @@ from backend.modules.exchanges.schemas import (
     ExchangeCredentialsRequest,
     ExchangeCredentialDeleteEnvelope,
     ExchangeExecutionEnvelope,
+    ExchangeOpenPositionsEnvelope,
     ExchangeId,
     ExchangeListEnvelope,
     ExchangeSyncEnvelope,
@@ -18,6 +19,7 @@ from backend.modules.exchanges.service import (
     configure_exchange_credentials_service,
     delete_exchange_credentials_service,
     exchange_executions_service,
+    exchange_open_positions_service,
     exchange_status_service,
     sync_exchange_service,
 )
@@ -50,6 +52,13 @@ async def api_exchange_executions(
         start_time,
         end_time,
     )
+
+
+@router.get("/open-positions", response_model=ExchangeOpenPositionsEnvelope)
+@handle_api_errors()
+async def api_exchange_open_positions():
+    """List confirmed current SWAP positions from configured exchanges."""
+    return await run_in_threadpool(exchange_open_positions_service)
 
 
 @router.post("/{exchange_id}/credentials", response_model=ExchangeListEnvelope)

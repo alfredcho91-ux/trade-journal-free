@@ -16,6 +16,8 @@ export async function getTradeReport(
     end_time?: number;
     as_of?: number;
     profile_candles?: number;
+    exchange?: 'deepcoin' | 'binance' | 'bybit' | 'okx';
+    instrument_type?: 'SWAP' | 'SPOT';
   },
 ): Promise<TradeReportData> {
   try {

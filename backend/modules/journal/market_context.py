@@ -26,7 +26,7 @@ def requested_candles(positions: List[Dict[str, Any]], interval: str) -> int:
     return min(MAX_MARKET_CANDLES, WARMUP_CANDLES + math.ceil(max(0, span) / INTERVAL_MS[interval]))
 
 
-def load_market_frames(symbol: str, positions: List[Dict[str, Any]], warnings: List[str]) -> Dict[str, Any]:
+def load_market_frames(symbol: str, positions: List[Dict[str, Any]], warnings: List[str], instrument_type: str = "SWAP") -> Dict[str, Any]:
     frames: Dict[str, Any] = {}
     latest_close = max(finite_timestamp(item.get("datetime")) or 0 for item in positions)
     analysis_end = min(
@@ -40,6 +40,7 @@ def load_market_frames(symbol: str, positions: List[Dict[str, Any]], warnings: L
             total_candles=requested_candles(positions, interval),
             end_time=analysis_end,
             exchange=positions[0].get("exchange"),
+            instrument_type=instrument_type,
         )
         if frame is None or frame.empty:
             warnings.append(f"{symbol} {interval}: market data unavailable")

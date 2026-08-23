@@ -1,4 +1,4 @@
-"""Trade Journal Free API."""
+"""Trade Journal API."""
 
 import secrets
 from typing import Optional
@@ -65,9 +65,9 @@ def verify_credentials(
 
 
 app = FastAPI(
-    title="Trade Journal Free API",
+    title="Trade Journal API",
     description="Read-only multi-exchange journal and personal trade analytics",
-    version="1.0.0",
+    version="1.0.10",
     default_response_class=ORJSONResponse,
     dependencies=[Depends(verify_credentials)],
 )

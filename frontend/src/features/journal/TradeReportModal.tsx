@@ -194,6 +194,13 @@ export default function TradeReportModal({
   const endTime = Number.isFinite(exitMs)
     ? exitMs + REPORT_INTERVAL_MS[reportInterval] * 60
     : undefined;
+  const exchangeId = String(entry.exchange || '').trim().toLowerCase();
+  const reportExchange = ['deepcoin', 'binance', 'bybit', 'okx'].includes(exchangeId)
+    ? exchangeId as 'deepcoin' | 'binance' | 'bybit' | 'okx'
+    : undefined;
+  const reportInstrumentType = String(entry.tags || '').split(',').map((tag) => tag.trim().toLowerCase()).includes('spot')
+    ? 'SPOT' as const
+    : 'SWAP' as const;
   const reportQuery = useQuery({
     queryKey: [
       'trade-report',
@@ -202,23 +209,29 @@ export default function TradeReportModal({
       endTime,
       Number.isFinite(referenceMs) ? referenceMs : null,
       candleLimit,
+      reportExchange,
+      reportInstrumentType,
     ],
     queryFn: () => getTradeReport(coin as string, reportInterval, {
       limit: candleLimit,
       end_time: endTime,
       as_of: Number.isFinite(referenceMs) ? referenceMs : undefined,
       profile_candles: profileCandleLimit,
+      exchange: reportExchange,
+      instrument_type: reportInstrumentType,
     }),
     enabled: Boolean(coin && endTime),
     staleTime: 5 * 60_000,
   });
   const pathQuery = useQuery({
-    queryKey: ['trade-path-summary', coin, pathConfig?.interval, pathConfig?.limit, entryMs, exitMs, entry.entry_price, entry.exit_price, entry.direction],
+    queryKey: ['trade-path-summary', coin, pathConfig?.interval, pathConfig?.limit, entryMs, exitMs, entry.entry_price, entry.exit_price, entry.direction, reportExchange, reportInstrumentType],
     queryFn: () => getTradeReport(coin as string, pathConfig!.interval, {
       limit: pathConfig!.limit,
       end_time: exitMs + PATH_INTERVAL_MS[pathConfig!.interval] * 2,
       as_of: entryMs,
       profile_candles: 100,
+      exchange: reportExchange,
+      instrument_type: reportInstrumentType,
     }),
     enabled: Boolean(
       isClosedPosition(entry)

@@ -3,6 +3,8 @@
 import { api, ApiResponse, ensureApiSuccess, toApiClientError, unwrapApiResponse } from './config';
 import type {
   DeepcoinStatus,
+  DeepcoinOpenPosition,
+  ExchangeOpenPositionsData,
   DeepcoinSyncResult,
   DeepcoinTradeMarkers,
   ExchangeId,
@@ -232,6 +234,24 @@ export async function getDeepcoinStatus(): Promise<DeepcoinStatus> {
     return unwrapApiResponse(res, 'Failed to load Deepcoin connection status.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to load Deepcoin connection status.');
+  }
+}
+
+export async function getDeepcoinOpenPositions(): Promise<DeepcoinOpenPosition[]> {
+  try {
+    const res = await api.get<ApiResponse<DeepcoinOpenPosition[]>>('/deepcoin/open-positions');
+    return unwrapApiResponse(res, 'Failed to load Deepcoin open positions.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load Deepcoin open positions.');
+  }
+}
+
+export async function getExchangeOpenPositions(): Promise<ExchangeOpenPositionsData> {
+  try {
+    const res = await api.get<ApiResponse<ExchangeOpenPositionsData>>('/exchanges/open-positions');
+    return unwrapApiResponse(res, 'Failed to load exchange open positions.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load exchange open positions.');
   }
 }
 

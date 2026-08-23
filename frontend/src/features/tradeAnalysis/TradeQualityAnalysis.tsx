@@ -270,7 +270,7 @@ export default function TradeQualityAnalysis({
         </div>
       </details>}
 
-      {data.warnings.length > 0 && <div className="text-[11px] text-amber-300">{isKo ? 'R 배수는 손절 위험값이 저장된 거래에서만 계산합니다. 일부 시장 데이터가 없으면 해당 항목은 제외됩니다.' : data.warnings.join(' ')}</div>}
+      {data.warnings.length > 0 && <div className="space-y-0.5 text-[11px] text-amber-300">{data.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
       {isError && <div className="flex items-center justify-between gap-3 text-[11px] text-amber-300"><span>{isKo ? '최신 데이터 갱신에 실패해 이전 분석 결과를 표시합니다.' : 'Showing the previous result because the latest refresh failed.'}</span><button type="button" onClick={onRetry} className="inline-flex items-center gap-1 text-amber-200"><RefreshCw className="h-3 w-3" />{isKo ? '재시도' : 'Retry'}</button></div>}
     </div>
   );
