@@ -245,6 +245,7 @@ export default function CurrentMarketSimilarityPanel({
           entry={selectedTrade.entry}
           allEntries={allEntries}
           excursion={selectedTrade.excursion}
+          qualityItem={qualityItems.find((item) => item.journal_id === selectedTrade.entry.id)}
           excursionLoading={isHistoryLoading}
           isKo={isKo}
           onClose={() => setSelectedTrade(null)}

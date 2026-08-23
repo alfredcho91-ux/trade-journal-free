@@ -152,7 +152,7 @@ export default function MajorSuccessAnalysis({ trades, qualityItems, allEntries,
       )}
 
       {selected && (
-        <TradeReportModal entry={selected.trade.entry} allEntries={allEntries} excursion={selected.trade.excursion} isKo={isKo} onClose={() => setSelected(null)} />
+        <TradeReportModal entry={selected.trade.entry} allEntries={allEntries} excursion={selected.trade.excursion} qualityItem={selected.quality} isKo={isKo} onClose={() => setSelected(null)} />
       )}
     </section>
   );

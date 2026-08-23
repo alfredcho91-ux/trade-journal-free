@@ -71,20 +71,19 @@ export interface JournalCurrentMarketData {
   warnings: string[];
 }
 
-export type TradeExcursionClassification = 'good_entry_poor_exit' | 'poor_entry' | 'balanced';
-
 export interface TradeExcursion {
   journal_id: number;
   mfe_pct: number;
   mae_pct: number;
   realized_move_pct: number;
   capture_pct?: number | null;
-  classification: TradeExcursionClassification;
+  interval?: '1m' | '15m';
   candle_count: number;
 }
 
 export interface JournalExcursionData {
   interval: '15m';
+  short_trade_interval?: '1m';
   items: TradeExcursion[];
   warnings: string[];
 }

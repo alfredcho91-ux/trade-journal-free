@@ -97,16 +97,34 @@ function TradeEvidenceList({
   );
 }
 
-function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; isKo: boolean; isLoading: boolean }) {
+function TradeQuality({
+  trades,
+  qualityItems,
+  isKo,
+  isLoading,
+}: {
+  trades: AnalyzedTrade[];
+  qualityItems: TradeQualityItem[];
+  isKo: boolean;
+  isLoading: boolean;
+}) {
   const withExcursion = trades.filter((trade) => trade.excursion);
-  const goodEntryPoorExit = withExcursion.filter((trade) => trade.excursion?.classification === 'good_entry_poor_exit');
-  const poorEntry = withExcursion.filter((trade) => trade.excursion?.classification === 'poor_entry');
-  const rows = [...goodEntryPoorExit, ...poorEntry]
+  const qualityById = new Map(qualityItems.map((item) => [item.journal_id, item]));
+  const classified = withExcursion.flatMap((trade) => {
+    const quality = trade.entry.id == null ? null : qualityById.get(trade.entry.id) || null;
+    return quality ? [{ trade, quality }] : [];
+  });
+  const exitMisses = classified.filter(({ quality }) => (
+    quality.quality_class === 'good_entry_early_exit'
+    || quality.quality_class === 'good_entry_late_exit'
+  ));
+  const poorEntries = classified.filter(({ quality }) => quality.quality_class === 'poor_entry');
+  const rows = [...exitMisses, ...poorEntries]
     .sort((a, b) => {
-      const aTime = a.entry.datetime ? new Date(a.entry.datetime).getTime() : 0;
-      const bTime = b.entry.datetime ? new Date(b.entry.datetime).getTime() : 0;
+      const aTime = a.trade.entry.datetime ? new Date(a.trade.entry.datetime).getTime() : 0;
+      const bTime = b.trade.entry.datetime ? new Date(b.trade.entry.datetime).getTime() : 0;
       if (aTime !== bTime) return bTime - aTime;
-      return (b.entry.id || 0) - (a.entry.id || 0);
+      return (b.trade.entry.id || 0) - (a.trade.entry.id || 0);
     })
     .slice(0, 10);
   const qualitySummary = performanceSummary(trades);
@@ -117,7 +135,7 @@ function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; is
         <div>
           <h2 className="text-sm font-semibold text-white">진입 후 가격 흐름</h2>
           <div className="mt-0.5 text-[11px] text-dark-500">
-            {isKo ? '15분봉 · 진입 이후부터 종료 이전까지 완전히 포함된 봉 기준' : '15m candles fully contained between entry and exit'}
+            {isKo ? '15분봉 · 15분 미만 거래는 완성된 1분봉으로 보완' : '15m candles · completed 1m candles for trades shorter than 15 minutes'}
           </div>
         </div>
         {isLoading && <Loader2 className="h-4 w-4 animate-spin text-dark-400" />}
@@ -126,8 +144,8 @@ function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; is
         <span>{isKo ? '계산 가능' : 'Available'} <strong className="font-mono text-dark-200">{withExcursion.length}/{trades.length}</strong></span>
         <span>{isKo ? '진입 후 최대 유리폭' : 'Maximum favorable move'} <strong className="font-mono text-bull">+{plain(qualitySummary.averageMfePct)}%</strong></span>
         <span>{isKo ? '진입 후 최대 불리폭' : 'Maximum adverse move'} <strong className="font-mono text-bear">-{plain(qualitySummary.averageMaePct)}%</strong></span>
-        <span>{isKo ? '종료 아쉬움' : 'Exit Miss'} <strong className="font-mono text-amber-300">{goodEntryPoorExit.length}</strong></span>
-        <span>{isKo ? '진입 불리' : 'Poor Entry'} <strong className="font-mono text-bear">{poorEntry.length}</strong></span>
+        <span>{isKo ? '종료 아쉬움' : 'Exit Miss'} <strong className="font-mono text-amber-300">{exitMisses.length}</strong></span>
+        <span>{isKo ? '진입 불리' : 'Poor Entry'} <strong className="font-mono text-bear">{poorEntries.length}</strong></span>
       </div>
       {rows.length > 0 && (
         <div className="mt-4 overflow-x-auto">
@@ -142,15 +160,17 @@ function TradeQuality({ trades, isKo, isLoading }: { trades: AnalyzedTrade[]; is
               </tr>
             </thead>
             <tbody>
-              {rows.map((trade) => (
+              {rows.map(({ trade, quality }) => (
                 <tr key={trade.entry.id} className="border-b border-dark-800">
                   <td className="py-2 text-dark-200">
                     {trade.entry.symbol} · {trade.entry.direction} · {trade.entry.datetime ? toDateInputValue(new Date(trade.entry.datetime)) : '-'}
                   </td>
-                  <td className={`py-2 ${trade.excursion?.classification === 'poor_entry' ? 'text-bear' : 'text-amber-300'}`}>
-                    {trade.excursion?.classification === 'poor_entry'
+                  <td className={`py-2 ${quality.quality_class === 'poor_entry' ? 'text-bear' : 'text-amber-300'}`}>
+                    {quality.quality_class === 'poor_entry'
                       ? isKo ? '진입 불리' : 'Poor Entry'
-                      : isKo ? '진입 양호·종료 아쉬움' : 'Good Entry · Exit Miss'}
+                      : quality.quality_class === 'good_entry_early_exit'
+                        ? isKo ? '진입 양호·너무 빠른 종료' : 'Good Entry · Early Exit'
+                        : isKo ? '진입 양호·너무 늦은 종료' : 'Good Entry · Late Exit'}
                   </td>
                   <td className="py-2 text-right font-mono text-bull">{plain(trade.excursion?.mfe_pct)}%</td>
                   <td className="py-2 text-right font-mono text-bear">{plain(trade.excursion?.mae_pct)}%</td>
@@ -570,7 +590,12 @@ export default function TradeAnalysisPage() {
             )}
           </section>
 
-          <TradeQuality trades={selectedTrades} isKo={isKo} isLoading={qualityQuery.isFetching} />
+          <TradeQuality
+            trades={selectedTrades}
+            qualityItems={qualityQuery.data?.items || []}
+            isKo={isKo}
+            isLoading={qualityQuery.isFetching}
+          />
           {(qualityQuery.isError || (qualityQuery.data?.warnings.length || 0) > 1) && <div className="text-xs text-amber-300">{isKo ? '일부 거래의 시장 데이터를 불러오지 못했습니다.' : 'Market data was unavailable for some trades.'}</div>}
         </>
           )}

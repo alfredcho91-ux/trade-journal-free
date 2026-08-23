@@ -57,7 +57,6 @@ function analyzedTrade(id: number, rsi: number, pnl: number, symbol = 'BTC/USDT'
       mfe_pct: 3,
       mae_pct: 1,
       realized_move_pct: 2,
-      classification: 'balanced',
       candle_count: 10,
     },
   };

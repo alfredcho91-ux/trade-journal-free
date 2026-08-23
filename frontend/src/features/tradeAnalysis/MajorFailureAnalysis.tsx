@@ -162,6 +162,7 @@ export default function MajorFailureAnalysis({ trades, qualityItems, allEntries,
           entry={selected.trade.entry}
           allEntries={allEntries}
           excursion={selected.trade.excursion}
+          qualityItem={selected.quality}
           isKo={isKo}
           onClose={() => setSelected(null)}
         />

@@ -41,10 +41,12 @@ def _candle_close_time(open_time: int, interval: str, interval_ms: int) -> int:
 
 
 def _set_close_times(frame: pd.DataFrame, interval: str, interval_ms: int) -> None:
-    close_times = frame["open_time"].shift(-1).sub(1)
-    if not frame.empty:
-        close_times.iloc[-1] = _candle_close_time(int(frame["open_time"].iloc[-1]), interval, interval_ms)
-    frame["close_time"] = close_times.astype("int64")
+    # Derive every close from its own interval. Using the next returned row
+    # would stretch a candle across a missing market-data interval and hide a
+    # gap from downstream path-completeness checks.
+    frame["close_time"] = frame["open_time"].map(
+        lambda value: _candle_close_time(int(value), interval, interval_ms)
+    ).astype("int64")
 
 
 def _instrument(symbol: str, instrument_type: str) -> Optional[str]:

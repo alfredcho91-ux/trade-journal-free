@@ -54,3 +54,12 @@ def test_monthly_close_time_uses_calendar_month_boundary():
     )
 
     assert actual == expected_close
+
+
+def test_close_times_do_not_stretch_across_a_missing_candle():
+    opens = pd.Series([0, 30 * 60 * 1000], dtype="int64")
+    frame = pd.DataFrame({"open_time": opens})
+
+    market_data._set_close_times(frame, "15m", 15 * 60 * 1000)
+
+    assert frame["close_time"].tolist() == [15 * 60 * 1000 - 1, 45 * 60 * 1000 - 1]

@@ -172,7 +172,10 @@ export default function TradeReportModal({
   const timeframes = activeSnapshot?.timeframes || {};
   const snapshots = Object.values(timeframes);
   const reasons = entryReasonTexts(entry);
-  const outcomeAssessment = excursion ? tradeOutcomeAssessment(excursion, isKo) : null;
+  const resolvedExcursion = excursion || qualityItem?.excursion || null;
+  const outcomeAssessment = resolvedExcursion
+    ? tradeOutcomeAssessment(resolvedExcursion, qualityItem?.quality_class, isKo)
+    : null;
   const coin = coinFromJournalSymbol(entry.symbol);
   const exitMs = entry.datetime ? new Date(entry.datetime).getTime() : Number.NaN;
   const entryMs = resolvedEntryTime.datetime
@@ -532,10 +535,12 @@ export default function TradeReportModal({
                   </div>
                   <div className="mt-1 text-xs leading-5 text-dark-300">{outcomeAssessment.explanation}</div>
                   <div className="mt-1 text-[11px] font-mono text-dark-500">
-                    {isKo ? '보유 중 최대 수익' : 'Best move while held'} +{formatSnapshotNumber(excursion?.mfe_pct)}% · {isKo ? '보유 중 최대 손실' : 'Worst move while held'} -{formatSnapshotNumber(excursion?.mae_pct)}% · {isKo ? '종료' : 'Exit'} {formatSignedNumber(excursion?.realized_move_pct, 2)}%
+                    {isKo ? '보유 중 최대 수익' : 'Best move while held'} +{formatSnapshotNumber(resolvedExcursion?.mfe_pct)}% · {isKo ? '보유 중 최대 손실' : 'Worst move while held'} -{formatSnapshotNumber(resolvedExcursion?.mae_pct)}% · {isKo ? '종료' : 'Exit'} {formatSignedNumber(resolvedExcursion?.realized_move_pct, 2)}%
                   </div>
                   <div className="mt-0.5 text-[10px] text-dark-500">
-                    {isKo ? '15분봉 가격 움직임 기준 · 수수료·펀딩 제외' : '15m price-move basis · excludes fees and funding'}
+                    {resolvedExcursion?.interval === '1m'
+                      ? isKo ? '완성된 1분봉 가격 움직임 기준 · 수수료·펀딩 제외' : 'Completed 1m price-move basis · excludes fees and funding'
+                      : isKo ? '완성된 15분봉 가격 움직임 기준 · 수수료·펀딩 제외' : 'Completed 15m price-move basis · excludes fees and funding'}
                   </div>
                 </div>
               ) : (

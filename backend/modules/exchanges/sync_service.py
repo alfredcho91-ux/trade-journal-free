@@ -8,21 +8,53 @@ from typing import Any, Dict, Optional, Sequence
 import ccxt
 
 from backend.modules.deepcoin.snapshot import build_indicator_snapshots
-from backend.modules.exchanges.ccxt_adapter import fetch_trades, normalize_trades, requested_symbols
+from backend.modules.exchanges.ccxt_adapter import (
+    fetch_binance_funding_income,
+    fetch_trades,
+    normalize_trades,
+    requested_symbols,
+)
 from backend.modules.exchanges.execution_repository import add_executions_if_new, list_executions
 from backend.modules.exchanges.models import NormalizedTrade, SnapshotEvent
 from backend.modules.exchanges.reconstruction import reconstruct_positions, trade_sign
 from backend.modules.exchanges.registry import SUPPORTED_EXCHANGES
-from backend.modules.journal.repository import add_entries_if_new_external_ids, delete_imported_positions
+from backend.modules.journal.repository import (
+    add_entries_if_new_external_ids,
+    quarantine_imported_entries_by_external_id,
+    update_imported_entries_by_external_id,
+)
 from backend.utils.error_handler import DataLoadError
 
 
 def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Sequence[str], client: Any) -> Dict[str, Any]:
+    funding_events: list[Dict[str, Any]] = []
+    funding_coverage_start: Optional[int] = None
+    funding_history_complete = True
+    sync_warnings: list[str] = []
     try:
         client.load_markets()
         requested = requested_symbols(exchange_id, symbols)
         since = int((datetime.now(timezone.utc) - timedelta(days=lookback_days)).timestamp() * 1000)
         fetch_result = fetch_trades(client, requested, since)
+        if exchange_id == "binance" and inst_type == "SWAP":
+            try:
+                funding_since = int(
+                    (datetime.now(timezone.utc) - timedelta(days=max(90, lookback_days))).timestamp() * 1000
+                )
+                funding_events, funding_coverage_start, funding_truncated = fetch_binance_funding_income(
+                    client,
+                    funding_since,
+                )
+                funding_history_complete = not funding_truncated
+                if funding_truncated:
+                    sync_warnings.append(
+                        "Binance funding history reached its safety limit; affected net PnL was excluded."
+                    )
+            except (ccxt.BaseError, DataLoadError, AttributeError, TypeError, ValueError):
+                funding_history_complete = False
+                sync_warnings.append(
+                    "Binance funding history could not be verified; affected net PnL was excluded."
+                )
     except ccxt.BaseError as exc:
         raise DataLoadError(f"{client.name} account data is temporarily unavailable") from exc
     finally:
@@ -38,7 +70,26 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
     ]
     imported_execution_ids = add_executions_if_new(execution_rows)
     stored_trades = _stored_trades(list_executions(exchange=exchange_name), inst_type, requested)
-    positions, positions_ignored = reconstruct_positions(exchange_id, stored_trades, inst_type)
+    ignored_position_ids: set[str] = set()
+    positions, positions_ignored = reconstruct_positions(
+        exchange_id,
+        stored_trades,
+        inst_type,
+        skip_uncertain_initial_lifecycle=inst_type == "SWAP",
+        ignored_external_ids=ignored_position_ids,
+    )
+    quarantine_imported_entries_by_external_id(
+        ignored_position_ids,
+        f"{exchange_id}_position_boundary_unverified",
+    )
+    ambiguous_funding_count = 0
+    if exchange_id == "binance" and inst_type == "SWAP":
+        ambiguous_funding_count = _attach_binance_funding(
+            positions,
+            funding_events,
+            coverage_start=funding_coverage_start,
+            history_complete=funding_history_complete,
+        )
 
     snapshot_events = [
         *[
@@ -68,9 +119,16 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
         _position_row(exchange_id, exchange_name, position, snapshots.get(position["external_id"], {}), inst_type)
         for position in positions
     ]
-    replaced_count = delete_imported_positions(exchange_id, exchange_name, [trade.symbol for trade in stored_trades])
     created_positions = add_entries_if_new_external_ids(position_rows)
+    existing_position_rows = [
+        row for row in position_rows if row["external_id"] not in created_positions
+    ]
+    # A missing reconstructed position is not proof that it was deleted: an
+    # exchange sync can be window-limited or temporarily incomplete. Update
+    # fetched positions in place so journal annotations remain intact.
+    updated_count = update_imported_entries_by_external_id(existing_position_rows)
     incomplete_fee_count = sum(1 for position in positions if not position.get("fee_complete", True))
+    incomplete_funding_count = sum(1 for position in positions if not position.get("funding_complete", True))
 
     partial_snapshots = sum(
         1 for event in snapshot_events
@@ -82,14 +140,23 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
         )
     )
     warnings = [
+        *sync_warnings,
         "Closed positions are rebuilt from the locally stored execution ledger using net/hedge position side. "
-        "The first sync for a symbol may be incomplete if its opening fills predate the downloaded history."
+        "The first SWAP lifecycle for each symbol/position side is excluded because its opening fills may predate the local ledger."
     ]
     if inst_type == "SWAP":
-        warnings.append("Funding and historical leverage are not supplied by the generic CCXT connector.")
+        warnings.append("Historical leverage is not supplied by the exchange execution history; margin return may be unavailable.")
     if incomplete_fee_count:
         warnings.append(
-            f"{incomplete_fee_count} reconstructed position(s) include a fee currency that could not be converted to quote currency."
+            f"{incomplete_fee_count} reconstructed position(s) include an unconverted fee and were excluded from net PnL statistics."
+        )
+    if incomplete_funding_count:
+        warnings.append(
+            f"{incomplete_funding_count} reconstructed position(s) lack complete Binance funding history and were excluded from net PnL statistics."
+        )
+    if ambiguous_funding_count:
+        warnings.append(
+            f"{ambiguous_funding_count} Binance funding event(s) overlapped multiple positions; affected net PnL was excluded."
         )
     if partial_snapshots:
         warnings.append("Some imported positions were saved with partial entry or exit indicator snapshots.")
@@ -109,7 +176,7 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
         "partial_snapshots": partial_snapshots,
         "positions_fetched": len(positions),
         "positions_imported": len(created_positions),
-        "positions_updated": replaced_count,
+        "positions_updated": updated_count,
         "positions_skipped": 0,
         "positions_ignored": positions_ignored,
         "warnings": warnings,
@@ -183,6 +250,26 @@ def _position_row(
     entry_price = position["entry_price"]
     direction_sign = 1.0 if position["direction"] == "Long" else -1.0
     pnl_pct = ((position["exit_price"] - entry_price) / entry_price) * direction_sign * 100.0
+    funding_fee = position.get("funding_fee")
+    pnl_complete = bool(position.get("fee_complete", True)) and bool(position.get("funding_complete", True))
+    realized_pnl = (
+        position["realized_pnl"] + float(funding_fee or 0.0)
+        if pnl_complete
+        else None
+    )
+    if realized_pnl is None:
+        outcome = None
+    elif realized_pnl > 0:
+        outcome = "Win"
+    elif realized_pnl < 0:
+        outcome = "Loss"
+    else:
+        outcome = "Breakeven"
+    notes = f"{exchange_name} {inst_type} reconstructed closed position"
+    if not position.get("fee_complete", True):
+        notes += "; net PnL unavailable because a fee could not be converted"
+    if not position.get("funding_complete", True):
+        notes += "; net PnL unavailable because funding history is incomplete"
     return {
         "datetime": _iso(position["timestamp_ms"]),
         "entry_datetime": _iso(position["entry_timestamp_ms"]),
@@ -193,26 +280,63 @@ def _position_row(
         "entry_price": entry_price,
         "exit_price": position["exit_price"],
         "pnl_pct": pnl_pct,
-        "outcome": "Win" if position["realized_pnl"] > 0 else "Loss" if position["realized_pnl"] < 0 else "Breakeven",
+        "outcome": outcome,
         "tags": f"{exchange_id},{inst_type.lower()},closed-position",
-        "notes": (
-            f"{exchange_name} {inst_type} reconstructed closed position"
-            + ("; some fee currencies were not converted" if not position.get("fee_complete", True) else "")
-        ),
+        "notes": notes,
         "source": f"{exchange_id}_position",
         "external_id": position["external_id"],
         "exchange": exchange_name,
         "order_id": position["order_id"],
         "fee": position["fee"],
         "fee_currency": position["fee_currency"],
-        "funding_fee": None,
-        "realized_pnl": position["realized_pnl"],
+        "funding_fee": funding_fee if position.get("funding_complete", True) else None,
+        "realized_pnl": realized_pnl,
         "leverage": None,
         "invested_amount": position["invested_amount"],
-        "pnl_calculation_version": 2,
+        "pnl_calculation_version": 3,
         "indicator_snapshot": snapshot,
         "created_at": _iso(int(datetime.now(timezone.utc).timestamp() * 1000)),
     }
+
+
+def _attach_binance_funding(
+    positions: Sequence[Dict[str, Any]],
+    events: Sequence[Dict[str, Any]],
+    *,
+    coverage_start: Optional[int],
+    history_complete: bool,
+) -> int:
+    for position in positions:
+        covered = (
+            history_complete
+            and coverage_start is not None
+            and int(position.get("entry_timestamp_ms") or 0) >= coverage_start
+        )
+        position["funding_fee"] = 0.0 if covered else None
+        position["funding_complete"] = covered
+    if not history_complete or coverage_start is None:
+        return 0
+
+    ambiguous = 0
+    for event in events:
+        candidates = [
+            position
+            for position in positions
+            if position.get("symbol") == event.get("symbol")
+            and int(position.get("entry_timestamp_ms") or 0) <= int(event.get("timestamp_ms") or 0)
+            <= int(position.get("timestamp_ms") or 0)
+        ]
+        if len(candidates) != 1 or str(event.get("asset") or "").upper() not in {"USDT", "USDC", "BUSD"}:
+            if candidates:
+                ambiguous += 1
+                for position in candidates:
+                    position["funding_fee"] = None
+                    position["funding_complete"] = False
+            continue
+        position = candidates[0]
+        if position.get("funding_complete", False):
+            position["funding_fee"] = float(position.get("funding_fee") or 0.0) + float(event["income"])
+    return ambiguous
 
 
 __all__ = ["sync_ccxt"]

@@ -298,6 +298,61 @@ def test_journal_repository_batches_external_id_reads_and_writes(isolated_journa
     assert rows[second]["realized_pnl"] == 2
 
 
+def test_quarantine_preserves_user_annotations_and_can_be_restored(isolated_journal_store):
+    external_id = "binance:position:boundary"
+    stored = add_test_entry({
+        "external_id": external_id,
+        "source": "binance_position",
+        "symbol": "BTC/USDT",
+        "realized_pnl": 12,
+        "outcome": "Win",
+        "planned_stop_pct": 1.5,
+        "planned_target_pct": 3.0,
+        "planned_entry_reason": "breakout retest",
+        "setup_tags": ["trend"],
+        "mistake_tags": ["late-entry"],
+        "entry_reason_1_indicator": "RSI",
+        "entry_reason_1": "momentum confirmation",
+        "mistakes": "chased the candle",
+    })["data"]
+
+    assert journal_repository.quarantine_imported_entries_by_external_id(
+        [external_id],
+        "binance_position_boundary_unverified",
+    ) == 1
+    quarantined = next(row for row in get_journal_service()["data"] if row["id"] == stored["id"])
+    assert quarantined["source"] == "binance_position_boundary_unverified"
+    assert quarantined["realized_pnl"] is None
+    assert quarantined["planned_stop_pct"] == 1.5
+    assert quarantined["planned_target_pct"] == 3.0
+    assert quarantined["planned_entry_reason"] == "breakout retest"
+    assert quarantined["setup_tags"] == ["trend"]
+    assert quarantined["mistake_tags"] == ["late-entry"]
+    assert quarantined["entry_reason_1"] == "momentum confirmation"
+    assert quarantined["mistakes"] == "chased the candle"
+
+    assert journal_repository.update_imported_entries_by_external_id([{
+        "external_id": external_id,
+        "source": "binance_position",
+        "symbol": "BTC/USDT",
+        "realized_pnl": 15,
+        "outcome": "Win",
+    }]) == 1
+    restored = next(row for row in get_journal_service()["data"] if row["id"] == stored["id"])
+    assert restored["id"] == stored["id"]
+    assert restored["external_id"] == external_id
+    assert restored["source"] == "binance_position"
+    assert restored["realized_pnl"] == 15
+    assert restored["planned_stop_pct"] == 1.5
+    assert restored["planned_target_pct"] == 3.0
+    assert restored["planned_entry_reason"] == "breakout retest"
+    assert restored["setup_tags"] == ["trend"]
+    assert restored["mistake_tags"] == ["late-entry"]
+    assert restored["entry_reason_1_indicator"] == "RSI"
+    assert restored["entry_reason_1"] == "momentum confirmation"
+    assert restored["mistakes"] == "chased the candle"
+
+
 def test_journal_service_maps_legacy_indicator_list_into_reason_indicators(
     isolated_journal_store,
 ):

@@ -27,6 +27,9 @@ from backend.utils.log_redaction import register_sensitive_values
 
 _exchange_client = exchange_client
 
+# Only these connectors are presented as officially supported by the free release.
+PUBLIC_SUPPORTED_EXCHANGES = ("deepcoin", "binance")
+
 
 def _credentials(exchange_id: str) -> Optional[ExchangeCredentials]:
     stored = load_exchange_credentials(exchange_id)
@@ -39,7 +42,8 @@ def _credentials(exchange_id: str) -> Optional[ExchangeCredentials]:
 
 def exchange_status_service() -> Dict[str, Any]:
     statuses = []
-    for exchange_id, definition in SUPPORTED_EXCHANGES.items():
+    for exchange_id in PUBLIC_SUPPORTED_EXCHANGES:
+        definition = SUPPORTED_EXCHANGES[exchange_id]
         resolved = resolve_exchange_credentials(exchange_id)
         configured = resolved.credentials is not None and (
             not definition["requires_passphrase"] or bool(resolved.credentials.passphrase)

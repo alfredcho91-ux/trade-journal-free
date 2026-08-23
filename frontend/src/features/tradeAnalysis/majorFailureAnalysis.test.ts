@@ -60,7 +60,6 @@ describe('major failure analysis', () => {
       mfe_pct: 0.2,
       mae_pct: 1.1,
       realized_move_pct: -1,
-      classification: 'poor_entry',
       candle_count: 4,
     };
 

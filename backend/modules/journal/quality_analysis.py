@@ -27,7 +27,7 @@ from backend.config.settings import PROJECT_ROOT
 from backend.utils.cache import DataCache
 
 MIN_REGIME_CONCLUSION_SAMPLE = 5
-QUALITY_ANALYSIS_CACHE_VERSION = 6
+QUALITY_ANALYSIS_CACHE_VERSION = 8
 QUALITY_ANALYSIS_CACHE = DataCache(
     ttl_minutes=10,
     cache_dir=str(PROJECT_ROOT / ".cache" / "journal_quality"),

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from backend.modules.exchanges.models import NormalizedTrade, PositionState
 
@@ -20,13 +20,21 @@ def reconstruct_positions(
     exchange_id: str,
     trades: Sequence[NormalizedTrade],
     inst_type: str,
+    *,
+    skip_uncertain_initial_lifecycle: bool = False,
+    ignored_external_ids: Optional[Set[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     states: Dict[Tuple[str, str], PositionState] = {}
+    uncertain_keys: set[Tuple[str, str]] = set()
     positions: List[Dict[str, Any]] = []
     ignored_closes = 0
     for trade in trades:
         key = (trade.symbol, trade.position_side or "NET")
-        state = states.setdefault(key, PositionState())
+        if key not in states:
+            states[key] = PositionState()
+            if skip_uncertain_initial_lifecycle:
+                uncertain_keys.add(key)
+        state = states[key]
         signed_trade = trade_sign(trade)
         if inst_type == "SPOT" and abs(state.signed_amount) <= 1e-12 and signed_trade < 0:
             ignored_closes += 1
@@ -75,24 +83,34 @@ def reconstruct_positions(
 
         lifecycle_entry_price = state.weighted_entry_total / state.entry_amount_total
         notional = lifecycle_entry_price * state.closed_amount * trade.contract_size
-        positions.append({
-            "external_id": _position_external_id(exchange_id, key, state, trade),
-            "entry_external_id": state.entry_external_id,
-            "timestamp_ms": state.last_close_timestamp_ms,
-            "entry_timestamp_ms": state.entry_timestamp_ms,
-            "symbol": trade.symbol,
-            "coin": trade.coin,
-            "direction": direction,
-            "size": state.closed_amount,
-            "entry_price": lifecycle_entry_price,
-            "exit_price": state.weighted_exit_total / state.closed_amount,
-            "fee": state.closed_fee,
-            "fee_currency": state.fee_currency,
-            "fee_complete": state.fee_complete,
-            "realized_pnl": state.realized_pnl,
-            "invested_amount": notional if inst_type == "SPOT" else None,
-            "order_id": state.last_order_id,
-        })
+        external_id = _position_external_id(exchange_id, key, state, trade)
+        if key in uncertain_keys:
+            # The local ledger may start with a close from a position opened
+            # before the selected sync window. The first complete lifecycle is
+            # therefore not safe to publish as a reconstructed trade.
+            uncertain_keys.remove(key)
+            ignored_closes += 1
+            if ignored_external_ids is not None:
+                ignored_external_ids.add(external_id)
+        else:
+            positions.append({
+                "external_id": external_id,
+                "entry_external_id": state.entry_external_id,
+                "timestamp_ms": state.last_close_timestamp_ms,
+                "entry_timestamp_ms": state.entry_timestamp_ms,
+                "symbol": trade.symbol,
+                "coin": trade.coin,
+                "direction": direction,
+                "size": state.closed_amount,
+                "entry_price": lifecycle_entry_price,
+                "exit_price": state.weighted_exit_total / state.closed_amount,
+                "fee": state.closed_fee,
+                "fee_currency": state.fee_currency,
+                "fee_complete": state.fee_complete,
+                "realized_pnl": state.realized_pnl,
+                "invested_amount": notional if inst_type == "SPOT" else None,
+                "order_id": state.last_order_id,
+            })
         flip = abs(signed_trade) - closing_amount
         state.signed_amount = (1.0 if signed_trade > 0 else -1.0) * flip if flip > 1e-12 else 0.0
         state.average_price = trade.price if flip > 1e-12 else 0.0

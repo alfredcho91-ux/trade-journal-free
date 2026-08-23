@@ -76,6 +76,55 @@ def test_reconstructs_hedge_mode_short_direction():
     assert positions[0]["realized_pnl"] == 10
 
 
+def test_swap_reconstruction_excludes_uncertain_first_ledger_lifecycle():
+    trades = [
+        _trade("old-close", 1_000, "sell", 1, 100),
+        _trade("old-offset", 2_000, "buy", 1, 90),
+        _trade("known-entry", 3_000, "buy", 1, 100),
+        _trade("known-exit", 4_000, "sell", 1, 110),
+    ]
+
+    ignored_external_ids = set()
+    positions, ignored = service._reconstruct_positions(
+        "binance",
+        trades,
+        "SWAP",
+        skip_uncertain_initial_lifecycle=True,
+        ignored_external_ids=ignored_external_ids,
+    )
+
+    assert ignored == 1
+    assert len(positions) == 1
+    assert positions[0]["direction"] == "Long"
+    assert positions[0]["entry_price"] == 100
+    assert positions[0]["exit_price"] == 110
+    assert len(ignored_external_ids) == 1
+    assert next(iter(ignored_external_ids)).startswith("binance:position:")
+
+
+def test_swap_reconstruction_keeps_subsequent_split_short_lifecycle():
+    trades = [
+        _trade("boundary-buy", 1_000, "buy", 1, 100),
+        _trade("boundary-sell", 2_000, "sell", 1, 100),
+        _trade("short-1", 3_000, "sell", 1, 100),
+        _trade("short-2", 4_000, "sell", 1, 110),
+        _trade("cover-1", 5_000, "buy", 1, 90),
+        _trade("cover-2", 6_000, "buy", 1, 80),
+    ]
+
+    positions, ignored = service._reconstruct_positions(
+        "binance", trades, "SWAP", skip_uncertain_initial_lifecycle=True
+    )
+
+    assert ignored == 1
+    assert len(positions) == 1
+    assert positions[0]["direction"] == "Short"
+    assert positions[0]["size"] == 2
+    assert positions[0]["entry_price"] == 105
+    assert positions[0]["exit_price"] == 85
+    assert positions[0]["realized_pnl"] == 40
+
+
 def test_spot_does_not_invent_short_for_sell_without_loaded_entry():
     trades = [
         _trade("old-exit", 1_000, "sell", 1, 100),

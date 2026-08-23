@@ -171,12 +171,13 @@ class JournalExcursion(BaseModel):
     mae_pct: float
     realized_move_pct: float
     capture_pct: Optional[float] = None
-    classification: Literal["good_entry_poor_exit", "poor_entry", "balanced"]
+    interval: Literal["1m", "15m"] = "15m"
     candle_count: int
 
 
 class JournalExcursionData(BaseModel):
     interval: Literal["15m"]
+    short_trade_interval: Literal["1m"] = "1m"
     items: List[JournalExcursion]
     warnings: List[str]
 

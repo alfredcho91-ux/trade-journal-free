@@ -6,8 +6,8 @@ import { BarChart3, CandlestickChart, RefreshCw, Trash2 } from 'lucide-react';
 import {
   deleteJournalEntry,
   getJournal,
-  getJournalExcursions,
   getJournalPerformance,
+  getJournalQualityAnalysis,
   syncExchange,
 } from '../api/client';
 import { useLanguage } from '../store/useStore';
@@ -564,9 +564,9 @@ export default function JournalPage() {
   });
   const historyStartTime = dateBoundaryTimestamp(historyPeriod.start);
   const historyEndTime = dateBoundaryTimestamp(historyPeriod.end, true);
-  const excursionQuery = useQuery({
-    queryKey: journalQueryKeys.excursions(historyStartTime, historyEndTime),
-    queryFn: () => getJournalExcursions({
+  const qualityQuery = useQuery({
+    queryKey: journalQueryKeys.qualityAnalysis(historyStartTime, historyEndTime),
+    queryFn: () => getJournalQualityAnalysis({
       start_time: historyStartTime as number,
       end_time: historyEndTime as number,
     }),
@@ -583,9 +583,15 @@ export default function JournalPage() {
     enabled: historyStartTime != null && historyEndTime != null && historyStartTime <= historyEndTime,
     staleTime: 5 * 60_000,
   });
+  const qualityByJournalId = useMemo(
+    () => new Map((qualityQuery.data?.items || []).map((item) => [item.journal_id, item])),
+    [qualityQuery.data?.items],
+  );
   const excursionByJournalId = useMemo(
-    () => new Map((excursionQuery.data?.items || []).map((item) => [item.journal_id, item])),
-    [excursionQuery.data?.items],
+    () => new Map((qualityQuery.data?.items || []).flatMap((item) => (
+      item.excursion ? [[item.journal_id, item.excursion] as const] : []
+    ))),
+    [qualityQuery.data?.items],
   );
 
   const deleteMutation = useMutation({
@@ -776,7 +782,10 @@ export default function JournalPage() {
                 {visibleEntries.map((entry) => {
                   const closed = isClosedPosition(entry);
                   const excursion = entry.id == null ? null : excursionByJournalId.get(entry.id) || null;
-                  const assessment = excursion ? tradeOutcomeAssessment(excursion, isKo) : null;
+                  const quality = entry.id == null ? null : qualityByJournalId.get(entry.id) || null;
+                  const assessment = excursion
+                    ? tradeOutcomeAssessment(excursion, quality?.quality_class, isKo)
+                    : null;
                   const displayNetReturnPct = netReturnPct(entry);
                   const closeDate = entry.datetime ? new Date(entry.datetime) : null;
                   const hasValidCloseDate = closeDate != null && Number.isFinite(closeDate.getTime());
@@ -820,7 +829,7 @@ export default function JournalPage() {
                             </div>
                             <div className="mt-1 text-[11px] leading-4 text-dark-400">{assessment.explanation}</div>
                           </div>
-                        ) : excursionQuery.isLoading ? (
+                        ) : qualityQuery.isLoading ? (
                           <span className="text-xs text-dark-500">{isKo ? '판정 계산 중' : 'Calculating assessment'}</span>
                         ) : (
                           <span className="text-xs text-dark-500">{isKo ? '판정 데이터 없음' : 'Assessment unavailable'}</span>
@@ -929,7 +938,8 @@ export default function JournalPage() {
           entry={snapshotEntry}
           allEntries={entries || []}
           excursion={snapshotEntry.id == null ? null : excursionByJournalId.get(snapshotEntry.id) || null}
-          excursionLoading={excursionQuery.isLoading}
+          excursionLoading={qualityQuery.isLoading}
+          qualityItem={snapshotEntry.id == null ? null : qualityByJournalId.get(snapshotEntry.id) || null}
           isKo={isKo}
           onClose={() => setSnapshotEntry(null)}
           onBehaviorUpdated={async () => {

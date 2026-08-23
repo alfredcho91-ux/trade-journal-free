@@ -10,7 +10,6 @@ function excursion(overrides: Partial<TradeExcursion>): TradeExcursion {
     mae_pct: 2,
     realized_move_pct: 3,
     capture_pct: 30,
-    classification: 'good_entry_poor_exit',
     candle_count: 4,
     ...overrides,
   };
@@ -18,9 +17,9 @@ function excursion(overrides: Partial<TradeExcursion>): TradeExcursion {
 
 describe('trade outcome assessment', () => {
   it('explains a good entry with a weak exit using capture', () => {
-    const result = tradeOutcomeAssessment(excursion({}), true);
+    const result = tradeOutcomeAssessment(excursion({}), 'good_entry_early_exit', true);
 
-    expect(result.label).toBe('진입 양호 · 종료 아쉬움');
+    expect(result.label).toBe('진입 양호 · 너무 빠른 종료');
     expect(result.explanation).toContain('최대 +10%');
     expect(result.explanation).toContain('30%만 확보');
     expect(result.tone).toBe('warning');
@@ -32,8 +31,7 @@ describe('trade outcome assessment', () => {
       mae_pct: 6,
       realized_move_pct: -4,
       capture_pct: -400,
-      classification: 'poor_entry',
-    }), true);
+    }), 'poor_entry', true);
 
     expect(result.label).toBe('진입 불리');
     expect(result.explanation).toContain('-6%');
@@ -41,10 +39,10 @@ describe('trade outcome assessment', () => {
     expect(result.explanation).toContain('-4%');
   });
 
-  it('labels all remaining cases as balanced', () => {
-    const result = tradeOutcomeAssessment(excursion({ classification: 'balanced' }), false);
+  it('reports when the backend quality sample is unavailable', () => {
+    const result = tradeOutcomeAssessment(excursion({}), 'unavailable', false);
 
-    expect(result.label).toBe('Balanced Exit');
+    expect(result.label).toBe('Insufficient Classification Sample');
     expect(result.tone).toBe('neutral');
   });
 });

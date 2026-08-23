@@ -20,7 +20,12 @@ from backend.modules.journal.analysis import (
 from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.quality_analysis import run_journal_quality_analysis_service
 from backend.modules.journal.quality_market import finite, finite_timestamp
-from backend.modules.journal.trade_selection import closed_positions, market_group_key, position_batches
+from backend.modules.journal.trade_selection import (
+    closed_positions,
+    market_group_key,
+    path_covers_position,
+    position_batches,
+)
 from backend.utils.cache import DataCache
 from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
@@ -30,7 +35,7 @@ RECOVERY_THRESHOLDS = FIXED_STOP_CANDIDATES
 TRAIN_RATIO = 0.7
 MIN_RECOVERY_SAMPLE = 3
 MIN_REGIME_SAMPLE = 5
-STOP_OPTIMIZATION_CACHE_VERSION = 4
+STOP_OPTIMIZATION_CACHE_VERSION = 5
 STOP_OPTIMIZATION_CACHE = DataCache(
     ttl_minutes=60,
     cache_dir=str(PROJECT_ROOT / ".cache" / "journal_stop_optimization"),
@@ -381,6 +386,9 @@ def _build_path_items(
                 exit_price = finite(position.get("exit_price"))
                 realized_pnl = finite(position.get("realized_pnl"))
                 if None in (entry_time, exit_time, entry_price, exit_price, realized_pnl) or entry_price <= 0:
+                    continue
+                if not path_covers_position(candles, entry_time, exit_time, EXCURSION_INTERVAL_MS):
+                    warnings.append(f"journal {position['id']}: complete {EXCURSION_INTERVAL} path is unavailable")
                     continue
                 path = candles.loc[
                     (candles["open_time"] >= entry_time) & (candles["close_time"] <= exit_time)

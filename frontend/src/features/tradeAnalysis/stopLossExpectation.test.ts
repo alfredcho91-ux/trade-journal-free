@@ -28,7 +28,6 @@ function trade(
       mfe_pct: Math.max(realizedMovePct, 0),
       mae_pct: maePct,
       realized_move_pct: realizedMovePct,
-      classification: 'balanced',
       candle_count: 10,
     },
   };

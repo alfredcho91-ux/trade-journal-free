@@ -85,7 +85,7 @@ export function majorFailureCases(
     const reasons: MajorFailureReasonId[] = [];
     if (returnPct != null && returnPct <= MAJOR_FAILURE_RETURN_PCT) reasons.push('loss_rate_threshold');
     if (pnl <= MAJOR_FAILURE_LOSS_USDT) reasons.push('loss_amount_threshold');
-    if (quality?.quality_class === 'poor_entry' || trade.excursion?.classification === 'poor_entry') reasons.push('poor_entry');
+    if (quality?.quality_class === 'poor_entry') reasons.push('poor_entry');
     if (quality?.market_regime.alignment === 'conflict') reasons.push('regime_conflict');
     if (quality?.trade_alignment === 'counter_trend') reasons.push('counter_trend');
     if ((trade.entry.leverage || 0) >= 5) reasons.push('leverage_amplified');

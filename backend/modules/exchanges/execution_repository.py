@@ -133,7 +133,7 @@ def list_executions(
     with _connect(db_path) as connection:
         _ensure_schema(connection)
         rows = connection.execute(
-            f"SELECT {', '.join(COLUMNS)} FROM {TABLE_NAME} {where} ORDER BY datetime ASC LIMIT 5000",
+            f"SELECT {', '.join(COLUMNS)} FROM {TABLE_NAME} {where} ORDER BY datetime ASC",
             values,
         ).fetchall()
     return [_row_to_dict(row) for row in rows]

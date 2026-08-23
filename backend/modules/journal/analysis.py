@@ -17,6 +17,7 @@ from backend.modules.journal.trade_selection import (
     closed_positions,
     finite_float,
     market_group_key,
+    path_covers_position,
     position_batches,
     timestamp_ms,
 )
@@ -25,17 +26,15 @@ from backend.modules.journal.market_data import is_market_fallback, load_journal
 _timestamp_ms = timestamp_ms
 _finite_float = finite_float
 _closed_positions = closed_positions
+SHORT_TRADE_INTERVAL = "1m"
+SHORT_TRADE_INTERVAL_MS = 60 * 1000
 
 
-def _classification(mfe_pct: float, mae_pct: float, realized_move_pct: float) -> str:
-    if mfe_pct >= mae_pct and realized_move_pct < mfe_pct * 0.5:
-        return "good_entry_poor_exit"
-    if mae_pct > mfe_pct and realized_move_pct <= 0:
-        return "poor_entry"
-    return "balanced"
-
-
-def _trade_excursion(entry: Dict[str, Any], candles: pd.DataFrame) -> Optional[Dict[str, Any]]:
+def _trade_excursion(
+    entry: Dict[str, Any],
+    candles: pd.DataFrame,
+    interval: str = EXCURSION_INTERVAL,
+) -> Optional[Dict[str, Any]]:
     entry_time = _timestamp_ms(entry.get("entry_datetime"))
     close_time = _timestamp_ms(entry.get("datetime"))
     entry_price = _finite_float(entry.get("entry_price"))
@@ -47,11 +46,13 @@ def _trade_excursion(entry: Dict[str, Any], candles: pd.DataFrame) -> Optional[D
         (pd.to_numeric(candles["open_time"], errors="coerce") >= entry_time)
         & (pd.to_numeric(candles["close_time"], errors="coerce") <= close_time)
     ]
+    if internal.empty:
+        return None
+
     highs = [entry_price, exit_price]
     lows = [entry_price, exit_price]
-    if not internal.empty:
-        highs.extend(pd.to_numeric(internal["high"], errors="coerce").dropna().tolist())
-        lows.extend(pd.to_numeric(internal["low"], errors="coerce").dropna().tolist())
+    highs.extend(pd.to_numeric(internal["high"], errors="coerce").dropna().tolist())
+    lows.extend(pd.to_numeric(internal["low"], errors="coerce").dropna().tolist())
 
     high = max(highs)
     low = min(lows)
@@ -72,12 +73,47 @@ def _trade_excursion(entry: Dict[str, Any], candles: pd.DataFrame) -> Optional[D
         "mae_pct": mae_pct,
         "realized_move_pct": realized_move_pct,
         "capture_pct": capture_pct,
-        "classification": _classification(mfe_pct, mae_pct, realized_move_pct),
+        "interval": interval,
         "candle_count": len(internal),
     }
 
 
 _position_batches = position_batches
+
+
+def _short_trade_excursion(
+    position: Dict[str, Any],
+    *,
+    exchange: str,
+    instrument_type: str,
+    symbol: str,
+    warnings: List[str],
+) -> Optional[Dict[str, Any]]:
+    entry_time = _timestamp_ms(position.get("entry_datetime"))
+    close_time = _timestamp_ms(position.get("datetime"))
+    if entry_time is None or close_time is None:
+        return None
+    requested = max(1, math.ceil((close_time - entry_time) / SHORT_TRADE_INTERVAL_MS) + 4)
+    candles = load_journal_ohlcv(
+        symbol,
+        SHORT_TRADE_INTERVAL,
+        total_candles=requested,
+        end_time=close_time,
+        exchange=exchange,
+        instrument_type=instrument_type,
+    )
+    if candles is None or candles.empty:
+        warnings.append(f"journal {position['id']}: {SHORT_TRADE_INTERVAL} market data unavailable")
+        return None
+    if is_market_fallback(candles):
+        warnings.append(f"{symbol} {SHORT_TRADE_INTERVAL}: {market_source(candles)}")
+    if not path_covers_position(candles, entry_time, close_time, SHORT_TRADE_INTERVAL_MS):
+        warnings.append(f"journal {position['id']}: complete {SHORT_TRADE_INTERVAL} path is unavailable")
+        return None
+    result = _trade_excursion(position, candles, SHORT_TRADE_INTERVAL)
+    if result is None:
+        warnings.append(f"journal {position['id']}: no completed {SHORT_TRADE_INTERVAL} candle exists inside the trade")
+    return result
 
 
 def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, Any]:
@@ -95,8 +131,27 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
     warnings: List[str] = []
     for (exchange, instrument_type, symbol), symbol_positions in by_market.items():
         for batch_index, batch in enumerate(_position_batches(symbol_positions), start=1):
-            earliest_entry = min(_timestamp_ms(item["entry_datetime"]) or end_time for item in batch)
-            latest_close = max(_timestamp_ms(item["datetime"]) or start_time for item in batch)
+            short_positions = [
+                item for item in batch
+                if (_timestamp_ms(item.get("datetime")) or 0) - (_timestamp_ms(item.get("entry_datetime")) or 0)
+                < EXCURSION_INTERVAL_MS
+            ]
+            regular_positions = [item for item in batch if item not in short_positions]
+            for position in short_positions:
+                result = _short_trade_excursion(
+                    position,
+                    exchange=exchange,
+                    instrument_type=instrument_type,
+                    symbol=symbol,
+                    warnings=warnings,
+                )
+                if result is not None:
+                    excursions.append(result)
+
+            if not regular_positions:
+                continue
+            earliest_entry = min(_timestamp_ms(item["entry_datetime"]) or end_time for item in regular_positions)
+            latest_close = max(_timestamp_ms(item["datetime"]) or start_time for item in regular_positions)
             requested = math.ceil((latest_close - earliest_entry) / EXCURSION_INTERVAL_MS) + 4
             if requested > MAX_EXCURSION_CANDLES:
                 warnings.append(f"{symbol}: a position exceeds the {MAX_EXCURSION_CANDLES}-candle analysis limit")
@@ -115,16 +170,38 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
             if is_market_fallback(candles):
                 warnings.append(f"{symbol} {EXCURSION_INTERVAL}: {market_source(candles)}")
 
-            for position in batch:
+            for position in regular_positions:
+                entry_time = _timestamp_ms(position.get("entry_datetime"))
+                close_time = _timestamp_ms(position.get("datetime"))
+                if (
+                    entry_time is None
+                    or close_time is None
+                    or not path_covers_position(candles, entry_time, close_time, EXCURSION_INTERVAL_MS)
+                ):
+                    warnings.append(f"journal {position['id']}: complete {EXCURSION_INTERVAL} path is unavailable")
+                    continue
                 result = _trade_excursion(position, candles)
                 if result is not None:
                     excursions.append(result)
+                elif close_time - entry_time < EXCURSION_INTERVAL_MS * 2:
+                    fine_grained = _short_trade_excursion(
+                        position,
+                        exchange=exchange,
+                        instrument_type=instrument_type,
+                        symbol=symbol,
+                        warnings=warnings,
+                    )
+                    if fine_grained is not None:
+                        excursions.append(fine_grained)
+                else:
+                    warnings.append(f"journal {position['id']}: no completed {EXCURSION_INTERVAL} candle exists inside the trade")
 
     excursions.sort(key=lambda item: item["journal_id"])
     return {
         "success": True,
         "data": {
             "interval": EXCURSION_INTERVAL,
+            "short_trade_interval": SHORT_TRADE_INTERVAL,
             "items": excursions,
             "warnings": warnings,
         },

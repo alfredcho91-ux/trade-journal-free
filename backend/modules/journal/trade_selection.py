@@ -46,6 +46,41 @@ def market_group_key(entry: Dict[str, Any]) -> tuple[str, str, str]:
     return exchange, instrument_type(entry), symbol
 
 
+def path_covers_position(
+    candles: pd.DataFrame,
+    entry_time: int,
+    exit_time: int,
+    interval_ms: int,
+) -> bool:
+    """Return whether contiguous candle history covers the position lifetime."""
+    if candles is None or candles.empty or entry_time > exit_time:
+        return False
+    if "open_time" not in candles.columns or "close_time" not in candles.columns:
+        return False
+    bounds = pd.DataFrame({
+        "open_time": pd.to_numeric(candles["open_time"], errors="coerce"),
+        "close_time": pd.to_numeric(candles["close_time"], errors="coerce"),
+    }).dropna().drop_duplicates(subset=["open_time"]).sort_values("open_time")
+    bounds = bounds.loc[
+        (bounds["close_time"] >= entry_time - 1)
+        & (bounds["open_time"] <= exit_time)
+    ].reset_index(drop=True)
+    if bounds.empty:
+        return False
+    opens = bounds["open_time"].to_numpy(dtype=float)
+    closes = bounds["close_time"].to_numpy(dtype=float)
+    if (
+        opens[0] > entry_time
+        or closes[0] < entry_time - 1
+        or opens[-1] > exit_time
+        or closes[-1] < exit_time - 1
+    ):
+        return False
+    if ((closes < opens) | ((closes - opens + 1) > interval_ms)).any():
+        return False
+    return bool(len(opens) == 1 or (opens[1:] <= closes[:-1] + 1).all())
+
+
 def closed_positions(
     entries: Iterable[Dict[str, Any]],
     start_time: int,

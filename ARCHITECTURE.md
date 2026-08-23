@@ -2,7 +2,7 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 배포 버전: `v1.0.10`
+현재 배포 버전: `v1.0.11`
 
 ```text
 Browser / Desktop WebView
@@ -12,7 +12,7 @@ FastAPI
   -> journal: 저장·기간 성과·MFE/MAE·품질·손절·SL/TP 분석
   -> exchanges: 공통 거래소 목록·연결 검증·읽기 전용 동기화
      -> deepcoin: native 종료 포지션·TP 마커
-     -> ccxt adapter: Binance·Bybit·OKX 조회·정규화
+     -> ccxt adapter: Binance 조회·정규화
      -> reconstruction: 체결 기반 종료 포지션 재구성
      -> sync service: 스냅샷·저장 오케스트레이션
   -> indicators: 선택 거래소 거래 복기 차트·VPVR·VWAP
@@ -58,7 +58,7 @@ FastAPI
 - `backend/modules/deepcoin/`: Deepcoin 고유 서명 API와 TP/SL 주문 상세
 - `backend/modules/journal/`: SQLite 저장소와 분석 서비스
 - `backend/modules/indicators/`: 거래 리포트와 시장 지표
-- `backend/modules/journal/market_data.py`: Deepcoin/Binance/Bybit/OKX 자체 OHLCV 우선 조회와 Binance Spot fallback 출처 표기
+- `backend/modules/journal/market_data.py`: Deepcoin/Binance 자체 OHLCV 우선 조회와 Binance Spot fallback 출처 표기
 - `core/indicator_pipelines.py`: 공용 지표 계산
 - `core/vpvr.py`: kline 기반 Volume Profile
 
@@ -96,6 +96,6 @@ FastAPI
 
 ## 시장 데이터와 진행중 포지션
 
-- OHLCV는 거래가 발생한 거래소의 공개 시장 데이터를 우선 사용합니다. Deepcoin은 native REST API, Binance·Bybit·OKX는 CCXT public OHLCV를 사용합니다. 실패 시에만 `Binance Spot fallback`을 반환하고 리포트·분석 응답의 출처에 표시합니다.
+- OHLCV는 거래가 발생한 거래소의 공개 시장 데이터를 우선 사용합니다. Deepcoin은 native REST API, Binance는 CCXT public OHLCV를 사용합니다. 실패 시에만 `Binance Spot fallback`을 반환하고 리포트·분석 응답의 출처에 표시합니다.
 - MFE/MAE, Stop, SL/TP, VPVR, VWAP, 거래 리포트는 같은 시장 데이터 선택 경로를 공유합니다.
-- 진행중 포지션은 raw fill에 `exit_price` 또는 `realized_pnl`이 비어 있는지로 판단하지 않습니다. `/api/exchanges/open-positions`가 Deepcoin native API와 Binance·Bybit·OKX의 CCXT 현재 포지션 API를 조회한 non-zero SWAP 포지션만 반환하며, UI는 그 결과만 표시합니다.
+- 진행중 포지션은 raw fill에 `exit_price` 또는 `realized_pnl`이 비어 있는지로 판단하지 않습니다. `/api/exchanges/open-positions`가 Deepcoin native API와 Binance의 CCXT 현재 포지션 API를 조회한 non-zero SWAP 포지션만 반환하며, UI는 그 결과만 표시합니다.

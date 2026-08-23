@@ -616,6 +616,8 @@ def update_imported_entry_by_external_id(
         raise ValueError("external_id is required for imported journal entries")
 
     update_columns = list(EXCHANGE_REFRESH_COLUMNS)
+    if entry_data.get("source") is not None:
+        update_columns.append("source")
     if entry_data.get("indicator_snapshot") is not None:
         update_columns.append("indicator_snapshot")
     payload = {
@@ -661,6 +663,8 @@ def update_imported_entries_by_external_id(
             if not external_id:
                 raise ValueError("external_id is required for imported journal entries")
             update_columns = list(EXCHANGE_REFRESH_COLUMNS)
+            if entry_data.get("source") is not None:
+                update_columns.append("source")
             if entry_data.get("indicator_snapshot") is not None:
                 update_columns.append("indicator_snapshot")
             payload = {
@@ -671,6 +675,38 @@ def update_imported_entries_by_external_id(
             cursor = conn.execute(
                 f"UPDATE {TABLE_NAME} SET {assignments} WHERE external_id = ?",
                 (*[payload[column] for column in update_columns], external_id),
+            )
+            updated += max(0, cursor.rowcount)
+        conn.commit()
+        return updated
+
+
+def quarantine_imported_entries_by_external_id(
+    external_ids: Iterable[str],
+    source: str,
+    *,
+    db_path: Optional[Path] = None,
+    csv_path: Optional[Path] = None,
+) -> int:
+    """Keep user annotations while excluding uncertain imported positions from analytics."""
+    identifiers = sorted({str(value) for value in external_ids if value})
+    if not identifiers:
+        return 0
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        _migrate_legacy_csv_if_needed(conn, csv_path=csv_path)
+        updated = 0
+        for offset in range(0, len(identifiers), 900):
+            batch = identifiers[offset:offset + 900]
+            placeholders = ", ".join("?" for _ in batch)
+            cursor = conn.execute(
+                f"""
+                UPDATE {TABLE_NAME}
+                SET source = ?, realized_pnl = NULL, outcome = NULL,
+                    pnl_calculation_version = 3
+                WHERE external_id IN ({placeholders})
+                """,
+                (source, *batch),
             )
             updated += max(0, cursor.rowcount)
         conn.commit()

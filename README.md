@@ -2,11 +2,11 @@
 
 여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `Risk Lab`, `홀딩 / 재진입`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
 
-현재 배포 버전: `v1.0.10`
+현재 배포 버전: `v1.0.11`
 
 ## 무료 배포판 범위
 
-- Deepcoin, Binance, Bybit, OKX의 읽기 전용 API 연동
+- Deepcoin SWAP, Binance의 읽기 전용 API 연동
 - 처음 읽기 전용 API 연결을 저장하면 기본 최근 30일 거래를 한 번 자동 동기화
 - 종료 거래 저널, 거래 차트 복기, 분할 진입·익절 마커
 - 승패·진입·청산 품질과 대성공·대실패 거래 분석, 별도 Risk Lab의 손절·SL/TP 기대값 분석
@@ -56,14 +56,12 @@ SmartScreen을 끄거나 Windows 실시간 보호를 해제할 필요는 없습�
 | --- | --- | --- |
 | Deepcoin | 종료 포지션 API | 필요 |
 | Binance | CCXT 체결 기록 재구성 | 불필요 |
-| Bybit | CCXT 체결 기록 재구성 | 불필요 |
-| OKX | CCXT 체결 기록 재구성 | 필요 |
 
 모든 연동은 읽기 전용 API를 전제로 하며, 주문 실행이나 출금 기능은 포함하지 않습니다. 거래소에서 API 권한을 만들 때 거래·출금·자산 이동 권한은 반드시 끄세요.
 
 ## 제공 기능
 
-- Deepcoin, Binance, Bybit, OKX SWAP/SPOT 읽기 전용 동기화
+- Deepcoin SWAP, Binance SWAP 읽기 전용 동기화
 - 거래소 선택과 동기화 종목 직접 지정
 - 거래별 순수익률·순수익금·수수료·펀딩·보유시간 기록
 - Lightweight Charts 기반 진입/청산 차트 복기
@@ -120,8 +118,6 @@ chmod +x bootstrap.sh dev.sh start.sh
 | `DEEPCOIN_PASSPHRASE` | Deepcoin API passphrase |
 | `DEEPCOIN_API_BASE_URL` | 기본값 `https://api.deepcoin.com` |
 | `BINANCE_API_KEY`, `BINANCE_SECRET_KEY` | Binance 읽기 전용 API 자격 증명 |
-| `BYBIT_API_KEY`, `BYBIT_SECRET_KEY` | Bybit 읽기 전용 API 자격 증명 |
-| `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE` | OKX 읽기 전용 API 자격 증명 |
 | `{EXCHANGE}_SYMBOLS` | 기본 동기화 종목. 화면에서도 변경 가능 |
 | `JOURNAL_DIR` | SQLite/CSV 저장 디렉터리 |
 | `APP_ENV` | 로컬은 `development`, 외부 공개는 `production` |
@@ -152,10 +148,10 @@ wrangler secret put DEMO_PASSWORD
 ## 데이터 기준
 
 - 거래 원본은 선택한 거래소의 읽기 전용 API를 사용합니다.
-- Deepcoin은 종료 포지션 API를 사용하고, Binance·Bybit·OKX는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다. 동기화는 timestamp 경계를 겹쳐 재조회하고 거래 ID로 중복 제거합니다. 조회 기간보다 이전에 열린 포지션은 충분한 기존 체결 원장이 없으면 복원이 불완전할 수 있으므로 경고를 확인해야 합니다.
+- Deepcoin은 종료 포지션 API를 사용하고, Binance는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다. 동기화는 timestamp 경계를 겹쳐 재조회하고 거래 ID로 중복 제거합니다. 조회 기간보다 이전에 열린 포지션은 충분한 기존 체결 원장이 없으면 복원이 불완전할 수 있으므로 경고를 확인해야 합니다.
 - 종료 포지션은 저널 테이블에, 차트 복기용 개별 체결은 경량 `exchange_executions` 테이블에 분리 저장합니다. 지표 스냅샷은 최초 진입과 종료 시점에만 계산합니다.
 - CCXT 커넥터는 선택 기간 이전에 열린 포지션, 거래소가 제공하지 않는 과거 레버리지·펀딩을 완전히 복원하지 못할 수 있으며 UI 경고로 표시합니다.
-- OHLCV는 선택 거래소를 우선 사용합니다: Deepcoin → Deepcoin 공개 API, Binance → Binance 공개 API, Bybit → Bybit 공개 API, OKX → OKX 공개 API. 해당 요청이 실패하거나 지원하지 않는 경우에만 Binance Spot OHLCV를 대체 데이터로 사용하며 화면에 출처를 표시합니다.
+- OHLCV는 선택 거래소를 우선 사용합니다: Deepcoin → Deepcoin 공개 API, Binance → Binance 공개 API. 해당 요청이 실패하거나 지원하지 않는 경우에만 Binance Spot OHLCV를 대체 데이터로 사용하며 화면에 출처를 표시합니다.
 - 진행중 포지션은 저장된 raw fill의 종료값 유무가 아니라 연결된 각 거래소의 현재 SWAP 포지션 API 결과로만 판정합니다. 과거 종료 체결은 진행중 목록에 포함하지 않습니다.
 - 진입 분석에는 진입 전에 완료된 봉만 사용합니다.
 - 종료 이후 봉은 추가 홀딩·청산 품질·손절 사후 분석에만 사용합니다.

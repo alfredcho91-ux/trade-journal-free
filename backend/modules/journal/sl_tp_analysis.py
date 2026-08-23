@@ -13,7 +13,14 @@ import pandas as pd
 from backend.config.settings import PROJECT_ROOT
 from backend.modules.journal import repository
 from backend.modules.journal.cache_keys import position_analysis_cache_key
-from backend.modules.journal.trade_selection import closed_positions, finite_float, market_group_key, position_batches, timestamp_ms
+from backend.modules.journal.trade_selection import (
+    closed_positions,
+    finite_float,
+    market_group_key,
+    path_covers_position,
+    position_batches,
+    timestamp_ms,
+)
 from backend.utils.cache import DataCache
 from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
 
@@ -22,7 +29,7 @@ PATH_INTERVAL_MS = 5 * 60 * 1000
 MAX_PATH_CANDLES = 30_000
 TRAIN_RATIO = 0.7
 MAX_GRID_COMBINATIONS = 800
-SL_TP_CACHE_VERSION = 1
+SL_TP_CACHE_VERSION = 2
 SCORE_WEIGHTS = {
     "expectancy": 0.35,
     "profit_factor": 0.25,
@@ -436,15 +443,14 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
                 exit_price = finite_float(position.get("exit_price"))
                 if None in (entry_time, exit_time, entry_price, exit_price) or entry_price <= 0:
                     continue
+                if not path_covers_position(candles, entry_time, exit_time, PATH_INTERVAL_MS):
+                    warnings.append(f"journal {position['id']}: complete {PATH_INTERVAL} path is unavailable")
+                    continue
                 path = candles.loc[
                     (pd.to_numeric(candles["open_time"], errors="coerce") >= entry_time)
                     & (pd.to_numeric(candles["close_time"], errors="coerce") <= exit_time)
                 ].copy().reset_index(drop=True)
                 if path.empty:
-                    continue
-                first_open = finite_float(path.iloc[0].get("open_time"))
-                if first_open is None or first_open > entry_time + PATH_INTERVAL_MS:
-                    warnings.append(f"journal {position['id']}: complete 5m path does not reach the entry")
                     continue
                 fee_pct = _fee_pct(position)
                 items.append({
