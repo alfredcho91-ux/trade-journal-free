@@ -46,7 +46,7 @@ jobs:
       - name: Upload Windows ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: Trade-Journal-Free-Windows-x64
-          path: Windows/Trade-Journal-Free-Windows.zip
+          name: Trade-Journal-Windows-x64
+          path: Windows/Trade-Journal-Windows.zip
           if-no-files-found: error
           retention-days: 30

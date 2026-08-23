@@ -39,7 +39,7 @@ mkdir -p "$RELEASE_DIR"
     --clean \
     --windowed \
     --onedir \
-    --name "Trade Journal Free" \
+    --name "Trade Journal" \
     --paths "$PROJECT_DIR" \
     --add-data "$PROJECT_DIR/frontend/dist:frontend/dist" \
     --hidden-import ccxt.binance \
@@ -55,9 +55,9 @@ mkdir -p "$RELEASE_DIR"
     --collect-all uvicorn \
     "$PROJECT_DIR/packaging/desktop_entry.py"
 
-mv "dist/Trade Journal Free.app" "$RELEASE_DIR/Trade Journal Free.app"
+mv "dist/Trade Journal.app" "$RELEASE_DIR/Trade Journal.app"
 rm -rf dist build
 
 cd "$RELEASE_DIR"
-ditto -c -k --sequesterRsrc --keepParent "Trade Journal Free.app" "Trade-Journal-Free-macOS.zip"
-echo "Created: $RELEASE_DIR/Trade-Journal-Free-macOS.zip"
+ditto -c -k --sequesterRsrc --keepParent "Trade Journal.app" "Trade-Journal-macOS.zip"
+echo "Created: $RELEASE_DIR/Trade-Journal-macOS.zip"

@@ -35,8 +35,8 @@ try {
 Remove-Item -Recurse -Force (Join-Path $ProjectDir "build") -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force (Join-Path $ProjectDir "dist") -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $ReleaseDir | Out-Null
-$WindowsAppDir = Join-Path $ReleaseDir "Trade Journal Free"
-$ArchivePath = Join-Path $ReleaseDir "Trade-Journal-Free-Windows.zip"
+$WindowsAppDir = Join-Path $ReleaseDir "Trade Journal"
+$ArchivePath = Join-Path $ReleaseDir "Trade-Journal-Windows.zip"
 Remove-Item -Recurse -Force $WindowsAppDir -ErrorAction SilentlyContinue
 Remove-Item -Force $ArchivePath -ErrorAction SilentlyContinue
 
@@ -47,7 +47,7 @@ try {
         --clean `
         --windowed `
         --onedir `
-        --name "Trade Journal Free" `
+        --name "Trade Journal" `
         --paths $ProjectDir `
         --add-data "$ProjectDir\frontend\dist;frontend\dist" `
         --hidden-import ccxt.binance `
@@ -66,7 +66,7 @@ try {
     Pop-Location
 }
 
-Move-Item (Join-Path $ProjectDir "dist\Trade Journal Free") $WindowsAppDir
+Move-Item (Join-Path $ProjectDir "dist\Trade Journal") $WindowsAppDir
 Remove-Item -Recurse -Force (Join-Path $ProjectDir "dist"), (Join-Path $ProjectDir "build")
 Copy-Item (Join-Path $PSScriptRoot "WINDOWS-START-HERE.txt") (Join-Path $WindowsAppDir "WINDOWS-START-HERE.txt") -Force
 

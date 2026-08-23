@@ -1,4 +1,4 @@
-# Multi-Exchange Trade Journal Free
+# Multi-Exchange Trade Journal
 
 여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 무료 오픈소스 트레이딩 저널입니다. 화면은 `매매일지`, `매매분석`, `Risk Lab`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
 
@@ -21,13 +21,13 @@ backend/venv/bin/python -m pip install -r packaging/requirements-build.txt
 ./packaging/build_macos_app.sh
 ```
 
-완성된 파일은 바탕화면의 `Trade Journal Free/macOS/Trade-Journal-Free-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 거래 DB는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다. API Key는 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
+완성된 파일은 바탕화면의 `Trade Journal/macOS/Trade-Journal-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 거래 DB는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다. API Key는 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
 
-Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Free-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 거래 DB가 `%APPDATA%\Trade Journal Free`에, API Key는 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
+Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 거래 DB가 `%APPDATA%\Trade Journal Free`에, API Key는 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
 
 ### Windows 코드 서명
 
-공개 배포본은 Authenticode PFX 인증서로 `Trade Journal Free.exe`를 서명한 뒤 timestamp 검증까지 수행합니다. GitHub 저장소의 `Settings → Secrets and variables → Actions`에 아래 값을 등록합니다.
+공개 배포본은 Authenticode PFX 인증서로 `Trade Journal.exe`를 서명한 뒤 timestamp 검증까지 수행합니다. GitHub 저장소의 `Settings → Secrets and variables → Actions`에 아래 값을 등록합니다.
 
 | 종류 | 이름 | 값 |
 | --- | --- | --- |
@@ -39,10 +39,10 @@ Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를
 
 ### Windows 테스트 버전 실행 안내
 
-현재 제공되는 Windows 테스트 버전은 코드 서명이 없을 수 있습니다. 따라서 처음 실행할 때 Microsoft Defender SmartScreen에 **“인식할 수 없는 앱의 시작을 차단했습니다”**라는 메시지가 표시될 수 있습니다. 이는 테스트 파일의 게시자를 Windows가 아직 확인하지 못했다는 뜻입니다. 반드시 공식 [trade-journal-free 저장소](https://github.com/alfredcho91-ux/trade-journal-free)의 다운로드 파일인지 확인하세요.
+현재 제공되는 Windows 테스트 버전은 코드 서명이 없을 수 있습니다. 따라서 처음 실행할 때 Microsoft Defender SmartScreen에 **“Windows의 PC 보호” 또는 “인식할 수 없는 앱의 시작을 차단했습니다”**라는 메시지가 표시될 수 있습니다. 이는 테스트 파일의 게시자를 Windows가 아직 확인하지 못했다는 뜻입니다. 반드시 공식 [trade-journal-free 저장소](https://github.com/alfredcho91-ux/trade-journal-free)의 다운로드 파일인지 확인하세요.
 
-1. 내려받은 `Trade-Journal-Free-Windows.zip`을 우클릭하고 `속성`을 엽니다. `차단 해제` 항목이 보이면 체크한 뒤 `적용`을 누릅니다.
-2. ZIP 압축을 풀고 압축을 푼 폴더에서 `Trade Journal Free.exe`를 실행합니다.
+1. 내려받은 `Trade-Journal-Windows.zip`을 우클릭하고 `속성`을 엽니다. `차단 해제` 항목이 보이면 체크한 뒤 `적용`을 누릅니다.
+2. ZIP 압축을 풀고 압축을 푼 폴더에서 `Trade Journal.exe`를 실행합니다.
 3. SmartScreen 화면이 나타나면 `추가 정보`를 누른 뒤 `실행`을 선택합니다.
 4. 앱이 실행되면 브라우저에 열리는 로컬 화면에서 거래소 연결과 동기화를 진행합니다.
 

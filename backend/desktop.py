@@ -1,4 +1,4 @@
-"""Desktop application launcher for the packaged Trade Journal Free build."""
+"""Desktop application launcher for the packaged Trade Journal build."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _available_port(start_port: int) -> int:
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if probe.connect_ex(("127.0.0.1", port)) != 0:
                 return port
-    raise RuntimeError("No local port is available for Trade Journal Free.")
+    raise RuntimeError("No local port is available for Trade Journal.")
 
 
 def _open_browser(url: str) -> None:

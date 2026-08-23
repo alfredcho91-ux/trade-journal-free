@@ -38,7 +38,7 @@ try {
         throw "WINDOWS_CERTIFICATE_PASSWORD is required when a PFX certificate is configured."
     }
 
-    $Executable = Join-Path $AppDirectory "Trade Journal Free.exe"
+    $Executable = Join-Path $AppDirectory "Trade Journal.exe"
     if (-not (Test-Path $Executable)) {
         throw "Windows executable was not found: $Executable"
     }

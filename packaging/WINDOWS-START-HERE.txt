@@ -1,4 +1,4 @@
-Trade Journal Free - Windows test build
+Trade Journal - Windows test build
 ========================================
 
 This is an unsigned test build. Windows Microsoft Defender SmartScreen may show:
@@ -19,7 +19,7 @@ How to start
 1. If Windows shows a Blocked or Unblock option in the ZIP file properties,
    right-click the ZIP, choose Properties, check Unblock, and click Apply.
 2. Extract the ZIP completely.
-3. Run "Trade Journal Free.exe" from the extracted folder.
+3. Run "Trade Journal.exe" from the extracted folder.
 4. On the SmartScreen screen, click "More info" and then "Run anyway".
 5. The app opens a local browser page. Use that page to connect and sync a
    read-only exchange API.
@@ -31,7 +31,7 @@ come from the official repository, or appears modified, do not run it.
 ---------
 1. ZIP 파일을 우클릭하고 속성을 엽니다. 차단 해제가 보이면 체크한 뒤
    적용을 누릅니다.
-2. ZIP 압축을 완전히 풀고 "Trade Journal Free.exe"를 실행합니다.
+2. ZIP 압축을 완전히 풀고 "Trade Journal.exe"를 실행합니다.
 3. SmartScreen 화면에서 "추가 정보"를 누른 뒤 "실행"을 선택합니다.
 4. 앱 실행 후 열리는 로컬 브라우저 화면에서 사용합니다.
 

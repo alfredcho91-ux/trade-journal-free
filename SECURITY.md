@@ -19,7 +19,7 @@ Docker Compose 기본값은 `127.0.0.1:8000`으로 로컬에서만 접근됩니�
 
 ## Windows release signing
 
-공개 Windows 배포본은 `Trade Journal Free.exe`에 Authenticode 서명을 적용하고 timestamp 서버로 검증합니다. PFX 인증서와 비밀번호는 GitHub Actions Secret인 `WINDOWS_CERTIFICATE_BASE64`, `WINDOWS_CERTIFICATE_PASSWORD`로만 주입합니다. `WINDOWS_SIGNING_REQUIRED=true`이면 인증서 누락·서명 실패·검증 실패가 배포 빌드를 중단합니다.
+공개 Windows 배포본은 `Trade Journal.exe`에 Authenticode 서명을 적용하고 timestamp 서버로 검증합니다. PFX 인증서와 비밀번호는 GitHub Actions Secret인 `WINDOWS_CERTIFICATE_BASE64`, `WINDOWS_CERTIFICATE_PASSWORD`로만 주입합니다. `WINDOWS_SIGNING_REQUIRED=true`이면 인증서 누락·서명 실패·검증 실패가 배포 빌드를 중단합니다.
 
 PFX, 비밀번호, 서명 토큰을 로컬 프로젝트나 Git에 저장하지 마세요. 인증서가 노출되었거나 만료되면 즉시 폐기하고 새 인증서로 교체해야 합니다.
 
