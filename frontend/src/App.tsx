@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, type ReactNode } from 'react';
-import { BarChart3, BookOpen, GitCompareArrows, Languages, Mail, Power, ShieldAlert } from 'lucide-react';
+import { BarChart3, BookOpen, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, ShieldAlert } from 'lucide-react';
 
 import { MARKET_COINS } from './constants/market';
 import { BrowserRouter, Navigate } from './router';
@@ -15,7 +15,7 @@ const JournalPage = lazy(() => import('./pages/JournalPage'));
 const TradeAnalysisPage = lazy(() => import('./pages/TradeAnalysisPage'));
 const RiskLabPage = lazy(() => import('./pages/RiskLabPage'));
 const HoldReentryPage = lazy(() => import('./pages/HoldReentryPage'));
-const feedbackEmail = import.meta.env.VITE_FEEDBACK_EMAIL?.trim();
+const feedbackFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdGlwCDcOiTTchsy_MVX33V9ZUXdQK_VA94U7cC2aVARfeV1Q/viewform?usp=publish-editor';
 
 const routeFallback = (
   <div className="flex min-h-64 items-center justify-center text-sm text-dark-400">
@@ -134,12 +134,11 @@ function Shell({ children }: { children: ReactNode }) {
         <main className="min-w-0 flex-1 px-4 py-5 lg:px-6">{children}</main>
         <aside className="sticky top-[69px] hidden h-[calc(100vh-69px)] w-60 shrink-0 border-l border-dark-800 px-4 py-5 xl:block" aria-label={isKo ? '피드백' : 'Feedback'}>
           <section className="border border-dark-700 bg-dark-900/30 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-dark-100"><Mail className="h-4 w-4 text-primary-300" />{isKo ? '피드백' : 'Feedback'}</div>
-            {feedbackEmail ? (
-              <a href={`mailto:${feedbackEmail}`} className="mt-3 block break-all text-xs text-primary-200 hover:text-primary-100">{feedbackEmail}</a>
-            ) : (
-              <div className="mt-3 text-xs text-dark-500">{isKo ? '연락처 준비 중' : 'Contact coming soon'}</div>
-            )}
+            <div className="flex items-center gap-2 text-sm font-medium text-dark-100"><MessageSquare className="h-4 w-4 text-primary-300" />{isKo ? '피드백' : 'Feedback'}</div>
+            <p className="mt-2 text-xs leading-5 text-dark-500">{isKo ? '오류, 개선 의견, 지원 거래소를 알려주세요.' : 'Share bugs, ideas, or exchange requests.'}</p>
+            <a href={feedbackFormUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary-200 hover:text-primary-100">
+              {isKo ? '피드백 보내기' : 'Send feedback'}<ExternalLink className="h-3.5 w-3.5" />
+            </a>
           </section>
         </aside>
       </div>

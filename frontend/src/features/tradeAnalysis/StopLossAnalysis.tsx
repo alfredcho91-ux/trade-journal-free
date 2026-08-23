@@ -277,7 +277,7 @@ export default function StopLossAnalysis({ data, direction, isLoading, isError, 
       {summary.pending_stop_count > 0 && <div className="mt-2 text-[11px] text-amber-300">{isKo ? `후속 4H 봉 부족 ${summary.pending_stop_count}건은 결과 비율에서 제외했습니다.` : `${summary.pending_stop_count} stops await completed 4H candles.`}</div>}
       {historyLimited && <div className="mt-2 text-[11px] text-amber-300">{isKo ? 'Deepcoin의 종목별 최신 주문 100건 제한으로 이전 손절은 누락될 수 있습니다.' : 'Older stops may be missing because Deepcoin limits each symbol to 100 trigger orders.'}</div>}
 
-      <details className="mt-4 border-t border-dark-700 pt-3 text-[11px] text-dark-400">
+      <details className="mt-4 border-t border-dark-700 pt-3 text-[11px] text-dark-400" open>
         <summary className="cursor-pointer font-medium text-dark-200">{isKo ? '결과 분류 기준' : 'Classification Rules'}</summary>
         <div className="mt-2 space-y-1.5">
           <div>1R = {isKo ? '진입가와 실제 Deepcoin SL 사이 거리' : 'distance from entry to the confirmed Deepcoin SL'}</div>

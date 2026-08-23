@@ -145,7 +145,7 @@ export default function MajorFailureAnalysis({ trades, qualityItems, allEntries,
                   <div className="min-w-0 border-t border-dark-800 pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
                     <div className="text-[10px] text-dark-500">{isKo ? '핵심 판정' : 'Key assessment'}</div>
                     <div className="mt-1 text-sm leading-6 text-dark-200">{caseConclusion(item)}</div>
-                    <details className="mt-2">
+                    <details className="mt-2" open>
                       <summary className="cursor-pointer text-[11px] text-dark-500 hover:text-dark-300">{isKo ? '판정 근거 전체 보기' : 'Show all evidence'}</summary>
                       <div className="mt-1 text-[11px] leading-5 text-dark-500">{assessmentLabels.join(' · ') || (isKo ? '추가 판정 근거 없음' : 'No additional evidence')}</div>
                     </details>

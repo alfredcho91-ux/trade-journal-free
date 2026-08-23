@@ -30,7 +30,7 @@ export default function RiskLabPage() {
   const [usesRollingPeriod, setUsesRollingPeriod] = useState(true);
   const [direction, setDirection] = useState<DirectionFilter>('Long');
   const [periodError, setPeriodError] = useState<string | null>(null);
-  const [stopDetailsOpen, setStopDetailsOpen] = useState(false);
+  const [stopDetailsOpen, setStopDetailsOpen] = useState(true);
   const lastDailyRefreshDateRef = useRef(toDateInputValue(new Date()));
 
   const { data: entries = [], isLoading: isJournalLoading, refetch: refetchJournal } = useQuery({

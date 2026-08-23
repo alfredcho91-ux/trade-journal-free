@@ -229,7 +229,7 @@ export default function CurrentMarketSimilarityPanel({
         </>
       )}
       {!isLoading && !query.isError && (
-        <details className="border-t border-dark-800 px-4 py-2 text-[10px] text-dark-500">
+        <details className="border-t border-dark-800 px-4 py-2 text-[10px] text-dark-500" open>
           <summary className="cursor-pointer select-none hover:text-dark-300">{isKo ? '유사도 계산 기준' : 'Similarity methodology'}</summary>
           <div className="mt-2 grid gap-1 leading-5 md:grid-cols-2">
             <span>{isKo ? '후보: 같은 종목 · 확정 최초 진입 · 7개 타임프레임 전체 데이터' : 'Candidates: same symbol, confirmed first entry, complete seven-timeframe data'}</span>
