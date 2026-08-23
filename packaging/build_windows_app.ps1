@@ -68,7 +68,12 @@ try {
 
 Move-Item (Join-Path $ProjectDir "dist\Trade Journal") $WindowsAppDir
 Remove-Item -Recurse -Force (Join-Path $ProjectDir "dist"), (Join-Path $ProjectDir "build")
-Copy-Item (Join-Path $PSScriptRoot "WINDOWS-START-HERE.txt") (Join-Path $WindowsAppDir "WINDOWS-START-HERE.txt") -Force
+$DocsDir = Join-Path $WindowsAppDir "docs"
+New-Item -ItemType Directory -Path $DocsDir -Force | Out-Null
+Copy-Item (Join-Path $PSScriptRoot "docs\API-CONNECTION-KO.md") $DocsDir -Force
+Copy-Item (Join-Path $PSScriptRoot "docs\API-CONNECTION-EN.md") $DocsDir -Force
+Copy-Item (Join-Path $PSScriptRoot "docs\WINDOWS-GUIDE-KO.md") $DocsDir -Force
+Copy-Item (Join-Path $PSScriptRoot "docs\WINDOWS-GUIDE-EN.md") $DocsDir -Force
 
 & (Join-Path $PSScriptRoot "sign_windows_artifact.ps1") -AppDirectory $WindowsAppDir
 

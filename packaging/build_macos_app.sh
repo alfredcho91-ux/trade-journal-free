@@ -58,6 +58,17 @@ mkdir -p "$RELEASE_DIR"
 mv "dist/Trade Journal.app" "$RELEASE_DIR/Trade Journal.app"
 rm -rf dist build
 
+DOCS_DIR="$RELEASE_DIR/docs"
+mkdir -p "$DOCS_DIR"
+cp "$SCRIPT_DIR/docs/API-CONNECTION-KO.md" "$DOCS_DIR/"
+cp "$SCRIPT_DIR/docs/API-CONNECTION-EN.md" "$DOCS_DIR/"
+
 cd "$RELEASE_DIR"
-ditto -c -k --sequesterRsrc --keepParent "Trade Journal.app" "Trade-Journal-macOS.zip"
+PACKAGE_DIR="$RELEASE_DIR/Trade Journal Package"
+rm -rf "$PACKAGE_DIR"
+mkdir -p "$PACKAGE_DIR"
+mv "$RELEASE_DIR/Trade Journal.app" "$PACKAGE_DIR/"
+mv "$DOCS_DIR" "$PACKAGE_DIR/"
+ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_DIR" "Trade-Journal-macOS.zip"
+rm -rf "$PACKAGE_DIR"
 echo "Created: $RELEASE_DIR/Trade-Journal-macOS.zip"
