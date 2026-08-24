@@ -11,6 +11,7 @@ import pandas as pd
 from backend.config.settings import PROJECT_ROOT
 from backend.modules.deepcoin.snapshot import (
     SNAPSHOT_INTERVALS,
+    anchored_vwap_snapshots_for_event,
     indicator_snapshot_for_event,
 )
 from backend.modules.journal.quality_market import (
@@ -20,7 +21,7 @@ from backend.modules.journal.quality_market import (
     prepare_quality_frame,
 )
 from backend.utils.cache import DataCache
-from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from backend.modules.journal.market_data import load_journal_ohlcv, market_source
 from backend.utils.error_handler import DataLoadError
 from backend.utils.validators import validate_coin_symbol
 
@@ -35,7 +36,6 @@ CURRENT_FRAME_CANDLES = {
     "1d": 245,
     "1w": 205,
     "1M": 125,
-    "1w": 205,
 }
 
 
@@ -57,7 +57,7 @@ def _timestamp_to_iso(timestamp_ms: int) -> str:
 
 def _current_hour_key(coin: str, as_of_ms: int) -> str:
     hour = pd.Timestamp(as_of_ms, unit="ms", tz="UTC").floor("h").isoformat()
-    return f"v2:{coin}:{hour}"
+    return f"v3:{coin}:{hour}"
 
 
 def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
@@ -77,7 +77,6 @@ def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
             interval,
             total_candles=candle_count,
             end_time=as_of_ms,
-            exchange="Deepcoin",
         )
         if frame is None or frame.empty:
             warnings.append(f"{normalized_coin} {interval}: market data unavailable")
@@ -134,13 +133,14 @@ def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
             "symbol": f"{normalized_coin}/USDT",
             "as_of": _timestamp_to_iso(as_of_ms),
             "indicator_snapshot": {
-                "version": 2,
+                "version": 3,
                 "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
-                "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
+                "market_source_fallback": False,
                 "reference": "last_completed_candle_before_current_hour_refresh",
                 "event_type": "current_market",
                 "event_time": _timestamp_to_iso(as_of_ms),
                 "timeframes": indicator_timeframes,
+                "anchored_vwaps": anchored_vwap_snapshots_for_event(frames, event),
             },
             "trend_states": trend_states,
             "market_regime": classify_market_regime(trend_states, previous_4h_direction),

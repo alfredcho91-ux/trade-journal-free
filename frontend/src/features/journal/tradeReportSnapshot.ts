@@ -9,7 +9,7 @@ export type SnapshotIndicatorDefinition = {
 
 export const SNAPSHOT_METADATA_KEYS = new Set(['status', 'reason', 'candle_close_time', 'close']);
 export const KNOWN_SNAPSHOT_INDICATOR_KEYS = new Set([
-  'rsi', 'macd', 'slow_stochastic', 'stoch_rsi', 'vpvr', 'anchored_vwap',
+  'rsi', 'macd', 'slow_stochastic', 'stoch_rsi', 'vpvr', 'anchored_vwap', 'anchored_vwaps',
 ]);
 
 export function formatSnapshotNumber(

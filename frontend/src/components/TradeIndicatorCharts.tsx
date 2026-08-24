@@ -32,25 +32,22 @@ function IndicatorPanel({
 }) {
   return (
     <section className="border border-dark-700 bg-dark-900/35 p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-        {icon}
-        {title}
-      </div>
-      <div className="relative">
-        <div
-          className="pointer-events-none absolute right-2 top-1 z-30 flex flex-wrap justify-end gap-x-3 gap-y-0.5 text-[10px]"
-          style={{ textShadow: '0 1px 3px #020617, 0 0 5px #020617' }}
-        >
-          <span className="font-semibold text-dark-400">{referenceLabel}</span>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          {icon}
+          {title}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px]">
+          <span className="font-semibold text-primary-300">{referenceLabel}</span>
           {values.map(({ label, value, tone }) => (
             <span key={label}>
-              <span className="text-dark-400">{label} </span>
+              <span className="text-dark-500">{label} </span>
               <span className={`font-mono ${tone || 'text-dark-100'}`}>{value}</span>
             </span>
           ))}
         </div>
-        {children}
       </div>
+      {children}
     </section>
   );
 }

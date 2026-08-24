@@ -5,7 +5,7 @@ import type { JournalEntry, TradeQualityItem } from '../../types';
 import TradeReportModal from '../journal/TradeReportModal';
 import type { AnalyzedTrade } from './tradeAnalysis';
 import {
-  MAJOR_FAILURE_LOSS_USDT,
+  MAJOR_FAILURE_PRICE_PCT,
   MAJOR_FAILURE_RETURN_PCT,
   summarizeMajorFailures,
   type MajorFailureCase,
@@ -35,7 +35,7 @@ const REGIME_LABELS: Record<string, string> = {
 
 const REASON_LABELS: Record<MajorFailureReasonId, string> = {
   loss_rate_threshold: '투자금 손실률 30% 이상',
-  loss_amount_threshold: '순손실 200 USDT 이상',
+  price_loss_threshold: '방향 반영 가격 손실률 3% 이상',
   poor_entry: '진입 후 유리한 폭보다 역행폭이 큼',
   regime_conflict: 'Weekly·Daily·4H 추세 충돌',
   counter_trend: '상위 추세 역방향 진입',
@@ -91,7 +91,7 @@ export default function MajorFailureAnalysis({ trades, qualityItems, allEntries,
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-bear/25 px-4 py-3">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold text-white"><AlertOctagon className="h-4 w-4 text-bear" />{isKo ? '대실패 거래' : 'Major Failures'}</h2>
-          <p className="mt-1 text-[11px] text-dark-400">{isKo ? `투자금 대비 ${Math.abs(MAJOR_FAILURE_RETURN_PCT)}% 이상 손실 또는 ${Math.abs(MAJOR_FAILURE_LOSS_USDT)} USDT 이상 순손실` : 'Loss of at least 30% on margin or 200 USDT net'}</p>
+          <p className="mt-1 text-[11px] text-dark-400">{isKo ? `투자금 대비 ${Math.abs(MAJOR_FAILURE_RETURN_PCT)}% 이상 순손실 또는 방향 반영 가격 손실률 ${Math.abs(MAJOR_FAILURE_PRICE_PCT)}% 이상` : 'Loss of at least 30% on margin or a direction-adjusted price loss of at least 3%'}</p>
         </div>
         <span className="font-mono text-xs text-bear">{summary.cases.length}{isKo ? '건' : ''}</span>
       </div>
@@ -117,12 +117,12 @@ export default function MajorFailureAnalysis({ trades, qualityItems, allEntries,
           </div>
 
           <div>
-            {summary.cases.map((item) => {
+            {summary.cases.slice(0, 2).map((item) => {
               const thresholdLabels = item.reasons
-                .filter((reason) => reason === 'loss_rate_threshold' || reason === 'loss_amount_threshold')
+                .filter((reason) => reason === 'loss_rate_threshold' || reason === 'price_loss_threshold')
                 .map((reason) => REASON_LABELS[reason]);
               const assessmentLabels = item.reasons
-                .filter((reason) => reason !== 'loss_rate_threshold' && reason !== 'loss_amount_threshold')
+                .filter((reason) => reason !== 'loss_rate_threshold' && reason !== 'price_loss_threshold')
                 .map((reason) => REASON_LABELS[reason]);
 
               return (

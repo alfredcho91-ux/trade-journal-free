@@ -1,4 +1,5 @@
 from backend.modules.journal.quality_analysis import (
+    _analysis_bundle,
     _assign_quality_classes,
     _direction_breakdown,
     _filter_positions_by_net_return,
@@ -43,6 +44,26 @@ def test_performance_stats_does_not_invent_r_multiple():
     assert stats["average_r"] is None
     assert stats["r_sample_count"] == 0
     assert stats["trade_count"] == 1
+
+
+def test_quality_aggregates_allow_missing_excursion_data():
+    item = _item(2, 1, 1, 0, 1, 50)
+    item.update({
+        "excursion": None,
+        "exit_quality": None,
+        "quality_class": "unavailable",
+        "direction": "Long",
+        "regime_alignment": "unavailable",
+        "trade_alignment": "neutral",
+        "market_regime": {"id": "unavailable", "alignment": "unavailable", "trade_bias": "neutral"},
+    })
+
+    analysis = _analysis_bundle([item])
+
+    assert analysis["summary"]["average_mfe_pct"] is None
+    assert analysis["summary"]["average_mae_pct"] is None
+    assert analysis["summary"]["average_capture_ratio_pct"] is None
+    assert analysis["hold_results"]["actual"]["available_count"] == 0
 
 
 def test_direction_breakdown_keeps_long_and_short_statistics_separate():

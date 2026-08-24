@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 import numpy as np
 
 from backend.modules.journal.quality_market import TREND_INTERVALS, finite_timestamp, prepare_quality_frame
-from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from backend.modules.journal.market_data import load_journal_ohlcv, market_source
 
 INTERVAL_MS = {"4h": 4 * 60 * 60 * 1000, "1d": 24 * 60 * 60 * 1000, "1w": 7 * 24 * 60 * 60 * 1000}
 WARMUP_CANDLES = 230
@@ -47,7 +47,5 @@ def load_market_frames(symbol: str, positions: List[Dict[str, Any]], warnings: L
             continue
         frames[interval] = prepare_quality_frame(frame)
         frames[interval].attrs["market_source"] = market_source(frame)
-        frames[interval].attrs["market_source_fallback"] = is_market_fallback(frame)
-        if is_market_fallback(frame):
-            warnings.append(f"{symbol} {interval}: {market_source(frame)}")
+        frames[interval].attrs["market_source_fallback"] = False
     return frames

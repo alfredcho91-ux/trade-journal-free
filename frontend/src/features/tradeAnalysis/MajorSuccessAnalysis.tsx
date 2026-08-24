@@ -114,7 +114,7 @@ export default function MajorSuccessAnalysis({ trades, qualityItems, allEntries,
           </div>
 
           <div>
-            {summary.cases.map((item) => {
+            {summary.cases.slice(0, 2).map((item) => {
               const thresholdLabels = item.reasons
                 .filter((reason) => reason === 'return_threshold' || reason === 'price_threshold')
                 .map((reason) => REASON_LABELS[reason]);

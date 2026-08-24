@@ -22,7 +22,7 @@ from backend.modules.journal.trade_selection import (
     timestamp_ms,
 )
 from backend.utils.cache import DataCache
-from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from backend.modules.journal.market_data import load_journal_ohlcv
 
 PATH_INTERVAL = "5m"
 PATH_INTERVAL_MS = 5 * 60 * 1000
@@ -433,8 +433,6 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: SL/TP market data unavailable")
                 continue
-            if is_market_fallback(candles):
-                warnings.append(f"{symbol} {PATH_INTERVAL}: {market_source(candles)}")
 
             for position in batch:
                 entry_time = timestamp_ms(position.get("entry_datetime"))

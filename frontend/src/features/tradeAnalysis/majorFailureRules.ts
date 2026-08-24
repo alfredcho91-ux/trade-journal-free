@@ -3,11 +3,11 @@ import { netReturnPct } from '../journal/journalReturns';
 import type { AnalyzedTrade } from './tradeAnalysis';
 
 export const MAJOR_FAILURE_RETURN_PCT = -30;
-export const MAJOR_FAILURE_LOSS_USDT = -200;
+export const MAJOR_FAILURE_PRICE_PCT = -3;
 
 export type MajorFailureReasonId =
   | 'loss_rate_threshold'
-  | 'loss_amount_threshold'
+  | 'price_loss_threshold'
   | 'poor_entry'
   | 'regime_conflict'
   | 'counter_trend'
@@ -19,6 +19,7 @@ export interface MajorFailureCase {
   trade: AnalyzedTrade;
   quality: TradeQualityItem | null;
   netReturnPct: number | null;
+  priceReturnPct: number | null;
   netLossUsdt: number;
   reasons: MajorFailureReasonId[];
   tenBarReturnPct: number | null;
@@ -65,11 +66,25 @@ function closedAt(trade: AnalyzedTrade): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+export function tradePriceReturnPct(trade: AnalyzedTrade): number | null {
+  const entryPrice = finite(trade.entry.entry_price);
+  const exitPrice = finite(trade.entry.exit_price);
+  if (entryPrice != null && entryPrice > 0 && exitPrice != null) {
+    const direction = trade.entry.direction === 'Short' ? -1 : 1;
+    return ((exitPrice - entryPrice) / entryPrice) * direction * 100;
+  }
+  return finite(trade.excursion?.realized_move_pct) ?? finite(trade.entry.pnl_pct);
+}
+
 export function isMajorFailure(trade: AnalyzedTrade): boolean {
   const pnl = finite(trade.entry.realized_pnl);
   if (pnl == null || pnl >= 0) return false;
   const returnPct = netReturnPct(trade.entry);
-  return pnl <= MAJOR_FAILURE_LOSS_USDT || (returnPct != null && returnPct <= MAJOR_FAILURE_RETURN_PCT);
+  const priceReturnPct = tradePriceReturnPct(trade);
+  return (
+    (returnPct != null && returnPct <= MAJOR_FAILURE_RETURN_PCT)
+    || (priceReturnPct != null && priceReturnPct <= MAJOR_FAILURE_PRICE_PCT)
+  );
 }
 
 export function majorFailureCases(
@@ -81,10 +96,11 @@ export function majorFailureCases(
     if (!isMajorFailure(trade)) return [];
     const pnl = finite(trade.entry.realized_pnl) as number;
     const returnPct = netReturnPct(trade.entry);
+    const priceReturnPct = tradePriceReturnPct(trade);
     const quality = trade.entry.id == null ? null : qualityById.get(trade.entry.id) || null;
     const reasons: MajorFailureReasonId[] = [];
     if (returnPct != null && returnPct <= MAJOR_FAILURE_RETURN_PCT) reasons.push('loss_rate_threshold');
-    if (pnl <= MAJOR_FAILURE_LOSS_USDT) reasons.push('loss_amount_threshold');
+    if (priceReturnPct != null && priceReturnPct <= MAJOR_FAILURE_PRICE_PCT) reasons.push('price_loss_threshold');
     if (quality?.quality_class === 'poor_entry') reasons.push('poor_entry');
     if (quality?.market_regime.alignment === 'conflict') reasons.push('regime_conflict');
     if (quality?.trade_alignment === 'counter_trend') reasons.push('counter_trend');
@@ -97,6 +113,7 @@ export function majorFailureCases(
       trade,
       quality,
       netReturnPct: returnPct,
+      priceReturnPct,
       netLossUsdt: pnl,
       reasons,
       tenBarReturnPct: tenBar,

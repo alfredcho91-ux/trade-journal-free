@@ -21,7 +21,7 @@ from backend.modules.journal.trade_selection import (
     position_batches,
     timestamp_ms,
 )
-from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from backend.modules.journal.market_data import load_journal_ohlcv
 
 _timestamp_ms = timestamp_ms
 _finite_float = finite_float
@@ -105,8 +105,6 @@ def _short_trade_excursion(
     if candles is None or candles.empty:
         warnings.append(f"journal {position['id']}: {SHORT_TRADE_INTERVAL} market data unavailable")
         return None
-    if is_market_fallback(candles):
-        warnings.append(f"{symbol} {SHORT_TRADE_INTERVAL}: {market_source(candles)}")
     if not path_covers_position(candles, entry_time, close_time, SHORT_TRADE_INTERVAL_MS):
         warnings.append(f"journal {position['id']}: complete {SHORT_TRADE_INTERVAL} path is unavailable")
         return None
@@ -167,8 +165,6 @@ def run_journal_excursions_service(start_time: int, end_time: int) -> Dict[str, 
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: market data unavailable")
                 continue
-            if is_market_fallback(candles):
-                warnings.append(f"{symbol} {EXCURSION_INTERVAL}: {market_source(candles)}")
 
             for position in regular_positions:
                 entry_time = _timestamp_ms(position.get("entry_datetime"))

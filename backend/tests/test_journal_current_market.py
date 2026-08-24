@@ -42,7 +42,7 @@ def test_current_market_snapshot_reuses_completed_indicator_and_trend_paths(monk
     payload = result["data"]
     assert result["success"] is True
     assert payload["symbol"] == "BTC/USDT"
-    assert payload["indicator_snapshot"]["version"] == 2
+    assert payload["indicator_snapshot"]["version"] == 3
     assert set(payload["indicator_snapshot"]["timeframes"]) == {"1h", "2h", "4h", "1d", "1w", "1M"}
     assert all(
         value["status"] == "complete"
@@ -55,5 +55,6 @@ def test_current_market_snapshot_reuses_completed_indicator_and_trend_paths(monk
     assert anchored["anchor"] == "month"
     assert anchored["sample_count"] <= anchored["length"] == 14
     assert set(anchored["bands"]) == {"-3", "-2", "-1", "1", "2", "3"}
+    assert set(payload["indicator_snapshot"]["anchored_vwaps"]) == {"day", "week", "month"}
     assert {item[1] for item in requested} == {"1h", "2h", "4h", "1d", "1w", "1M"}
-    assert all(item[0] == "BTC/USDT" and item[3] == as_of_ms and item[4] == "Deepcoin" for item in requested)
+    assert all(item[0] == "BTC/USDT" and item[3] == as_of_ms and item[4] is None for item in requested)

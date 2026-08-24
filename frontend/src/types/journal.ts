@@ -44,6 +44,7 @@ export interface TradeIndicatorSnapshot {
   event_time?: string;
   fill_time?: string;
   timeframes?: Record<string, TradeIndicatorTimeframeSnapshot>;
+  anchored_vwaps?: Partial<Record<'day' | 'week' | 'month', AnchoredVwapDeviation>>;
 }
 
 export interface CurrentMarketTrendState {

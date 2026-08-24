@@ -3,16 +3,18 @@ import { describe, expect, it } from 'vitest';
 import type { AnalyzedTrade } from './tradeAnalysis';
 import { isMajorFailure, summarizeMajorFailures } from './majorFailureRules';
 
-function trade(id: number, pnl: number, investedAmount: number): AnalyzedTrade {
+function trade(id: number, pnl: number, investedAmount: number, entryPrice?: number, exitPrice?: number, direction: 'Long' | 'Short' = 'Long'): AnalyzedTrade {
   return {
     entry: {
       id,
       source: 'deepcoin_position',
-      direction: 'Long',
+      direction,
       symbol: 'BTC/USDT',
       realized_pnl: pnl,
       invested_amount: investedAmount,
       leverage: 10,
+      entry_price: entryPrice,
+      exit_price: exitPrice,
     },
     entryDatetime: null,
     entryTimeConfidence: 'unavailable',
@@ -23,38 +25,39 @@ function trade(id: number, pnl: number, investedAmount: number): AnalyzedTrade {
 }
 
 describe('major failure analysis', () => {
-  it('classifies either the return threshold or dollar threshold', () => {
+  it('classifies either the margin-loss or direction-adjusted price-loss threshold', () => {
     expect(isMajorFailure(trade(1, -30, 100))).toBe(true);
-    expect(isMajorFailure(trade(2, -200, 1_000))).toBe(true);
-    expect(isMajorFailure(trade(3, -29.99, 100))).toBe(false);
-    expect(isMajorFailure(trade(4, -199.99, 1_000))).toBe(false);
-    expect(isMajorFailure(trade(5, 300, 100))).toBe(false);
+    expect(isMajorFailure(trade(2, -10, 1_000, 100, 97))).toBe(true);
+    expect(isMajorFailure(trade(3, -10, 1_000, 100, 103, 'Short'))).toBe(true);
+    expect(isMajorFailure(trade(4, -29.99, 100, 100, 97.01))).toBe(false);
+    expect(isMajorFailure(trade(5, -200, 1_000, 100, 99))).toBe(false);
+    expect(isMajorFailure(trade(6, 300, 100, 100, 97))).toBe(false);
   });
 
   it('reports the large losses share of all losing trades', () => {
     const summary = summarizeMajorFailures([
-      trade(1, -200, 1_000),
+      trade(1, -30, 100),
       trade(2, -50, 1_000),
       trade(3, 100, 1_000),
     ], []);
 
     expect(summary.cases).toHaveLength(1);
-    expect(summary.totalLossUsdt).toBe(-200);
-    expect(summary.grossLossSharePct).toBe(80);
+    expect(summary.totalLossUsdt).toBe(-30);
+    expect(summary.grossLossSharePct).toBeCloseTo(37.5);
     expect(summary.leverageAmplifiedCount).toBe(1);
   });
 
   it('lists major failures by the most recent closed trade', () => {
-    const older = trade(1, -500, 1_000);
+    const older = trade(1, -300, 1_000);
     older.entry.datetime = '2026-07-01T00:00:00Z';
-    const newer = trade(2, -250, 1_000);
+    const newer = trade(2, -350, 1_000);
     newer.entry.datetime = '2026-07-02T00:00:00Z';
 
     expect(summarizeMajorFailures([older, newer], []).cases.map((item) => item.trade.entry.id)).toEqual([2, 1]);
   });
 
   it('uses stored quality and post-exit data to explain a major failure', () => {
-    const subject = trade(8, -250, 1_000);
+    const subject = trade(8, -300, 1_000);
     subject.excursion = {
       journal_id: 8,
       mfe_pct: 0.2,
@@ -76,7 +79,7 @@ describe('major failure analysis', () => {
     }]);
 
     expect(summary.cases[0].reasons).toEqual(expect.arrayContaining([
-      'loss_amount_threshold',
+      'loss_rate_threshold',
       'poor_entry',
       'regime_conflict',
       'counter_trend',

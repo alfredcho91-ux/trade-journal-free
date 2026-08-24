@@ -180,7 +180,7 @@ def test_deepcoin_sync_is_idempotent_and_persists_snapshot(isolated_journal_stor
     }
     snapshot = {
         "version": 1,
-        "market_source": "binance_spot_klines",
+        "market_source": "Binance USDT-M Futures",
         "reference": "last_completed_candle_before_deepcoin_fill",
         "fill_time": "2024-08-04T10:20:00Z",
         "timeframes": {interval: {"status": "complete"} for interval in ("1h", "2h", "4h", "1d")},
@@ -236,7 +236,7 @@ def test_deepcoin_sync_imports_closed_positions_with_net_realized_pnl(
     }
     snapshot = {
         "version": 1,
-        "market_source": "binance_spot_klines",
+        "market_source": "Binance USDT-M Futures",
         "reference": "last_completed_candle_before_deepcoin_position_close",
         "event_type": "position_close",
         "event_time": "2024-08-04T10:20:00Z",

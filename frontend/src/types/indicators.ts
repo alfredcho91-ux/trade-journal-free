@@ -8,7 +8,7 @@ export type AnchoredVwapZone =
   | 'extreme_lower';
 
 export interface AnchoredVwapDeviation {
-  anchor: 'month';
+  anchor: 'day' | 'week' | 'month';
   length: number;
   sample_count: number;
   source: 'HLC3';

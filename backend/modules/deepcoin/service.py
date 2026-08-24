@@ -844,8 +844,9 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
         snapshot = snapshots.get(
             event.external_id,
             {
-                "version": 2,
-                "market_source": "binance_spot_klines",
+                "version": 3,
+                "market_source": "Binance USDT-M Futures",
+                "market_source_fallback": False,
                 "reference": fallback_reference,
                 "event_type": snapshot_event.event_type,
                 "event_time": _timestamp_to_iso(snapshot_event.timestamp_ms),

@@ -20,6 +20,7 @@ export interface AnalyzedTrade {
   holdingMinutes: number | null;
   excursion: TradeExcursion | null;
 }
+
 export interface PerformanceSummary {
   count: number;
   wins: number;
@@ -62,6 +63,9 @@ export interface ConditionComparison {
   difference: number;
   winCount: number;
   lossCount: number;
+  winMatched: number;
+  lossMatched: number;
+  lift: number | null;
 }
 
 export interface ReturnRangeBreakdown {
@@ -345,8 +349,25 @@ export function conditionComparisons(
       difference: win.frequency - loss.frequency,
       winCount: win.available,
       lossCount: loss.available,
+      winMatched: win.matched,
+      lossMatched: loss.matched,
+      lift: loss.frequency > 0 ? win.frequency / loss.frequency : null,
     }];
   }).sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
+}
+
+export function filterTradesByIndicatorMetric(
+  trades: AnalyzedTrade[],
+  timeframe: AnalysisTimeframe,
+  metricId: string,
+): AnalyzedTrade[] {
+  const metric = INDICATOR_METRICS.find((item) => item.id === metricId);
+  if (!metric) return [];
+  return trades.filter((trade) => {
+    const pnl = finite(trade.entry.realized_pnl);
+    const snapshot = snapshotAt(trade, timeframe);
+    return pnl != null && pnl !== 0 && snapshot != null && metric.value(snapshot) != null;
+  });
 }
 
 export function filterTradesByCondition(
@@ -357,8 +378,9 @@ export function filterTradesByCondition(
   const condition = CONDITIONS.find((item) => item.id === conditionId);
   if (!condition) return [];
   return trades.filter((trade) => {
+    const pnl = finite(trade.entry.realized_pnl);
     const snapshot = snapshotAt(trade, timeframe);
-    return snapshot != null && condition.test(snapshot) === true;
+    return pnl != null && pnl !== 0 && snapshot != null && condition.test(snapshot) === true;
   });
 }
 

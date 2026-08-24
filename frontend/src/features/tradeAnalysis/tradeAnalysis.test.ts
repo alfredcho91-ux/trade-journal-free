@@ -5,6 +5,7 @@ import {
   buildAnalyzedTrades,
   conditionComparisons,
   filterTradesByCondition,
+  filterTradesByIndicatorMetric,
   filterTradesByReturnRange,
   indicatorComparisons,
   performanceSummary,
@@ -113,6 +114,18 @@ describe('trade analysis', () => {
     expect(lowRsi?.winFrequency).toBe(100);
     expect(lowRsi?.lossFrequency).toBe(0);
     expect(filterTradesByCondition(trades, '4h', 'rsi_low').map((trade) => trade.entry.id)).toEqual([2]);
+  });
+
+  it('keeps evidence drawers aligned with win/loss comparison samples', () => {
+    const trades = buildAnalyzedTrades(fixtures());
+    const breakEven = {
+      ...trades[0],
+      entry: { ...trades[0].entry, id: 99, realized_pnl: 0 },
+    };
+    const withBreakEven = [...trades, breakEven];
+
+    expect(filterTradesByIndicatorMetric(withBreakEven, '4h', 'rsi').map((trade) => trade.entry.id)).toEqual([2, 4]);
+    expect(filterTradesByCondition(withBreakEven, '4h', 'rsi_low').map((trade) => trade.entry.id)).toEqual([2]);
   });
 
   it('classifies profit and loss return magnitudes at exact boundaries', () => {

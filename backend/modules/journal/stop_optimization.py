@@ -27,7 +27,7 @@ from backend.modules.journal.trade_selection import (
     position_batches,
 )
 from backend.utils.cache import DataCache
-from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from backend.modules.journal.market_data import load_journal_ohlcv
 
 FIXED_STOP_CANDIDATES = tuple(round(value * 0.25, 2) for value in range(1, 17))
 ATR_STOP_MULTIPLIERS = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
@@ -377,8 +377,6 @@ def _build_path_items(
             if candles is None or candles.empty:
                 warnings.append(f"{symbol} batch {batch_index}: stop optimization market data unavailable")
                 continue
-            if is_market_fallback(candles):
-                warnings.append(f"{symbol} {EXCURSION_INTERVAL}: {market_source(candles)}")
             for position in batch:
                 entry_time = finite_timestamp(position.get("entry_datetime"))
                 exit_time = finite_timestamp(position.get("datetime"))

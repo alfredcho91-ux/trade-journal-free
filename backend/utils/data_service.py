@@ -46,7 +46,7 @@ def _tf_weight(tf: str) -> int:
 
 # Data service cache directory and marker for cached None values
 _CACHE_BASE_DIR = Path(__file__).parent.parent.parent / ".cache" / "data_service"
-_CACHE_WRAPPER_MARK = "__cache_wrapper_v1__"
+_CACHE_WRAPPER_MARK = "__cache_wrapper_v2__"
 
 
 def cached(ttl_seconds: int):
@@ -138,7 +138,7 @@ def fetch_binance_klines(
     total_candles: int = 1000,
     end_time: Optional[int] = None,
 ):
-    """Fetch raw Binance Spot klines with bounded, backwards pagination.
+    """Fetch Binance USDT-M Futures klines with bounded, backwards pagination.
 
     ``end_time`` is a Unix timestamp in milliseconds.  It permits historical
     point-in-time analyses without changing the recent-candle callers.
@@ -163,7 +163,7 @@ def fetch_binance_klines(
                 params["endTime"] = cursor_end_time
 
             response = requests.get(
-                "https://api.binance.com/api/v3/klines",
+                "https://fapi.binance.com/fapi/v1/klines",
                 params=params,
                 timeout=10,
             )

@@ -10,7 +10,7 @@ import pandas as pd
 import requests
 
 from backend.config.settings import TIMEFRAME_TO_MINUTES
-from backend.modules.journal.market_data import is_market_fallback, load_journal_ohlcv, market_source
+from backend.modules.journal.market_data import load_journal_ohlcv, market_source
 from core.indicator_primitives import compute_vwap_standard_deviation
 from core.indicator_pipelines import compute_trend_judgment_indicators
 from core.vpvr import calculate_vpvr
@@ -25,6 +25,11 @@ SNAPSHOT_VPVR_CANDLES = {
     "1M": 120,
 }
 SNAPSHOT_BIN_COUNT = 24
+VWAP_ANCHOR_INTERVALS = {
+    "day": "1h",
+    "week": "4h",
+    "month": "1d",
+}
 
 
 class SnapshotEvent(Protocol):
@@ -147,6 +152,23 @@ def indicator_snapshot_for_event(
     }
 
 
+def anchored_vwap_snapshots_for_event(
+    frames: Dict[str, Optional[pd.DataFrame]],
+    event: SnapshotEvent,
+) -> Dict[str, Dict[str, object]]:
+    """Build report VWAP anchors from their dedicated completed-candle frames."""
+    snapshots: Dict[str, Dict[str, object]] = {}
+    for anchor, interval in VWAP_ANCHOR_INTERVALS.items():
+        frame = frames.get(interval)
+        if frame is None or frame.empty:
+            continue
+        completed = frame.loc[frame["close_time"] < event.timestamp_ms].copy()
+        value = compute_vwap_standard_deviation(completed, anchor=anchor, length=14)
+        if value is not None:
+            snapshots[anchor] = value
+    return snapshots
+
+
 def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str, Any]]:
     snapshots: Dict[str, Dict[str, Any]] = {}
     events_by_market: Dict[Tuple[str, str, str], List[SnapshotEvent]] = {}
@@ -184,13 +206,14 @@ def build_indicator_snapshots(events: List[SnapshotEvent]) -> Dict[str, Dict[str
                     timeframes[interval] = {"status": "unavailable", "reason": "calculation_failed"}
 
             snapshots[event.external_id] = {
-                "version": 2,
+                "version": 3,
                 "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
-                "market_source_fallback": any(is_market_fallback(frame) for frame in frames.values() if frame is not None),
+                "market_source_fallback": False,
                 "reference": f"last_completed_candle_before_{exchange.lower()}_{event.event_type}",
                 "event_type": event.event_type,
                 "event_time": _timestamp_to_iso(event.timestamp_ms),
                 "timeframes": timeframes,
+                "anchored_vwaps": anchored_vwap_snapshots_for_event(frames, event),
             }
             if event.event_type == "fill":
                 time_key = "fill_time"
@@ -206,6 +229,7 @@ __all__ = [
     "SNAPSHOT_BIN_COUNT",
     "SNAPSHOT_INTERVALS",
     "SNAPSHOT_VPVR_CANDLES",
+    "anchored_vwap_snapshots_for_event",
     "build_indicator_snapshots",
     "indicator_snapshot_for_event",
     "snapshot_candle_count",

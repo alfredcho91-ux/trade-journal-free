@@ -11,7 +11,7 @@ import {
   syncExchange,
 } from '../api/client';
 import { useLanguage } from '../store/useStore';
-import type { ExchangeId, JournalEntry, JournalPerformanceData } from '../types';
+import type { ExchangeId, JournalEntry, JournalPerformanceData, TradeQualityItem } from '../types';
 import ExchangeConnectionModal from '../features/journal/ExchangeConnectionModal';
 import JournalSyncPanel from '../features/journal/JournalSyncPanel';
 import { isClosedPosition } from '../features/journal/journalEntries';
@@ -30,12 +30,25 @@ import { journalDerivedQueryPrefixes, journalQueryKeys } from '../features/journ
 import { useExchangeConnection } from '../features/journal/useExchangeConnection';
 import TradeReportModal from '../features/journal/TradeReportModal';
 import { tradeOutcomeAssessment } from '../features/journal/tradeOutcomeAssessment';
+import { summarizeTradeStyle } from '../features/journal/tradeStyleSummary';
+import { buildAnalyzedTrades } from '../features/tradeAnalysis/tradeAnalysis';
+
+const VISIBLE_TRADE_INCREMENT = 12;
 
 function formatSignedNumber(value: number | null | undefined, maximumFractionDigits = 4): string {
   if (value == null || !Number.isFinite(value)) {
     return '-';
   }
   return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits })}`;
+}
+
+function formatHoldingMinutes(minutes: number | null, isKo: boolean): string {
+  if (minutes == null || !Number.isFinite(minutes)) return '-';
+  const totalMinutes = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  if (hours === 0) return isKo ? `${remainingMinutes}분` : `${remainingMinutes}m`;
+  return isKo ? `${hours}시간 ${remainingMinutes}분` : `${hours}h ${remainingMinutes}m`;
 }
 
 function AnalysisMetric({
@@ -152,7 +165,9 @@ function CumulativePnlChart({ trades, isKo }: { trades: JournalEntry[]; isKo: bo
 }
 
 function PeriodAnalysis({
+  allEntries,
   closedEntries,
+  qualityItems,
   isKo,
   instType,
   canSync,
@@ -164,7 +179,9 @@ function PeriodAnalysis({
   onPeriodApply,
   performance,
 }: {
+  allEntries: JournalEntry[];
   closedEntries: JournalEntry[];
+  qualityItems: TradeQualityItem[];
   isKo: boolean;
   instType: 'SWAP' | 'SPOT';
   canSync: boolean;
@@ -264,6 +281,20 @@ function PeriodAnalysis({
   const inputEndTs = dateBoundaryTimestamp(analysisEnd, true);
   const periodInvalid = inputStartTs != null && inputEndTs != null && inputStartTs > inputEndTs;
   const syncErrorText = syncError instanceof Error ? syncError.message : null;
+  const periodAnalyzedTrades = useMemo(() => {
+    const periodIds = new Set(periodClosedEntries.flatMap((entry) => entry.id == null ? [] : [entry.id]));
+    return buildAnalyzedTrades(allEntries).filter((trade) => trade.entry.id != null && periodIds.has(trade.entry.id));
+  }, [allEntries, periodClosedEntries]);
+  const averageHoldingMinutes = useMemo(() => {
+    const values = periodAnalyzedTrades.flatMap((trade) => (
+      trade.holdingMinutes != null && Number.isFinite(trade.holdingMinutes) ? [trade.holdingMinutes] : []
+    ));
+    return values.length ? values.reduce((total, value) => total + value, 0) / values.length : null;
+  }, [periodAnalyzedTrades]);
+  const tradeStyle = useMemo(
+    () => summarizeTradeStyle(periodAnalyzedTrades, qualityItems, isKo),
+    [isKo, periodAnalyzedTrades, qualityItems],
+  );
 
   return (
     <section className="card p-5">
@@ -391,7 +422,7 @@ function PeriodAnalysis({
         </div>
       ) : (
         <>
-          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
             <AnalysisMetric
               label={isKo ? '기간 순수익률' : 'Net Return'}
               value={periodNetReturn == null ? '-' : `${formatSignedNumber(periodNetReturn, 2)}%`}
@@ -436,6 +467,20 @@ function PeriodAnalysis({
               tone={periodNetCostImpact >= 0 ? 'positive' : 'negative'}
               detail={`${isKo ? '수수료' : 'Fee'} ${formatSignedNumber(periodFeeImpact, 2)} · ${isKo ? '펀딩' : 'Funding'} ${formatSignedNumber(periodFundingImpact, 2)}`}
             />
+            <AnalysisMetric
+              label={isKo ? '평균 보유 시간' : 'Average Holding Time'}
+              value={formatHoldingMinutes(averageHoldingMinutes, isKo)}
+              detail={isKo ? '선택 기간의 종료 거래 기준' : 'Based on closed trades in selected period'}
+            />
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-l-2 border-primary-400/60 bg-dark-900/25 px-3 py-2.5 text-sm leading-6 text-dark-200">
+            <span className="font-bold text-primary-200">{isKo ? '매매 스타일' : 'Trading style'}</span>
+            <span className="font-medium text-dark-100">
+              {tradeStyle.insufficientData
+                ? (isKo ? '분석할 거래가 더 필요합니다' : 'More completed trades are needed to analyze.')
+                : tradeStyle.traits.join(' · ')}
+            </span>
           </div>
 
           <div className="mt-4 grid gap-3 lg:grid-cols-4">
@@ -556,6 +601,7 @@ export default function JournalPage() {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [snapshotEntry, setSnapshotEntry] = useState<JournalEntry | null>(null);
   const [historyPeriod, setHistoryPeriod] = useState<JournalPeriod>(() => buildJournalPeriod());
+  const [visibleTradeCount, setVisibleTradeCount] = useState(VISIBLE_TRADE_INCREMENT);
   const [connectionOpen, setConnectionOpen] = useState(false);
 
   const { data: entries, isLoading, isError: entriesError, refetch: refetchEntries } = useQuery({
@@ -697,13 +743,14 @@ export default function JournalPage() {
   const periodClosedEntries = closedEntries.filter((entry) => isJournalEntryWithinPeriod(entry, historyPeriod));
   const stats = performanceQuery.data;
 
-  const visibleEntries = periodClosedEntries
+  const visibleEntries = [...periodClosedEntries]
     .sort((a, b) => {
       const aTime = a.datetime ? new Date(a.datetime).getTime() : 0;
       const bTime = b.datetime ? new Date(b.datetime).getTime() : 0;
       if (aTime !== bTime) return bTime - aTime;
       return (b.id || 0) - (a.id || 0);
     });
+  const displayedEntries = visibleEntries.slice(0, visibleTradeCount);
 
   return (
     <div className="space-y-6">
@@ -731,7 +778,9 @@ export default function JournalPage() {
       />
 
       <PeriodAnalysis
+        allEntries={allEntries}
         closedEntries={closedEntries}
+        qualityItems={qualityQuery.data?.items || []}
         isKo={isKo}
         instType={exchangeInstType}
         canSync={Boolean(selectedExchangeStatus?.configured)}
@@ -740,7 +789,10 @@ export default function JournalPage() {
         syncError={exchangeSyncMutation.error}
         period={historyPeriod}
         onSyncDays={(days) => startExchangeSync(days)}
-        onPeriodApply={setHistoryPeriod}
+        onPeriodApply={(nextPeriod) => {
+          setHistoryPeriod(nextPeriod);
+          setVisibleTradeCount(VISIBLE_TRADE_INCREMENT);
+        }}
         performance={performanceQuery.data}
       />
 
@@ -781,8 +833,8 @@ export default function JournalPage() {
             <h3 className="text-lg font-semibold">{isKo ? '거래 기록' : 'Trade History'}</h3>
             <p className="mt-1 text-xs text-dark-500">
               {isKo
-                ? `${historyPeriod.start} ~ ${historyPeriod.end} · 종료된 포지션만 표시합니다.`
-                : `${historyPeriod.start} ~ ${historyPeriod.end} · Closed positions only.`}
+                ? `${historyPeriod.start} ~ ${historyPeriod.end} · 최신 ${Math.min(visibleTradeCount, visibleEntries.length)}/${visibleEntries.length}건`
+                : `${historyPeriod.start} ~ ${historyPeriod.end} · Latest ${Math.min(visibleTradeCount, visibleEntries.length)}/${visibleEntries.length} closed trades`}
             </p>
           </div>
         </div>
@@ -799,7 +851,48 @@ export default function JournalPage() {
             {isKo ? '현재 필터에 표시할 거래가 없습니다.' : 'No trades match the current filter.'}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="space-y-3 md:hidden">
+            {displayedEntries.map((entry) => {
+              const closed = isClosedPosition(entry);
+              const excursion = entry.id == null ? null : excursionByJournalId.get(entry.id) || null;
+              const quality = entry.id == null ? null : qualityByJournalId.get(entry.id) || null;
+              const assessment = excursion
+                ? tradeOutcomeAssessment(excursion, quality?.quality_class, isKo)
+                : null;
+              const displayNetReturnPct = netReturnPct(entry);
+              const closeDate = entry.datetime ? new Date(entry.datetime) : null;
+              const hasValidCloseDate = closeDate != null && Number.isFinite(closeDate.getTime());
+
+              return (
+                <article key={entry.id} className="border border-dark-700 bg-dark-900/35 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-white">{entry.symbol || '-'}</div>
+                      <div className="mt-0.5 text-[11px] text-dark-500">
+                        {hasValidCloseDate ? `${toDateInputValue(closeDate)} ${closeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '-'}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-semibold ${entry.direction === 'Long' ? 'text-bull' : 'text-bear'}`}>{entry.direction || '-'}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-y border-dark-700 py-3 text-xs">
+                    <div><span className="block text-[10px] text-dark-500">{isKo ? '진입 / 청산' : 'Entry / Exit'}</span><span className="mt-1 block font-mono text-dark-200">{entry.entry_price?.toLocaleString() || '-'} / {entry.exit_price?.toLocaleString() || '-'}</span></div>
+                    <div className="text-right"><span className="block text-[10px] text-dark-500">{isKo ? '순수익금' : 'Net Profit'}</span><span className={`mt-1 block font-mono font-semibold ${(entry.realized_pnl || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{entry.realized_pnl == null ? '-' : `${formatSignedNumber(entry.realized_pnl, 4)} USDT`}</span></div>
+                    <div><span className="block text-[10px] text-dark-500">{isKo ? '투입금 대비 수익률' : 'Margin Return'}</span><span className={`mt-1 block font-mono ${(displayNetReturnPct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{displayNetReturnPct == null ? '-' : `${formatSignedNumber(displayNetReturnPct, 3)}%`}</span></div>
+                    <div className="text-right"><span className="block text-[10px] text-dark-500">{isKo ? '손익 결과' : 'PnL Result'}</span><span className="mt-1 block text-dark-300">{entry.outcome || '-'}</span></div>
+                  </div>
+                  <div className="mt-3 text-xs">
+                    {assessment ? <><div className={`font-semibold ${assessment.tone === 'negative' ? 'text-bear' : assessment.tone === 'warning' ? 'text-amber-300' : 'text-primary-300'}`}>{assessment.label}</div><div className="mt-1 line-clamp-2 leading-4 text-dark-400">{assessment.explanation}</div></> : <span className="text-dark-500">{qualityQuery.isLoading ? (isKo ? '판정 계산 중' : 'Calculating assessment') : (isKo ? '판정 데이터 없음' : 'Assessment unavailable')}</span>}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between border-t border-dark-800 pt-3">
+                    {closed && entry.datetime && entry.exit_price != null ? <button type="button" onClick={() => setSnapshotEntry(entry)} className="inline-flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-100"><CandlestickChart className="h-4 w-4" />{isKo ? '거래 리포트' : 'Trade report'}</button> : <span />}
+                    <button type="button" aria-label={isKo ? '거래 삭제' : 'Delete trade'} onClick={() => entry.id && deleteMutation.mutate(entry.id)} className="text-dark-500 hover:text-red-400" disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-dark-700">
@@ -819,7 +912,7 @@ export default function JournalPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleEntries.map((entry) => {
+                {displayedEntries.map((entry) => {
                   const closed = isClosedPosition(entry);
                   const excursion = entry.id == null ? null : excursionByJournalId.get(entry.id) || null;
                   const quality = entry.id == null ? null : qualityByJournalId.get(entry.id) || null;
@@ -970,6 +1063,12 @@ export default function JournalPage() {
               </tbody>
             </table>
           </div>
+          {displayedEntries.length < visibleEntries.length && (
+            <button type="button" onClick={() => setVisibleTradeCount((count) => count + VISIBLE_TRADE_INCREMENT)} className="mt-4 w-full border border-dark-700 py-2.5 text-xs text-dark-300 hover:border-primary-400/50 hover:text-white">
+              {isKo ? `더 보기 (${visibleEntries.length - displayedEntries.length}건 남음)` : `Show more (${visibleEntries.length - displayedEntries.length} remaining)`}
+            </button>
+          )}
+          </>
         )}
       </div>
 

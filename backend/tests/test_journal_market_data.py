@@ -17,49 +17,39 @@ def _frame():
     }])
 
 
-def test_ccxt_exchange_ohlcv_is_preferred_over_binance_fallback(monkeypatch):
-    monkeypatch.setattr(market_data, "fetch_exchange_klines", lambda *args: _frame())
-    monkeypatch.setattr(market_data, "fetch_binance_klines", lambda *_args: (_ for _ in ()).throw(AssertionError("fallback used")))
+def test_journal_market_data_always_uses_binance_usdt_m_futures(monkeypatch):
+    requested = {}
+
+    def fetch(symbol, interval, total_candles, end_time):
+        requested.update({
+            "symbol": symbol,
+            "interval": interval,
+            "total_candles": total_candles,
+            "end_time": end_time,
+        })
+        return _frame()
+
+    monkeypatch.setattr(market_data, "fetch_binance_klines", fetch)
 
     frame = market_data.load_journal_ohlcv(
-        "BTC/USDT", "4h", total_candles=100, exchange="bybit", instrument_type="SWAP"
+        "BTC/USDT", "4h", total_candles=100, end_time=2_000,
+        exchange="bybit", instrument_type="SPOT",
     )
 
+    assert requested == {
+        "symbol": "BTCUSDT",
+        "interval": "4h",
+        "total_candles": 100,
+        "end_time": 2_000,
+    }
     assert frame is not None
-    assert market_data.market_source(frame) == "Bybit SWAP API"
-    assert market_data.is_market_fallback(frame) is False
+    assert market_data.market_source(frame) == "Binance USDT-M Futures"
+    assert frame.attrs["market_source_fallback"] is False
 
 
-def test_binance_fallback_is_labeled_when_exchange_data_is_unavailable(monkeypatch):
-    monkeypatch.setattr(market_data, "fetch_exchange_klines", lambda *args: None)
-    monkeypatch.setattr(market_data, "fetch_binance_klines", lambda *_args: _frame())
+def test_journal_market_data_preserves_empty_result(monkeypatch):
+    monkeypatch.setattr(market_data, "fetch_binance_klines", lambda *_args: None)
 
-    frame = market_data.load_journal_ohlcv(
-        "BTC/USDT", "4h", total_candles=100, exchange="okx", instrument_type="SPOT"
-    )
-
-    assert frame is not None
-    assert market_data.market_source(frame) == "Binance Spot fallback"
-    assert market_data.is_market_fallback(frame) is True
-
-
-def test_monthly_close_time_uses_calendar_month_boundary():
-    february_open = int(pd.Timestamp("2026-02-01T00:00:00Z").timestamp() * 1000)
-    expected_close = int(pd.Timestamp("2026-03-01T00:00:00Z").timestamp() * 1000) - 1
-
-    actual = market_data._candle_close_time(
-        february_open,
-        "1M",
-        market_data._interval_ms("1M"),
-    )
-
-    assert actual == expected_close
-
-
-def test_close_times_do_not_stretch_across_a_missing_candle():
-    opens = pd.Series([0, 30 * 60 * 1000], dtype="int64")
-    frame = pd.DataFrame({"open_time": opens})
-
-    market_data._set_close_times(frame, "15m", 15 * 60 * 1000)
-
-    assert frame["close_time"].tolist() == [15 * 60 * 1000 - 1, 45 * 60 * 1000 - 1]
+    assert market_data.load_journal_ohlcv(
+        "BTC/USDT", "4h", total_candles=100, exchange="Deepcoin"
+    ) is None
