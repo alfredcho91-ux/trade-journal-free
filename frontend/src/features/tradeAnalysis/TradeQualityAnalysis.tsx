@@ -6,6 +6,7 @@ import type {
   TradeQualityGroup,
   TradeQualityRegime,
 } from '../../types';
+import { buildExitReview } from './tradeExitReview';
 
 interface Props {
   data?: JournalQualityAnalysisData;
@@ -19,8 +20,8 @@ interface Props {
   showExitAnalysis?: boolean;
   showComparisons?: boolean;
   onSelectRegime?: (regimeId: string) => void;
+  onSelectEvidence?: (kind: 'regime' | 'early_exit' | 'late_exit' | 'hold2', value: string, journalIds: number[]) => void;
 }
-
 const REGIME_LABELS: Record<string, string> = {
   aligned_up: '주·일·4H 강한 상승 정렬',
   aligned_down: '주·일·4H 강한 하락 정렬',
@@ -99,6 +100,7 @@ export default function TradeQualityAnalysis({
   showExitAnalysis = true,
   showComparisons = true,
   onSelectRegime,
+  onSelectEvidence,
 }: Props) {
   if (isLoading && !data) {
     return (
@@ -133,6 +135,7 @@ export default function TradeQualityAnalysis({
   const strategies = Object.entries(analysis.virtual_exit_strategies)
     .filter(([, value]) => value.triggered_count >= 3)
     .sort(([, left], [, right]) => (right.average_return_pct ?? -Infinity) - (left.average_return_pct ?? -Infinity));
+  const exitReviews = new Map(data.items.map((item) => [item.journal_id, buildExitReview(item)]));
   const issueText = summary.issue_balance === 'entry'
     ? (isKo ? '청산보다 진입 문제가 더 많이 발견됨' : 'Entry issues were more common than exit issues')
     : summary.issue_balance === 'exit'
@@ -225,9 +228,10 @@ export default function TradeQualityAnalysis({
             <div className="mt-0.5 text-[11px] text-dark-500">{isKo ? `최소 ${data.minimum_regime_conclusion_sample}건 미만은 표본 적음으로 표시` : `Fewer than ${data.minimum_regime_conclusion_sample} trades is marked low sample`}</div>
             <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[920px] text-xs">
-            <thead className="text-dark-500"><tr className="border-b border-dark-700"><th className="py-2 text-left">{isKo ? '시장 상황' : 'Regime'}</th><th className="py-2 text-right">{isKo ? '거래 수' : 'Trades'}</th><th className="py-2 text-right">{isKo ? '승률' : 'Win rate'}</th><th className="py-2 text-right">{isKo ? '수익/손실 비율' : 'PF'}</th><th className="py-2 text-right">{isKo ? '최대 이익 / 최대 손실 움직임' : 'MFE / MAE'}</th><th className="py-2 text-right">{isKo ? '너무 일찍 청산' : 'Early exits'}</th><th className="py-2 text-right">{isKo ? '수익 구간을 챙긴 비율' : 'Capture'}</th><th className="py-2 text-right">{isKo ? '더 나았던 청산 방법' : 'Best exit'}</th></tr></thead>
-            <tbody>{analysis.regimes.map((regime) => (
-              <tr key={regime.id} className="border-b border-dark-800">
+            <thead className="text-dark-500"><tr className="border-b border-dark-700"><th className="py-2 text-left">{isKo ? '시장 상황' : 'Regime'}</th><th className="py-2 text-right">{isKo ? '거래 수' : 'Trades'}</th><th className="py-2 text-right">{isKo ? '승률' : 'Win rate'}</th><th className="py-2 text-right">{isKo ? '수익/손실 비율' : 'PF'}</th><th className="py-2 text-right">{isKo ? '최대 이익 / 최대 손실 움직임' : 'Favorable / adverse'}</th><th className="py-2 text-right">{isKo ? '너무 일찍 청산' : 'Early exits'}</th><th className="py-2 text-right">{isKo ? '수익 구간을 챙긴 비율' : 'Capture'}</th><th className="py-2 text-right">{isKo ? '더 나았던 청산 방법' : 'Best exit'}</th></tr></thead>
+            <tbody>{analysis.regimes.map((regime) => {
+              const regimeIds = data.items.filter((item) => item.direction === direction && item.market_regime.id === regime.id).map((item) => item.journal_id);
+              return <tr key={regime.id} className="border-b border-dark-800">
                 <td className="py-2 text-dark-200">
                   <button type="button" onClick={() => onSelectRegime?.(regime.id)} className="text-left hover:text-primary-200" disabled={!onSelectRegime}>
                     {regimeLabel(regime.id, isKo)} <span className={regime.sample_quality === 'low' ? 'text-amber-300' : 'text-dark-600'}>· {sampleLabel(regime, isKo)}</span>
@@ -239,15 +243,15 @@ export default function TradeQualityAnalysis({
                 <td className="py-2 text-right font-mono text-dark-300">{number(regime.average_mfe_pct)} / {number(regime.average_mae_pct)}%</td>
                 <td className="py-2 text-right font-mono">{number(regime.early_exit_ratio_pct)}%</td>
                 <td className="py-2 text-right font-mono">{number(regime.average_capture_ratio_pct)}%</td>
-                <td className="py-2 text-right text-primary-200">{bestExitLabel(regime.best_exit_method, isKo)} {regime.best_exit_method && <span className="font-mono text-dark-500">{signed(regime.best_exit_method.average_return_pct)}% · n={regime.best_exit_method.triggered_count || regime.best_exit_method.available_count || 0}</span>}</td>
+                <td className="py-2 text-right text-primary-200">{bestExitLabel(regime.best_exit_method, isKo)} {regime.best_exit_method && <span className="font-mono text-dark-500">{signed(regime.best_exit_method.average_return_pct)}% · n={regime.best_exit_method.triggered_count || regime.best_exit_method.available_count || 0}</span>}<button type="button" onClick={() => onSelectEvidence?.('regime', regime.id, regimeIds)} className="mt-1 block ml-auto text-[10px] text-primary-200 hover:text-primary-100">{isKo ? `${regimeIds.length}개 거래 보기 →` : `View ${regimeIds.length} trades →`}</button></td>
               </tr>
-            ))}</tbody>
+            })}</tbody>
           </table>
             </div>
           </section>}
 
           {showExitAnalysis && <section className="border border-dark-700 bg-dark-900/20 p-4">
-            <h2 className="text-sm font-semibold text-white">{isKo ? '청산 방법 비교' : 'Exit Method Comparison'}</h2>
+            <h2 className="text-sm font-semibold text-white">{isKo ? '실제 청산과 다른 방법 비교' : 'Actual Exit and Alternatives'}</h2>
             <div className="mt-0.5 text-[11px] text-dark-500">{isKo ? '실제 종료를 기준으로, 같은 진입을 조금 더 보유했거나 신호에서 종료했다고 가정한 사후 복기입니다.' : 'A post-trade review: the same entry with the actual exit, extra holding, or a signal-based exit.'}</div>
             <div className="mt-3 border-l-2 border-primary-400/70 bg-dark-950 px-3 py-2 text-xs leading-5 text-dark-300">
               {isKo ? '실제는 기록된 종료가입니다. +1/+2/+3/+5/+10은 실제 종료 뒤 완료된 4시간봉을 그만큼 더 보유했을 때의 평균 가격 수익률입니다. 양수일수록 해당 방향에 유리했고, 이 값은 미래를 아는 추천 신호가 아니라 종료 타이밍을 복기하는 비교입니다.' : 'Actual is the recorded exit. +1/+2/+3/+5/+10 show the average price return if held through that many additional completed 4H candles. This is a hindsight review, not a live recommendation.'}
@@ -258,6 +262,17 @@ export default function TradeQualityAnalysis({
             <div className="mt-1 text-[10px] text-dark-500">{isKo ? '각 칸은 진입가 기준 평균 기대수익률입니다.' : 'Each value is the average expected return from entry.'}</div>
             <div className="mt-2 grid grid-cols-3 gap-px bg-dark-700 sm:grid-cols-6">
               {holdRows.map((row) => <div key={row.id} className="bg-dark-950 px-2 py-3 text-center"><div className="text-[11px] text-dark-500">{row.id === 'actual' ? (isKo ? '실제 종료' : 'Actual') : `+${row.id}${isKo ? '개 4H' : ' 4H'}`}</div><div className={`mt-1 font-mono text-sm ${(row.average_return_pct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(row.average_return_pct)}%</div><div className="mt-1 text-[10px] text-dark-600">n={row.available_count || 0}</div></div>)}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => onSelectEvidence?.('early_exit', 'early', data.items.filter((item) => item.direction === direction && item.quality_class === 'good_entry_early_exit').map((item) => item.journal_id))} className="border border-amber-300/30 px-2.5 py-1.5 text-[11px] text-amber-200 hover:border-amber-200/70">{isKo ? '조기 청산 거래 보기' : 'View early exits'}</button>
+              <button type="button" onClick={() => onSelectEvidence?.('late_exit', 'late', data.items.filter((item) => item.direction === direction && item.quality_class === 'good_entry_late_exit').map((item) => item.journal_id))} className="border border-amber-300/30 px-2.5 py-1.5 text-[11px] text-amber-200 hover:border-amber-200/70">{isKo ? '늦은 청산 거래 보기' : 'View late exits'}</button>
+              <button type="button" onClick={() => onSelectEvidence?.('hold2', '2', data.items.filter((item) => {
+                if (item.direction !== direction) return false;
+                const review = exitReviews.get(item.journal_id);
+                const actual = review?.actual;
+                const hold2 = review?.holds.find((row) => row.id === '2');
+                return actual?.returnPct != null && hold2?.available === true && hold2.returnPct != null && hold2.returnPct > actual.returnPct;
+              }).map((item) => item.journal_id))} className="border border-primary-400/30 px-2.5 py-1.5 text-[11px] text-primary-200 hover:border-primary-200/70">{isKo ? '+2개 4H가 더 좋았던 거래 보기' : 'View trades better at +2 4H'}</button>
             </div>
           </div>
           <div>
@@ -270,7 +285,7 @@ export default function TradeQualityAnalysis({
         </div>
       </details>}
 
-      {data.warnings.length > 0 && <div className="space-y-0.5 text-[11px] text-amber-300">{data.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div>}
+      {data.warnings.length > 0 && <div className="text-[11px] text-amber-300">{isKo ? 'R 배수는 손절 위험값이 저장된 거래에서만 계산합니다. 일부 시장 데이터가 없으면 해당 항목은 제외됩니다.' : data.warnings.join(' ')}</div>}
       {isError && <div className="flex items-center justify-between gap-3 text-[11px] text-amber-300"><span>{isKo ? '최신 데이터 갱신에 실패해 이전 분석 결과를 표시합니다.' : 'Showing the previous result because the latest refresh failed.'}</span><button type="button" onClick={onRetry} className="inline-flex items-center gap-1 text-amber-200"><RefreshCw className="h-3 w-3" />{isKo ? '재시도' : 'Retry'}</button></div>}
     </div>
   );

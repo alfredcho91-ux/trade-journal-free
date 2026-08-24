@@ -20,7 +20,6 @@ export interface AnalyzedTrade {
   holdingMinutes: number | null;
   excursion: TradeExcursion | null;
 }
-
 export interface PerformanceSummary {
   count: number;
   wins: number;
@@ -178,21 +177,10 @@ export function buildAnalyzedTrades(entries: JournalEntry[], excursions: TradeEx
     const holdingMinutes = Number.isFinite(entryMs) && Number.isFinite(exitMs) && exitMs >= entryMs
       ? (exitMs - entryMs) / 60_000
       : null;
-    const matchedSnapshot = resolution.matchedEntry?.indicator_snapshot || null;
-    const positionSnapshot = entry.indicator_snapshot || null;
-    const snapshot = matchedSnapshot || (
-      positionSnapshot?.event_type === 'position_entry' || positionSnapshot?.reference?.includes('_position_entry')
-        ? positionSnapshot
-        : null
-    );
+    const snapshot = resolution.matchedEntry?.indicator_snapshot || null;
     const isEntrySnapshot = Boolean(
       snapshot &&
-      (
-        snapshot.event_type === 'fill' ||
-        snapshot.event_type === 'position_entry' ||
-        snapshot.reference?.includes('_fill') ||
-        snapshot.reference?.includes('_position_entry')
-      ),
+      (snapshot.event_type === 'fill' || snapshot.reference?.includes('_fill')),
     );
     return {
       entry,
@@ -359,6 +347,19 @@ export function conditionComparisons(
       lossCount: loss.available,
     }];
   }).sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
+}
+
+export function filterTradesByCondition(
+  trades: AnalyzedTrade[],
+  timeframe: AnalysisTimeframe,
+  conditionId: string,
+): AnalyzedTrade[] {
+  const condition = CONDITIONS.find((item) => item.id === conditionId);
+  if (!condition) return [];
+  return trades.filter((trade) => {
+    const snapshot = snapshotAt(trade, timeframe);
+    return snapshot != null && condition.test(snapshot) === true;
+  });
 }
 
 export function groupPerformance(

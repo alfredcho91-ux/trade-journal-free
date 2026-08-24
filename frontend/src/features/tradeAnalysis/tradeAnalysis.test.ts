@@ -4,6 +4,7 @@ import type { JournalEntry, TradeIndicatorSnapshot } from '../../types';
 import {
   buildAnalyzedTrades,
   conditionComparisons,
+  filterTradesByCondition,
   filterTradesByReturnRange,
   indicatorComparisons,
   performanceSummary,
@@ -91,19 +92,6 @@ describe('trade analysis', () => {
     expect(trades[0].holdingMinutes).toBe(120);
   });
 
-  it('uses a position entry snapshot when the matching raw fill is unavailable', () => {
-    const position = fixtures()[1];
-    position.indicator_snapshot = {
-      ...snapshot(42, 1),
-      event_type: 'position_entry',
-      reference: 'last_completed_candle_before_deepcoin_position_entry',
-    };
-
-    const trades = buildAnalyzedTrades([position]);
-
-    expect(trades[0].entrySnapshot?.timeframes?.['4h']?.rsi).toBe(42);
-  });
-
   it('summarizes net performance and costs', () => {
     const summary = performanceSummary(buildAnalyzedTrades(fixtures()));
 
@@ -124,6 +112,7 @@ describe('trade analysis', () => {
     expect(rsi?.lossAverage).toBe(70);
     expect(lowRsi?.winFrequency).toBe(100);
     expect(lowRsi?.lossFrequency).toBe(0);
+    expect(filterTradesByCondition(trades, '4h', 'rsi_low').map((trade) => trade.entry.id)).toEqual([2]);
   });
 
   it('classifies profit and loss return magnitudes at exact boundaries', () => {
