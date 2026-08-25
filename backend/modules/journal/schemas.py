@@ -125,6 +125,17 @@ class JournalQualityQuery(JournalExcursionQuery):
     min_abs_net_return_pct: float = Field(default=0.0, ge=0, le=100)
 
 
+class JournalExitHoldQuery(JournalQualityQuery):
+    """Filter for the interval-selectable post-exit holding replay."""
+
+    interval: Literal["15m", "1h", "2h", "4h", "1d"] = "4h"
+
+
+class JournalExitHoldEnvelope(BaseModel):
+    success: bool
+    data: Dict[str, Any]
+
+
 class JournalBehaviorQuery(JournalQualityQuery):
     """Same closed-trade range and return filter used by trade-quality analysis."""
 

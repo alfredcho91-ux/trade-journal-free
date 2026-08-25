@@ -40,14 +40,11 @@ export type ExitReview = {
   profitGiveUpPct: number | null;
 };
 
-const HOLD_LABELS: Record<string, string> = {
-  actual: '실제 청산',
-  '1': '+1개 4H 보유',
-  '2': '+2개 4H 보유',
-  '3': '+3개 4H 보유',
-  '5': '+5개 4H 보유',
-  '10': '+10개 4H 보유',
-};
+const HOLD_IDS = Array.from({ length: 10 }, (_, index) => String(index + 1));
+
+function holdLabel(id: string): string {
+  return id === 'actual' ? '실제 청산' : `청산 후 +${id}봉`;
+}
 
 const SIGNAL_LABELS: Record<string, string> = {
   rsi_overheat: 'RSI 과열 도달',
@@ -86,10 +83,8 @@ function row(id: string, label: string, kind: ExitReviewRow['kind'], result?: Ex
 export function buildExitReview(item: TradeQualityItem | null | undefined): ExitReview | null {
   const quality = exitQuality(item);
   if (!quality) return null;
-  const holds = Object.keys(HOLD_LABELS)
-    .filter((id) => id !== 'actual')
-    .map((id) => row(id, HOLD_LABELS[id], 'hold', quality.hold_results?.[id]));
-  const actual = row('actual', HOLD_LABELS.actual, 'actual', quality.hold_results?.actual);
+  const holds = HOLD_IDS.map((id) => row(id, holdLabel(id), 'hold', quality.hold_results?.[id]));
+  const actual = row('actual', holdLabel('actual'), 'actual', quality.hold_results?.actual);
   const signals = Object.entries(SIGNAL_LABELS)
     .map(([id, label]) => row(id, label, 'signal', quality.virtual_exits?.[id]));
   const bestAlternative = [...holds, ...signals]

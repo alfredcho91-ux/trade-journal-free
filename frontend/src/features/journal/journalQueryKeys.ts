@@ -6,6 +6,8 @@ export const journalQueryKeys = {
     ['journal-performance', startTime, endTime] as const,
   qualityAnalysis: (startTime: number | null, endTime: number | null, minAbsNetReturnPct = 0) =>
     ['journal-quality-analysis', startTime, endTime, minAbsNetReturnPct] as const,
+  exitHoldAnalysis: (startTime: number | null, endTime: number | null, interval: string, minAbsNetReturnPct = 0) =>
+    ['journal-exit-hold-analysis', startTime, endTime, interval, minAbsNetReturnPct] as const,
   behaviorAnalysis: (startTime: number | null, endTime: number | null, minAbsNetReturnPct = 0) =>
     ['journal-behavior-analysis', startTime, endTime, minAbsNetReturnPct] as const,
   behaviorRules: ['journal-behavior-rules'] as const,
@@ -30,6 +32,7 @@ export const journalDerivedQueryPrefixes = [
   ['journal-performance'],
   ['journal-excursions'],
   ['journal-quality-analysis'],
+  ['journal-exit-hold-analysis'],
   ['journal-behavior-analysis'],
   ['journal-behavior-rules'],
   ['journal-stop-loss-analysis'],

@@ -58,6 +58,19 @@ def install_log_redaction() -> None:
 
     def redacting_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
         record = previous_factory(*args, **kwargs)
+        if record.name.startswith("uvicorn."):
+            record.msg = redact_text(record.msg)
+            if isinstance(record.args, tuple):
+                record.args = tuple(
+                    redact_text(item) if isinstance(item, str) else item
+                    for item in record.args
+                )
+            elif isinstance(record.args, dict):
+                record.args = {
+                    key: redact_text(item) if isinstance(item, str) else item
+                    for key, item in record.args.items()
+                }
+            return record
         try:
             rendered = record.getMessage()
         except (TypeError, ValueError):

@@ -23,6 +23,8 @@ from backend.config.settings import (
 from backend.modules.journal.repository import (
     add_entries_if_new_external_ids,
     existing_external_ids,
+    list_entries,
+    update_indicator_snapshots_by_external_id,
     update_imported_entries_by_external_id,
 )
 from backend.modules.deepcoin.snapshot import (
@@ -343,7 +345,9 @@ def _timestamp_to_iso(timestamp_ms: int) -> str:
     return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _iso_to_timestamp_ms(value: str) -> Optional[int]:
+def _iso_to_timestamp_ms(value: Any) -> Optional[int]:
+    if not isinstance(value, str) or not value.strip():
+        return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -617,6 +621,49 @@ def _snapshot_event_for_position(position: _PreparedFill) -> _PreparedFill:
     )
 
 
+def _snapshot_needs_refresh(snapshot: Any) -> bool:
+    """Return whether a saved snapshot predates the complete multi-timeframe format."""
+    if not isinstance(snapshot, dict) or snapshot.get("version") != 3:
+        return True
+    timeframes = snapshot.get("timeframes")
+    if not isinstance(timeframes, dict):
+        return True
+    return any(
+        not isinstance(timeframes.get(interval), dict)
+        or timeframes[interval].get("status") != "complete"
+        for interval in ("1h", "2h", "4h", "1d")
+    )
+
+
+def _stale_closed_position_snapshot_events(lookback_days: int) -> List[_PreparedFill]:
+    """Return stale closed positions that can be rebuilt from their entry time.
+
+    The exchange history endpoint can omit old closed positions. A missing
+    entry time is never replaced by exit time because that would introduce
+    look-ahead bias into the entry analysis.
+    """
+    cutoff_ms = int((datetime.now(timezone.utc) - timedelta(days=lookback_days)).timestamp() * 1000)
+    events: List[_PreparedFill] = []
+    for entry in list_entries():
+        if entry.get("source") != "deepcoin_position" or not _snapshot_needs_refresh(entry.get("indicator_snapshot")):
+            continue
+        entry_time = _iso_to_timestamp_ms(entry.get("entry_datetime"))
+        external_id = str(entry.get("external_id") or "").strip()
+        coin = _base_coin(entry.get("symbol"))
+        if entry_time is None or entry_time < cutoff_ms or not external_id or coin is None:
+            continue
+        events.append(
+            _PreparedFill(
+                raw={},
+                external_id=external_id,
+                timestamp_ms=entry_time,
+                coin=coin,
+                event_type="position_entry",
+            )
+        )
+    return events
+
+
 def get_deepcoin_status_service() -> Dict[str, Any]:
     return {
         "success": True,
@@ -832,6 +879,12 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
     ])
     positions_skipped = len(existing_positions) - positions_updated
 
+    # Deepcoin can omit older closed positions from its history response. Keep
+    # execution data untouched and refresh only stale entry snapshots locally.
+    stale_position_events = _stale_closed_position_snapshot_events(lookback_days)
+    stale_snapshots = _build_indicator_snapshots(stale_position_events) if stale_position_events else {}
+    positions_snapshots_refreshed = update_indicator_snapshots_by_external_id(stale_snapshots)
+
     new_events = [*new_fills, *new_positions]
     imported = 0
     positions_imported = 0
@@ -899,6 +952,10 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
         )
     if partial_snapshots:
         warnings.append("Some imported records were saved with partial indicator snapshots.")
+    if positions_snapshots_refreshed:
+        warnings.append(
+            f"Refreshed indicator snapshots for {positions_snapshots_refreshed} existing closed positions."
+        )
     return {
         "success": True,
         "data": {
@@ -913,6 +970,7 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
             "positions_fetched": len(raw_positions),
             "positions_imported": positions_imported,
             "positions_updated": positions_updated,
+            "positions_snapshots_refreshed": positions_snapshots_refreshed,
             "fills_updated": fills_updated,
             "positions_skipped": positions_skipped,
             "positions_ignored": positions_ignored,

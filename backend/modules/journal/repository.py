@@ -681,6 +681,39 @@ def update_imported_entries_by_external_id(
         return updated
 
 
+def update_indicator_snapshots_by_external_id(
+    snapshots: Dict[str, Dict[str, Any]],
+    *,
+    db_path: Optional[Path] = None,
+    csv_path: Optional[Path] = None,
+) -> int:
+    """Replace only point-in-time snapshots for already imported entries.
+
+    Snapshot migrations must not overwrite exchange execution fields when an
+    exchange no longer returns an older closed position in its history API.
+    """
+    normalized = {
+        str(external_id).strip(): snapshot
+        for external_id, snapshot in snapshots.items()
+        if str(external_id).strip() and isinstance(snapshot, dict)
+    }
+    if not normalized:
+        return 0
+
+    with _connect(db_path) as conn:
+        _ensure_schema(conn)
+        _migrate_legacy_csv_if_needed(conn, csv_path=csv_path)
+        cursor = conn.executemany(
+            f"UPDATE {TABLE_NAME} SET indicator_snapshot = ? WHERE external_id = ?",
+            [
+                (_normalize_column_value("indicator_snapshot", snapshot), external_id)
+                for external_id, snapshot in normalized.items()
+            ],
+        )
+        conn.commit()
+        return max(0, cursor.rowcount)
+
+
 def quarantine_imported_entries_by_external_id(
     external_ids: Iterable[str],
     source: str,
@@ -891,6 +924,7 @@ __all__ = [
     "list_behavior_rules",
     "update_behavior_rule",
     "update_entry_behavior",
+    "update_indicator_snapshots_by_external_id",
     "update_imported_entries_by_external_id",
     "update_imported_entry_by_external_id",
 ]

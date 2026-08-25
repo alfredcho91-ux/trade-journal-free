@@ -32,6 +32,7 @@ class DeepcoinSyncData(BaseModel):
     positions_fetched: int = 0
     positions_imported: int = 0
     positions_updated: int = 0
+    positions_snapshots_refreshed: int = 0
     fills_updated: int = 0
     positions_skipped: int = 0
     positions_ignored: int = 0

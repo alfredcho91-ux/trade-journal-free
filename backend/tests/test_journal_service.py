@@ -298,6 +298,29 @@ def test_journal_repository_batches_external_id_reads_and_writes(isolated_journa
     assert rows[second]["realized_pnl"] == 2
 
 
+def test_snapshot_refresh_preserves_existing_execution_fields(isolated_journal_store):
+    external_id = "deepcoin:position:snapshot-only"
+    journal_repository.add_entries_if_new_external_ids([{
+        "external_id": external_id,
+        "source": "deepcoin_position",
+        "symbol": "BTC/USDT",
+        "entry_price": 64000,
+        "exit_price": 65000,
+        "realized_pnl": 42,
+        "indicator_snapshot": {"version": 2},
+    }])
+
+    assert journal_repository.update_indicator_snapshots_by_external_id({
+        external_id: {"version": 3, "timeframes": {"1h": {"status": "complete"}}},
+    }) == 1
+
+    stored = next(row for row in get_journal_service()["data"] if row["external_id"] == external_id)
+    assert stored["entry_price"] == 64000
+    assert stored["exit_price"] == 65000
+    assert stored["realized_pnl"] == 42
+    assert stored["indicator_snapshot"]["version"] == 3
+
+
 def test_quarantine_preserves_user_annotations_and_can_be_restored(isolated_journal_store):
     external_id = "binance:position:boundary"
     stored = add_test_entry({

@@ -23,6 +23,31 @@ fi
 JOURNAL_HOST="${JOURNAL_HOST:-127.0.0.1}"
 JOURNAL_BACKEND_PORT="${JOURNAL_BACKEND_PORT:-8011}"
 JOURNAL_FRONTEND_PORT="${JOURNAL_FRONTEND_PORT:-5181}"
+if [ -z "${NODE_BIN:-}" ]; then
+    NODE_BIN="$(command -v node 2>/dev/null || true)"
+fi
+if [ -x "/Users/geunwoocho/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node" ] && ! "$NODE_BIN" --version >/dev/null 2>&1; then
+    NODE_BIN="/Users/geunwoocho/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+fi
+if [ -z "$NODE_BIN" ]; then
+    echo "Node.js was not found. Install Node.js or set NODE_BIN before starting Trade Journal."
+    exit 1
+fi
+
+stop_existing_project_server() {
+    local port="$1"
+    local pid command
+    while read -r pid; do
+        [ -z "$pid" ] && continue
+        command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+        case "$command" in
+            *"$SCRIPT_DIR/frontend"*|*"$SCRIPT_DIR/backend"*|*"backend.main:app"*)
+                echo "Stopping previous Trade Journal process $pid on port $port"
+                kill "$pid" 2>/dev/null || true
+                ;;
+        esac
+    done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+}
 
 cleanup() {
     status=$?
@@ -31,6 +56,8 @@ cleanup() {
     echo "Shutting down servers..."
     [ -n "${BACKEND_PID:-}" ] && kill "$BACKEND_PID" 2>/dev/null || true
     [ -n "${FRONTEND_PID:-}" ] && kill "$FRONTEND_PID" 2>/dev/null || true
+    stop_existing_project_server "$JOURNAL_BACKEND_PORT"
+    stop_existing_project_server "$JOURNAL_FRONTEND_PORT"
     wait 2>/dev/null || true
     exit "$status"
 }
@@ -39,6 +66,9 @@ trap cleanup EXIT SIGINT SIGTERM
 
 echo -e "${BLUE}Starting Backend Server...${NC}"
 cd "$SCRIPT_DIR"
+
+stop_existing_project_server "$JOURNAL_BACKEND_PORT"
+stop_existing_project_server "$JOURNAL_FRONTEND_PORT"
 
 if [ ! -d "backend/venv" ]; then
     echo "Missing backend venv. Run ./bootstrap.sh first."
@@ -72,7 +102,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 VITE_API_TARGET="http://127.0.0.1:${JOURNAL_BACKEND_PORT}" \
-    npm run dev -- --host "$JOURNAL_HOST" --port "$JOURNAL_FRONTEND_PORT" &
+    "$NODE_BIN" "$SCRIPT_DIR/frontend/node_modules/vite/bin/vite.js" --host "$JOURNAL_HOST" --port "$JOURNAL_FRONTEND_PORT" &
 FRONTEND_PID=$!
 
 sleep 1

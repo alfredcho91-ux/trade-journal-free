@@ -10,7 +10,7 @@ import pandas as pd
 from core.indicator_pipelines import compute_trend_judgment_indicators
 
 TREND_INTERVALS = ("1w", "1d", "4h")
-HOLD_HORIZONS = (1, 2, 3, 5, 10)
+HOLD_HORIZONS = tuple(range(1, 11))
 TRAILING_ATR_MULTIPLIER = 2.0
 
 
@@ -234,6 +234,51 @@ def _exit_result(
     }
 
 
+def analyze_exit_hold_results(
+    entry: Dict[str, Any],
+    frame: pd.DataFrame,
+) -> Optional[Dict[str, Any]]:
+    """Replay only the recorded exit and the next completed candles.
+
+    This intentionally has no indicator or virtual-exit work so the exit-hold
+    view can use a user-selected candle interval without changing the 4H
+    quality-analysis pipeline.
+    """
+    entry_price = finite(entry.get("entry_price"))
+    exit_price = finite(entry.get("exit_price"))
+    exit_time_ms = finite_timestamp(entry.get("datetime"))
+    direction = str(entry.get("direction") or "")
+    if None in (entry_price, exit_price, exit_time_ms) or direction not in {"Long", "Short"}:
+        return None
+
+    actual_return = directional_return_pct(entry_price, exit_price, direction)
+    risk_pct = _risk_pct(entry, actual_return)
+    now_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
+    completed = frame.loc[frame["close_time"] < now_ms]
+    post = completed.loc[completed["close_time"] > exit_time_ms].head(max(HOLD_HORIZONS))
+    hold_results: Dict[str, Dict[str, Any]] = {
+        "actual": _exit_result(entry_price, exit_price, direction, int(exit_time_ms), 0, risk_pct)
+    }
+    for horizon in HOLD_HORIZONS:
+        if len(post) < horizon:
+            hold_results[str(horizon)] = {"available": False, "reason": "future_candle_unavailable"}
+            continue
+        row = post.iloc[horizon - 1]
+        hold_results[str(horizon)] = _exit_result(
+            entry_price,
+            float(row["close"]),
+            direction,
+            int(row["close_time"]),
+            horizon,
+            risk_pct,
+        )
+    return {
+        "actual_return_pct": actual_return,
+        "hold_results": hold_results,
+        "post_exit_candle_count": len(post),
+    }
+
+
 def _signal_virtual_exits(
     frame: pd.DataFrame,
     entry_time_ms: int,
@@ -384,22 +429,10 @@ def analyze_exit_quality(
     now_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)
     completed_4h = frame_4h.loc[frame_4h["close_time"] < now_ms]
     post = completed_4h.loc[completed_4h["close_time"] > exit_time_ms].head(10)
-    hold_results: Dict[str, Dict[str, Any]] = {
-        "actual": _exit_result(entry_price, exit_price, direction, int(exit_time_ms), 0, risk_pct)
-    }
-    for horizon in HOLD_HORIZONS:
-        if len(post) < horizon:
-            hold_results[str(horizon)] = {"available": False, "reason": "future_candle_unavailable"}
-            continue
-        row = post.iloc[horizon - 1]
-        hold_results[str(horizon)] = _exit_result(
-            entry_price,
-            float(row["close"]),
-            direction,
-            int(row["close_time"]),
-            horizon,
-            risk_pct,
-        )
+    hold_analysis = analyze_exit_hold_results(entry, frame_4h)
+    if hold_analysis is None:
+        return None
+    hold_results = hold_analysis["hold_results"]
 
     best_post_return = actual_return
     worst_post_return = actual_return
@@ -457,6 +490,7 @@ __all__ = [
     "TREND_INTERVALS",
     "TRAILING_ATR_MULTIPLIER",
     "analyze_exit_quality",
+    "analyze_exit_hold_results",
     "classify_market_regime",
     "directional_return_pct",
     "finite",

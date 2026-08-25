@@ -112,6 +112,36 @@ export interface TradeQualityHoldAggregate {
   r_sample_count: number;
 }
 
+export type ExitHoldInterval = '15m' | '1h' | '2h' | '4h' | '1d';
+
+export interface JournalExitHoldItem {
+  journal_id: number;
+  symbol?: string | null;
+  direction?: 'Long' | 'Short' | null;
+  entry_datetime?: string | null;
+  exit_datetime?: string | null;
+  hold_results: Record<string, {
+    available: boolean;
+    return_pct?: number | null;
+    r_multiple?: number | null;
+    exit_time?: number;
+    exit_price?: number;
+    bars?: number;
+    reason?: string;
+  }>;
+}
+
+export interface JournalExitHoldAnalysisData {
+  interval: ExitHoldInterval;
+  market_data_sources: string[];
+  direction_breakdown: Record<'Long' | 'Short', {
+    hold_results: Record<string, TradeQualityHoldAggregate>;
+  }>;
+  items: JournalExitHoldItem[];
+  return_filter: JournalQualityAnalysisData['return_filter'];
+  warnings: string[];
+}
+
 export interface TradeQualityStrategyAggregate {
   triggered_count: number;
   eligible_count: number;
@@ -552,6 +582,7 @@ export interface DeepcoinSyncResult {
   positions_fetched: number;
   positions_imported: number;
   positions_updated: number;
+  positions_snapshots_refreshed: number;
   fills_updated: number;
   positions_skipped: number;
   positions_ignored: number;

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
@@ -94,6 +95,33 @@ def test_closed_position_snapshot_uses_the_recorded_entry_time():
 
     assert snapshot_event.event_type == "position_entry"
     assert snapshot_event.timestamp_ms == 1722761000000
+
+
+def test_stale_closed_position_snapshot_refresh_uses_only_entry_time(monkeypatch):
+    entry_time = datetime.now(timezone.utc) - timedelta(days=1)
+    monkeypatch.setattr(deepcoin_service, "list_entries", lambda: [{
+        "source": "deepcoin_position",
+        "external_id": "deepcoin:position:stale",
+        "symbol": "BTC/USDT",
+        "entry_datetime": entry_time.isoformat().replace("+00:00", "Z"),
+        "indicator_snapshot": {
+            "version": 2,
+            "timeframes": {"2h": {"status": "complete"}},
+        },
+    }, {
+        "source": "deepcoin_position",
+        "external_id": "deepcoin:position:missing-entry",
+        "symbol": "BTC/USDT",
+        "entry_datetime": None,
+        "indicator_snapshot": {"version": 2},
+    }])
+
+    events = deepcoin_service._stale_closed_position_snapshot_events(7)
+
+    assert len(events) == 1
+    assert events[0].external_id == "deepcoin:position:stale"
+    assert events[0].timestamp_ms == int(entry_time.timestamp() * 1000)
+    assert events[0].event_type == "position_entry"
 
 
 def test_entry_snapshot_records_entry_time_not_close_time(monkeypatch):

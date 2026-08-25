@@ -32,6 +32,7 @@ import TradeReportModal from '../features/journal/TradeReportModal';
 import { tradeOutcomeAssessment } from '../features/journal/tradeOutcomeAssessment';
 import { summarizeTradeStyle } from '../features/journal/tradeStyleSummary';
 import { buildAnalyzedTrades } from '../features/tradeAnalysis/tradeAnalysis';
+import DailyPnlCalendar from '../features/journal/DailyPnlCalendar';
 
 const VISIBLE_TRADE_INCREMENT = 12;
 
@@ -570,6 +571,8 @@ function PeriodAnalysis({
               )}
             </div>
           </div>
+
+          <DailyPnlCalendar trades={analysisTrades} period={period} isKo={isKo} />
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-dark-500">
             <span>

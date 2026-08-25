@@ -1,10 +1,4 @@
-type SampleQuality = 'low' | 'medium' | 'strong';
-
-function sampleQuality(count: number): SampleQuality {
-  if (count < 15) return 'low';
-  if (count < 40) return 'medium';
-  return 'strong';
-}
+import { sampleQuality } from './statisticalConfidence';
 
 export function SampleBadge({ count, isKo }: { count: number; isKo: boolean }) {
   const quality = sampleQuality(count);

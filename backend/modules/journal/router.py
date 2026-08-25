@@ -18,6 +18,8 @@ from backend.modules.journal.schemas import (
     JournalBehaviorUpdateEnvelope,
     JournalCurrentMarketEnvelope,
     JournalDeleteEnvelope,
+    JournalExitHoldEnvelope,
+    JournalExitHoldQuery,
     JournalExcursionEnvelope,
     JournalExcursionQuery,
     JournalListEnvelope,
@@ -37,6 +39,7 @@ from backend.modules.journal.behavior_analysis import (
 from backend.modules.journal.performance import run_journal_performance_service
 from backend.modules.journal.current_market import run_current_market_snapshot_service
 from backend.modules.journal.quality_analysis import run_journal_quality_analysis_service
+from backend.modules.journal.exit_hold_analysis import run_journal_exit_hold_analysis_service
 from backend.modules.journal.sl_tp_analysis import run_journal_sl_tp_analysis_service
 from backend.modules.journal.stop_loss_analysis import run_journal_stop_loss_analysis_service
 from backend.modules.journal.stop_optimization import run_journal_stop_optimization_service
@@ -96,6 +99,19 @@ async def api_get_journal_quality_analysis(query: Annotated[JournalQualityQuery,
         run_journal_quality_analysis_service,
         query.start_time,
         query.end_time,
+        query.min_abs_net_return_pct,
+    )
+
+
+@router.get("/journal/exit-hold-analysis", response_model=JournalExitHoldEnvelope)
+@handle_api_errors()
+async def api_get_journal_exit_hold_analysis(query: Annotated[JournalExitHoldQuery, Depends()]):
+    """Replay post-exit holding results on a selected completed-candle interval."""
+    return await run_in_threadpool(
+        run_journal_exit_hold_analysis_service,
+        query.start_time,
+        query.end_time,
+        query.interval,
         query.min_abs_net_return_pct,
     )
 

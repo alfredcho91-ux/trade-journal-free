@@ -18,6 +18,7 @@ def test_free_edition_exposes_only_journal_analysis_routes():
         ("GET", "/api/journal/excursions"),
         ("GET", "/api/journal/performance"),
         ("GET", "/api/journal/quality-analysis"),
+        ("GET", "/api/journal/exit-hold-analysis"),
         ("GET", "/api/journal/behavior-analysis"),
         ("POST", "/api/journal/behavior-analysis/compare"),
         ("PATCH", "/api/journal/{entry_id}/behavior"),

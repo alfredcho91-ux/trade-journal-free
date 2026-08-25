@@ -21,6 +21,8 @@ import type {
   JournalStopLossAnalysisData,
   JournalStopOptimizationData,
   JournalEntry,
+  JournalExitHoldAnalysisData,
+  ExitHoldInterval,
   JournalPerformanceData,
 } from '../types';
 
@@ -82,6 +84,23 @@ export async function getJournalQualityAnalysis(params: {
     return unwrapApiResponse(res, 'Failed to load trade quality analysis.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to load trade quality analysis.');
+  }
+}
+
+export async function getJournalExitHoldAnalysis(params: {
+  start_time: number;
+  end_time: number;
+  interval: ExitHoldInterval;
+  min_abs_net_return_pct?: number;
+}): Promise<JournalExitHoldAnalysisData> {
+  try {
+    const res = await api.get<ApiResponse<JournalExitHoldAnalysisData>>('/journal/exit-hold-analysis', {
+      params,
+      timeout: 120_000,
+    });
+    return unwrapApiResponse(res, 'Failed to load post-exit holding analysis.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load post-exit holding analysis.');
   }
 }
 
