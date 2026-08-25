@@ -31,6 +31,13 @@ function occurrenceRatioLabel(row: ConditionComparison, isKo: boolean): string {
   return '-';
 }
 
+const TIMEFRAME_LABELS: Record<AnalysisTimeframe, { ko: string; en: string }> = {
+  '1h': { ko: '1시간봉', en: '1H' },
+  '2h': { ko: '2시간봉', en: '2H' },
+  '4h': { ko: '4시간봉', en: '4H' },
+  '1d': { ko: '일봉', en: '1D' },
+};
+
 export default function WinLossComparePanel({ rows, conditions, isKo, timeframe, onTimeframeChange, onIndicatorOpen, onConditionOpen }: {
   rows: IndicatorComparison[];
   conditions: ConditionComparison[];
@@ -56,8 +63,9 @@ export default function WinLossComparePanel({ rows, conditions, isKo, timeframe,
       <div><div className="text-xs font-semibold text-primary-300">{isKo ? '고급 통계 · 승리/패배 비교' : 'Advanced statistics · Win/loss comparison'}</div><h3 className="mt-1.5 text-xl font-semibold text-white">{isKo ? '승리와 패배에서 관찰된 차이' : 'Observed differences between wins and losses'}</h3><p className="mt-1.5 text-xs leading-5 text-dark-400">{isKo ? '진입 직전 완료봉의 지표를 같은 축에서 비교합니다. 차이는 연관성이며 수익의 원인을 뜻하지 않습니다.' : 'Indicators from the last completed candle before entry share one scale. Differences are associations, not causes.'}</p></div>
       <div className="border border-dark-700 bg-dark-950/50 px-3 py-2 text-xs text-dark-400">{isKo ? '진입 직전 완료봉 기준' : 'Last completed candle before entry'}</div>
     </div>
-    <div className="mt-4 flex justify-end border-y border-dark-700 py-2.5">
-      <div className="grid grid-cols-4 gap-1 border border-dark-700 bg-dark-950/40 p-1">{(['1h', '2h', '4h', '1d'] as AnalysisTimeframe[]).map((item) => <button key={item} type="button" onClick={() => onTimeframeChange(item)} className={`min-h-8 px-3 text-xs font-medium ${timeframe === item ? 'bg-primary-500/20 text-primary-100' : 'text-dark-400 hover:text-white'}`}>{item.toUpperCase()}</button>)}</div>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-dark-700 py-2.5">
+      <span className="text-xs text-dark-500">{isKo ? `현재 비교: ${TIMEFRAME_LABELS[timeframe].ko}` : `Comparing: ${TIMEFRAME_LABELS[timeframe].en}`}</span>
+      <div className="grid grid-cols-4 gap-1 border border-dark-700 bg-dark-950/40 p-1">{(['1h', '2h', '4h', '1d'] as AnalysisTimeframe[]).map((item) => <button key={item} type="button" onClick={() => onTimeframeChange(item)} aria-pressed={timeframe === item} className={`min-h-8 px-3 text-xs font-medium ${timeframe === item ? 'bg-primary-500/20 text-primary-100' : 'text-dark-400 hover:text-white'}`}>{isKo ? TIMEFRAME_LABELS[item].ko : TIMEFRAME_LABELS[item].en}</button>)}</div>
     </div>
 
     <div className="mt-5 flex items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-white">{isKo ? '지표 평균 · 승리군 vs 패배군' : 'Indicator averages · wins vs losses'}</h4><p className="mt-1 text-xs text-dark-500">{isKo ? '각 지표의 승리·패배 평균과 실제 유효 표본 수를 함께 표시합니다.' : 'Each metric shows win/loss averages and exact valid sample counts.'}</p></div><div className="hidden items-center gap-3 text-[11px] text-dark-500 sm:flex"><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-bull" />{isKo ? '승리' : 'Wins'}</span><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-bear" />{isKo ? '패배' : 'Losses'}</span></div></div>

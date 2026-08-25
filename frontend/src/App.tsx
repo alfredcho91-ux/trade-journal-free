@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, type ReactNode } from 'react';
-import { BarChart3, BookOpen, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, ShieldAlert } from 'lucide-react';
+import { BarChart3, BookOpen, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, Search, ShieldAlert } from 'lucide-react';
 
 import { MARKET_COINS } from './constants/market';
 import { BrowserRouter, Navigate } from './router';
@@ -14,6 +14,7 @@ import {
 const JournalPage = lazy(() => import('./pages/JournalPage'));
 const TradeAnalysisPage = lazy(() => import('./pages/TradeAnalysisPage'));
 const RiskLabPage = lazy(() => import('./pages/RiskLabPage'));
+const TradeExplorerPage = lazy(() => import('./pages/TradeExplorerPage'));
 const HoldReentryPage = lazy(() => import('./pages/HoldReentryPage'));
 const feedbackFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdGlwCDcOiTTchsy_MVX33V9ZUXdQK_VA94U7cC2aVARfeV1Q/viewform?usp=publish-editor';
 
@@ -32,12 +33,33 @@ function Shell({ children }: { children: ReactNode }) {
   const setSelectedCoin = useSetSelectedCoin();
   const isKo = language === 'ko';
   const [isShuttingDown, setIsShuttingDown] = useState(false);
+  const [shutdownNotice, setShutdownNotice] = useState<string | null>(null);
 
   const shutdownDesktop = async () => {
     if (isShuttingDown || !window.confirm(isKo ? 'Trade Journal을 종료할까요?' : 'Close Trade Journal?')) return;
     setIsShuttingDown(true);
+    setShutdownNotice(null);
     try {
-      await fetch('/api/desktop/shutdown', { method: 'POST' });
+      const response = await fetch('/api/desktop/shutdown', { method: 'POST' });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { detail?: string } | null;
+        if (response.status === 409 || body?.detail === 'Desktop shutdown is unavailable') {
+          setShutdownNotice(isKo
+            ? '개발 서버에서는 종료할 수 없습니다. 실행한 터미널에서 Ctrl+C로 종료하세요.'
+            : 'The development server must be stopped with Ctrl+C in its terminal.');
+          return;
+        }
+        throw new Error(body?.detail ?? `Request failed (${response.status})`);
+      }
+
+      setShutdownNotice(isKo
+        ? 'Trade Journal 서버를 종료했습니다. 이 브라우저 탭은 직접 닫아주세요.'
+        : 'Trade Journal has stopped. You can close this browser tab.');
+      window.setTimeout(() => window.close(), 350);
+    } catch {
+      setShutdownNotice(isKo
+        ? '종료 요청을 처리하지 못했습니다. 잠시 후 다시 시도하세요.'
+        : 'The close request could not be completed. Please try again.');
     } finally {
       setTimeout(() => setIsShuttingDown(false), 1500);
     }
@@ -48,10 +70,11 @@ function Shell({ children }: { children: ReactNode }) {
     { path: '/trade-analysis', label: isKo ? '매매분석' : 'Trade Analysis', icon: BarChart3 },
     { path: '/hold-reentry', label: isKo ? '홀딩 / 재진입' : 'Hold / Re-entry', icon: GitCompareArrows },
     { path: '/risk-lab', label: 'Risk Lab', icon: ShieldAlert },
+    { path: '/trade-explorer', label: isKo ? '거래 탐색' : 'Trade Explorer', icon: Search },
   ];
 
   const navigation = (vertical = false) => (
-    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-4 border border-dark-700'} aria-label="Primary">
+    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-5 border border-dark-700'} aria-label="Primary">
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path;
         return (
@@ -123,6 +146,11 @@ function Shell({ children }: { children: ReactNode }) {
               <Power className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
+          {shutdownNotice && (
+            <div className="basis-full text-right text-xs text-dark-400" role="status">
+              {shutdownNotice}
+            </div>
+          )}
         </div>
       </header>
 
@@ -158,6 +186,8 @@ function Routes() {
       <TradeAnalysisPage />
     ) : pathname === '/risk-lab' ? (
       <RiskLabPage />
+    ) : pathname === '/trade-explorer' ? (
+      <TradeExplorerPage />
     ) : pathname === '/hold-reentry' ? (
       <HoldReentryPage />
     ) : (

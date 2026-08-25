@@ -27,12 +27,9 @@ import {
 } from '../features/journal/journalPeriod';
 import { netReturnPct } from '../features/journal/journalReturns';
 import TradeQualityAnalysis from '../features/tradeAnalysis/TradeQualityAnalysis';
-import CurrentMarketSimilarityPanel from '../features/tradeAnalysis/CurrentMarketSimilarityPanel';
 import MajorFailureAnalysis from '../features/tradeAnalysis/MajorFailureAnalysis';
 import MajorSuccessAnalysis from '../features/tradeAnalysis/MajorSuccessAnalysis';
-import TradeExitReviewList from '../features/tradeAnalysis/TradeExitReviewList';
 import { BehaviorLeakSummary } from '../features/tradeAnalysis/TradeBehaviorAnalysis';
-import AnalysisAnchorNav, { type AnalysisAnchor } from '../features/tradeAnalysis/AnalysisAnchorNav';
 import AnalysisGroup, { AnalysisAccordion } from '../features/tradeAnalysis/AnalysisGroup';
 import WinLossComparePanel from '../features/tradeAnalysis/WinLossComparePanel';
 import {
@@ -42,38 +39,17 @@ import {
 } from '../features/tradeAnalysis/AnalysisVisualizations';
 import TradeReportModal from '../features/journal/TradeReportModal';
 import { journalQueryKeys } from '../features/journal/journalQueryKeys';
-import { useLanguage, useSelectedCoin } from '../store/useStore';
-import type { ExitHoldInterval, JournalEntry, TradeQualityItem } from '../types';
+import { useLanguage } from '../store/useStore';
+import { useNavigate } from '../router-context';
+import { useEvidenceNavigation, type EvidenceHoldResult } from '../features/tradeAnalysis/evidenceNavigation';
+import type { ExitHoldInterval, TradeQualityItem } from '../types';
 
 type AnalysisMode = 'all' | 'wins' | 'losses' | 'compare';
 type DirectionFilter = 'Long' | 'Short';
 type AnalysisSection = 'overview' | 'entry';
 type EvidenceKind = 'regime' | 'early_exit' | 'late_exit' | 'hold2' | 'condition' | 'indicator' | 'poor_entry' | 'mae_greater';
-type ExitHoldEvidenceResult = {
-  actualReturnPct: number | null;
-  holdReturnPct: number | null;
-  differencePct: number | null;
-  exitTime: string | null;
-};
-type EvidenceRequest = {
-  title: string;
-  filterLabel: string;
-  tradeIds: number[];
-  exitHold?: {
-    interval: ExitHoldInterval;
-    holdId: string;
-    resultsByJournalId: Record<number, ExitHoldEvidenceResult>;
-  };
-};
 
 const DEFAULT_ANALYSIS_DAYS = 90;
-const DETAIL_ANCHORS: AnalysisAnchor[] = [
-  { id: 'market-performance', label: '시장 상황과 성과' },
-  { id: 'entry-exit-quality', label: '진입 · 청산 품질' },
-  { id: 'indicator-analysis', label: '지표 기반 승패 분석' },
-  { id: 'trade-log', label: '거래 탐색 · 근거 거래' },
-];
-
 function signed(value: number | null | undefined, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
@@ -92,19 +68,6 @@ function exitHoldIntervalLabel(interval: ExitHoldInterval, isKo: boolean): strin
 function exitHoldPointLabel(holdId: string, interval: ExitHoldInterval, isKo: boolean): string {
   if (holdId === 'actual') return isKo ? '실제 청산' : 'Actual exit';
   return isKo ? `청산 후 +${holdId}봉` : `After +${holdId} ${interval.toUpperCase()} candles`;
-}
-
-function evidenceTime(value: string | null | undefined, isKo: boolean): string {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString(isKo ? 'ko-KR' : undefined, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function overviewRegimeLabel(id: string, isKo: boolean): string {
@@ -217,94 +180,6 @@ function OverviewSummary({
   );
 }
 
-function qualityLabel(item: TradeQualityItem | undefined, isKo: boolean): string {
-  if (!item) return '-';
-  const labels: Record<string, string> = {
-    good_entry_good_exit: '진입·청산 양호',
-    good_entry_early_exit: '진입 양호·조기 청산',
-    good_entry_late_exit: '진입 양호·늦은 청산',
-    poor_entry: '진입 불리',
-    unavailable: '판정 불가',
-  };
-  return isKo ? labels[item.quality_class] || item.quality_class : item.quality_class.replace(/_/g, ' ');
-}
-
-function EvidenceTradePanel({
-  request,
-  trades,
-  qualityItems,
-  entries,
-  isKo,
-  onClear,
-}: {
-  request: EvidenceRequest;
-  trades: AnalyzedTrade[];
-  qualityItems: TradeQualityItem[];
-  entries: JournalEntry[];
-  isKo: boolean;
-  onClear: () => void;
-}) {
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const qualityById = useMemo(() => new Map(qualityItems.map((item) => [item.journal_id, item])), [qualityItems]);
-  const rows = useMemo(() => trades
-    .filter((trade) => trade.entry.id != null && request.tradeIds.includes(trade.entry.id))
-    .sort((left, right) => new Date(right.entry.datetime || right.entry.entry_datetime || 0).getTime() - new Date(left.entry.datetime || left.entry.entry_datetime || 0).getTime()), [request.tradeIds, trades]);
-  const selectedTrade = selectedId == null ? undefined : rows.find((trade) => trade.entry.id === selectedId);
-  const selectedQuality = selectedId == null ? undefined : qualityById.get(selectedId);
-  const visibleRows = showAll ? rows : rows.slice(0, 5);
-  const holdContext = request.exitHold;
-  const holdResultLabel = holdContext
-    ? `${exitHoldIntervalLabel(holdContext.interval, isKo)} · ${exitHoldPointLabel(holdContext.holdId, holdContext.interval, isKo)}`
-    : '';
-
-  return (
-    <section className="border border-primary-400/35 bg-dark-950/55 p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 inline-flex border border-primary-400/35 bg-primary-500/10 px-2 py-1 text-[10px] text-primary-200">{isKo ? '근거 필터 적용' : 'Evidence filter active'}</div>
-          <h3 className="text-sm font-semibold text-white">{request.title}</h3>
-          <div className="mt-0.5 text-[11px] text-dark-400">{request.filterLabel}</div>
-          <div className="mt-1 text-[11px] text-dark-500">{isKo ? '거래를 누르면 해당 1건의 차트 복기를 엽니다.' : 'Select a trade to open its single-trade review.'}</div>
-        </div>
-        <button type="button" onClick={onClear} className="border border-dark-700 px-2.5 py-1.5 text-xs text-dark-300 hover:border-dark-400 hover:text-white">{isKo ? '근거 필터 해제' : 'Clear evidence filter'}</button>
-      </div>
-      <div className="mt-4 hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[760px] text-xs">
-          <thead className="text-dark-500"><tr className="border-b border-dark-700"><th className="py-2 text-left">{isKo ? '거래 시각' : 'Trade time'}</th><th className="py-2 text-left">{isKo ? '거래' : 'Trade'}</th>{holdContext ? <><th className="py-2 text-right">{isKo ? '실제 청산' : 'Actual exit'}</th><th className="py-2 text-right">{holdResultLabel}</th><th className="py-2 text-right">{isKo ? '차이' : 'Difference'}</th></> : <><th className="py-2 text-right">{isKo ? '수익률' : 'Return'}</th><th className="py-2 text-right">{isKo ? '최대 유리 움직임' : 'Favorable move'}</th><th className="py-2 text-right">{isKo ? '최대 불리 움직임' : 'Adverse move'}</th></>}<th className="py-2 text-right">PnL</th><th className="py-2 text-right">{isKo ? '판정' : 'Judgment'}</th></tr></thead>
-          <tbody>{visibleRows.map((trade) => {
-            const entry = trade.entry;
-            const quality = entry.id == null ? undefined : qualityById.get(entry.id);
-            const holdResult = entry.id == null ? undefined : holdContext?.resultsByJournalId[entry.id];
-            return <tr key={entry.id} className="border-b border-dark-800 hover:bg-dark-900/50">
-              <td className="py-2 text-dark-300">{holdResult ? evidenceTime(holdResult.exitTime, isKo) : entry.datetime || entry.entry_datetime ? toDateInputValue(new Date(entry.datetime || entry.entry_datetime || '')) : '-'}</td>
-              <td className="py-2 text-dark-200">{entry.symbol || '-'} · {entry.direction || '-'}</td>
-              {holdContext ? <><td className={`py-2 text-right font-mono ${(holdResult?.actualReturnPct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(holdResult?.actualReturnPct)}%</td><td className={`py-2 text-right font-mono ${(holdResult?.holdReturnPct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(holdResult?.holdReturnPct)}%</td><td className={`py-2 text-right font-mono ${(holdResult?.differencePct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{holdResult?.differencePct == null ? '-' : `${signed(holdResult.differencePct)}%p`}</td></> : <><td className={`py-2 text-right font-mono ${(netReturnPct(entry) || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(netReturnPct(entry))}%</td><td className="py-2 text-right font-mono text-bull">{plain(trade.excursion?.mfe_pct)}%</td><td className="py-2 text-right font-mono text-bear">{plain(trade.excursion?.mae_pct)}%</td></>}
-              <td className={`py-2 text-right font-mono ${(entry.realized_pnl || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(entry.realized_pnl)} USDT</td>
-              <td className="py-2 text-right"><button type="button" onClick={() => setSelectedId(entry.id as number)} className="text-primary-200 hover:text-white">{qualityLabel(quality, isKo)} · {isKo ? '보기 →' : 'Open →'}</button></td>
-            </tr>;
-          })}</tbody>
-        </table>
-      </div>
-      <div className="mt-4 space-y-2 md:hidden">
-        {visibleRows.map((trade) => {
-          const entry = trade.entry;
-          const quality = entry.id == null ? undefined : qualityById.get(entry.id);
-          const holdResult = entry.id == null ? undefined : holdContext?.resultsByJournalId[entry.id];
-          return <button key={entry.id} type="button" onClick={() => setSelectedId(entry.id as number)} className="w-full border border-dark-700 bg-dark-950/60 p-3 text-left hover:border-primary-400/50">
-            <div className="flex items-start justify-between gap-2"><span className="text-xs text-dark-200">{entry.symbol || '-'} · {entry.direction || '-'}</span><span className={`font-mono text-xs ${(entry.realized_pnl || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(entry.realized_pnl)} USDT</span></div>
-            <div className="mt-1 text-[11px] text-dark-500">{holdResult ? evidenceTime(holdResult.exitTime, isKo) : entry.datetime || entry.entry_datetime ? toDateInputValue(new Date(entry.datetime || entry.entry_datetime || '')) : '-'} · {qualityLabel(quality, isKo)}</div>
-            {holdContext ? <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]"><span className="text-dark-400">{isKo ? '실제' : 'Actual'} <b className="block font-mono text-dark-200">{signed(holdResult?.actualReturnPct)}%</b></span><span className="text-dark-400">{exitHoldPointLabel(holdContext.holdId, holdContext.interval, isKo)} <b className="block font-mono text-dark-200">{signed(holdResult?.holdReturnPct)}%</b></span><span className="text-dark-400">{isKo ? '차이' : 'Difference'} <b className={`block font-mono ${(holdResult?.differencePct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{holdResult?.differencePct == null ? '-' : `${signed(holdResult.differencePct)}%p`}</b></span></div> : <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]"><span className="text-dark-400">{isKo ? '수익률' : 'Return'} <b className="ml-1 font-mono text-dark-200">{signed(netReturnPct(entry))}%</b></span><span className="text-dark-400">{isKo ? '유리한 움직임' : 'Favorable move'} <b className="ml-1 font-mono text-bull">{plain(trade.excursion?.mfe_pct)}%</b></span><span className="text-dark-400">{isKo ? '불리한 움직임' : 'Adverse move'} <b className="ml-1 font-mono text-bear">{plain(trade.excursion?.mae_pct)}%</b></span></div>}
-          </button>;
-        })}
-      </div>
-      {rows.length === 0 && <div className="py-6 text-center text-xs text-dark-500">{isKo ? '표시할 거래가 없습니다.' : 'No matching trades.'}</div>}
-      {rows.length > visibleRows.length && <div className="mt-4 text-center"><button type="button" onClick={() => setShowAll(true)} className="border border-dark-700 px-3 py-2 text-xs text-primary-200 hover:border-primary-400">{isKo ? `전체 ${rows.length}건 보기` : `View all ${rows.length} trades`}</button></div>}
-      {selectedTrade && <TradeReportModal entry={selectedTrade.entry} allEntries={entries} excursion={selectedTrade.excursion} qualityItem={selectedQuality} isKo={isKo} onClose={() => setSelectedId(null)} />}
-    </section>
-  );
-}
-
 function TradeQuality({
   trades,
   qualityItems,
@@ -406,14 +281,14 @@ function TradeQuality({
 
 export default function TradeAnalysisPage() {
   const isKo = useLanguage() === 'ko';
-  const selectedCoin = useSelectedCoin();
+  const navigate = useNavigate();
+  const setEvidenceRequest = useEvidenceNavigation((state) => state.setRequest);
   const [period, setPeriod] = useState<JournalPeriod>(() => buildJournalPeriod(DEFAULT_ANALYSIS_DAYS));
   const [draftPeriod, setDraftPeriod] = useState<JournalPeriod>(() => buildJournalPeriod(DEFAULT_ANALYSIS_DAYS));
   const [usesRollingPeriod, setUsesRollingPeriod] = useState(true);
   const [mode, setMode] = useState<AnalysisMode>('compare');
   const [direction, setDirection] = useState<DirectionFilter>('Long');
   const [activeSection, setActiveSection] = useState<AnalysisSection>('overview');
-  const [evidenceRequest, setEvidenceRequest] = useState<EvidenceRequest | null>(null);
   const [returnRange, setReturnRange] = useState<ReturnRangeId>('all');
   const [timeframe, setTimeframe] = useState<AnalysisTimeframe>('4h');
   const [exitHoldInterval, setExitHoldInterval] = useState<ExitHoldInterval>('4h');
@@ -425,7 +300,6 @@ export default function TradeAnalysisPage() {
   const lastDailyRefreshDateRef = useRef(toDateInputValue(new Date()));
   const pendingDetailAnchorRef = useRef<string | null>(null);
   const focusTimerRef = useRef<number | null>(null);
-  const evidenceSourceSignatureRef = useRef('');
   const focusDetailedAnchor = useCallback((anchorId: string) => {
     if (focusTimerRef.current != null) window.clearTimeout(focusTimerRef.current);
     setFocusedAnchor(anchorId);
@@ -443,7 +317,6 @@ export default function TradeAnalysisPage() {
   }, []);
   const openDetailedSection = useCallback((anchorId: string) => {
     pendingDetailAnchorRef.current = anchorId;
-    setEvidenceRequest(null);
     setActiveSection('entry');
   }, []);
   useEffect(() => {
@@ -569,16 +442,6 @@ export default function TradeAnalysisPage() {
   const selectedBehaviorEntry = selectedBehaviorTradeId == null
     ? undefined
     : entries.find((entry) => entry.id === selectedBehaviorTradeId);
-  const evidenceSourceSignature = `${period.start}|${period.end}|${minimumAbsNetReturnPct}|${direction}|${timeframe}|${exitHoldInterval}|${returnRange}`;
-  useEffect(() => {
-    if (!evidenceSourceSignatureRef.current) {
-      evidenceSourceSignatureRef.current = evidenceSourceSignature;
-      return;
-    }
-    if (evidenceSourceSignatureRef.current === evidenceSourceSignature) return;
-    evidenceSourceSignatureRef.current = evidenceSourceSignature;
-    setEvidenceRequest(null);
-  }, [evidenceSourceSignature]);
   const openEvidence = useCallback((kind: EvidenceKind, value: string, tradeIds: number[], evidenceDirection: DirectionFilter = direction) => {
     const labels: Record<EvidenceKind, string> = {
       regime: overviewRegimeLabel(value, isKo),
@@ -603,13 +466,15 @@ export default function TradeAnalysisPage() {
       title: isKo ? `${label} 근거 거래` : `${label} supporting trades`,
       filterLabel: `${label} · ${evidenceDirection.toUpperCase()} · ${period.start} ~ ${period.end}${returnRange === 'all' ? '' : ` · ${rangeLabels[returnRange]}`} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
       tradeIds: uniqueTradeIds,
+      period,
+      direction: evidenceDirection,
     });
-    focusDetailedAnchor('trade-log');
-  }, [direction, focusDetailedAnchor, isKo, period.end, period.start, returnRange]);
+    navigate('/trade-explorer');
+  }, [direction, isKo, navigate, period, returnRange, setEvidenceRequest]);
   const openExitHoldEvidence = useCallback((holdId: string) => {
     const intervalLabel = exitHoldIntervalLabel(exitHoldInterval, isKo);
     const pointLabel = exitHoldPointLabel(holdId, exitHoldInterval, isKo);
-    const resultsByJournalId: Record<number, ExitHoldEvidenceResult> = {};
+    const resultsByJournalId: Record<number, EvidenceHoldResult> = {};
     const tradeIds: number[] = [];
     (exitHoldQuery.data?.items || []).forEach((item) => {
       if (item.direction !== direction) return;
@@ -632,14 +497,16 @@ export default function TradeAnalysisPage() {
       title: isKo ? `${intervalLabel} · ${pointLabel} 근거 거래` : `${intervalLabel} · ${pointLabel} supporting trades`,
       filterLabel: `${direction.toUpperCase()} · ${period.start} ~ ${period.end} · ${intervalLabel} · ${pointLabel} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
       tradeIds: uniqueTradeIds,
+      period,
+      direction,
       exitHold: {
         interval: exitHoldInterval,
         holdId,
         resultsByJournalId,
       },
     });
-    focusDetailedAnchor('trade-log');
-  }, [direction, exitHoldInterval, exitHoldQuery.data?.items, focusDetailedAnchor, isKo, period.end, period.start]);
+    navigate('/trade-explorer');
+  }, [direction, exitHoldInterval, exitHoldQuery.data?.items, isKo, navigate, period, setEvidenceRequest]);
 
   const applyRollingPeriod = () => {
     const next = buildJournalPeriod(DEFAULT_ANALYSIS_DAYS);
@@ -748,7 +615,7 @@ export default function TradeAnalysisPage() {
           <button
             key={section.id}
             type="button"
-            onClick={() => { setActiveSection(section.id); setEvidenceRequest(null); }}
+            onClick={() => setActiveSection(section.id)}
             className={`min-h-10 px-3 text-xs font-medium transition-colors ${activeSection === section.id ? 'bg-primary-500/20 text-primary-200' : 'text-dark-400 hover:text-white'}`}
           >
             <span className="block">{section.label}</span>
@@ -818,9 +685,7 @@ export default function TradeAnalysisPage() {
       </button>}
 
       {activeSection === 'entry' && <>
-        <div className="lg:grid lg:grid-cols-[210px_minmax(0,1fr)] lg:gap-6">
-          <AnalysisAnchorNav anchors={DETAIL_ANCHORS} isKo={isKo} />
-          <div className="mt-5 space-y-10 lg:mt-0">
+        <div className="space-y-10">
             <AnalysisGroup
               id="market-performance"
               index={1}
@@ -903,29 +768,7 @@ export default function TradeAnalysisPage() {
               </AnalysisAccordion>
             </AnalysisGroup>
 
-            <AnalysisGroup
-              id="trade-log"
-              index={4}
-              isKo={isKo}
-              title={isKo ? '거래 탐색 · 근거 거래' : 'Trade exploration and supporting trades'}
-              detail={isKo ? '분석 카드의 근거 거래와 최근 청산 복기를 한곳에서 확인합니다.' : 'Review evidence trades and recent exit reviews in one place.'}
-              conclusion={evidenceRequest ? (isKo ? `${evidenceRequest.title}가 아래 근거 필터로 표시됩니다.` : `${evidenceRequest.title} is shown through the evidence filter below.`) : (isKo ? '분석 결과를 눌러 근거 거래를 확인하거나, 최근 거래를 바로 복기할 수 있습니다.' : 'Open a result to inspect its supporting trades, or review recent trades directly.')}
-              focused={focusedAnchor === 'trade-log'}
-              chips={[
-                { label: `${direction.toUpperCase()} · ${directionTrades.length}${isKo ? '건' : ' trades'}` },
-                evidenceRequest ? { label: `${isKo ? '근거 필터' : 'Evidence filter'} ${evidenceRequest.tradeIds.length}${isKo ? '건' : ''}`, tone: 'positive' } : { label: isKo ? '전역 필터 기준' : 'Global filter basis' },
-              ]}
-            >
-              {evidenceRequest && <EvidenceTradePanel request={evidenceRequest} trades={allTrades} qualityItems={qualityQuery.data?.items || []} entries={entries} isKo={isKo} onClear={() => setEvidenceRequest(null)} />}
-              <AnalysisAccordion title={isKo ? '현재 차트와 유사한 과거 거래 보기' : 'View past trades similar to the current chart'}>
-                <CurrentMarketSimilarityPanel coin={selectedCoin} allEntries={entries} trades={directionTrades} qualityItems={qualityQuery.data?.items || []} isHistoryLoading={isJournalLoading || qualityQuery.isLoading} isKo={isKo} />
-              </AnalysisAccordion>
-              <AnalysisAccordion title={isKo ? '거래별 청산 복기 보기' : 'View exit review by trade'}>
-                <TradeExitReviewList entries={entries} qualityItems={qualityQuery.data?.items || []} direction={direction} isKo={isKo} onViewAll={(journalIds) => openEvidence('condition', isKo ? '거래별 청산 복기' : 'Trade exit review', journalIds)} />
-              </AnalysisAccordion>
-            </AnalysisGroup>
             {(qualityQuery.isError || (qualityQuery.data?.warnings.length || 0) > 1) && <div className="text-xs text-amber-300">{isKo ? '일부 거래의 시장 데이터를 불러오지 못했습니다.' : 'Market data was unavailable for some trades.'}</div>}
-          </div>
         </div>
       </>}
       {selectedBehaviorEntry && <TradeReportModal

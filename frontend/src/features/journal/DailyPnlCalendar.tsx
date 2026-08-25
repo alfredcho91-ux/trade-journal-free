@@ -37,13 +37,24 @@ export default function DailyPnlCalendar({
   }, [endMonth]);
 
   const dailyPnl = useMemo(() => dailyPnlByCloseDate(trades), [trades]);
+  const availableMonths = useMemo(() => Object.keys(dailyPnl).map((dateKey) => monthStart(dateKey)), [dailyPnl]);
+  const firstAvailableMonth = useMemo(
+    () => availableMonths.reduce<Date | null>((earliest, month) => (!earliest || month < earliest ? month : earliest), null),
+    [availableMonths],
+  );
+  const lastAvailableMonth = useMemo(
+    () => availableMonths.reduce<Date | null>((latest, month) => (!latest || month > latest ? month : latest), null),
+    [availableMonths],
+  );
   const firstWeekday = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1).getDay();
   const daysInMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0).getDate();
   const monthKey = `${visibleMonth.getFullYear()}-${String(visibleMonth.getMonth() + 1).padStart(2, '0')}`;
   const monthlyPnl = useMemo(() => monthlyPnlByCloseMonth(trades), [trades]);
   const monthSummary = monthlyPnl[monthKey] || { pnl: 0, tradeCount: 0 };
-  const canGoPrevious = monthIndex(visibleMonth) > monthIndex(startMonth);
-  const canGoNext = monthIndex(visibleMonth) < monthIndex(endMonth);
+  const minimumMonth = firstAvailableMonth || startMonth;
+  const maximumMonth = lastAvailableMonth || endMonth;
+  const canGoPrevious = monthIndex(visibleMonth) > monthIndex(minimumMonth);
+  const canGoNext = monthIndex(visibleMonth) < monthIndex(maximumMonth);
   const weekdayLabels = isKo ? ['일', '월', '화', '수', '목', '금', '토'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const monthLabel = new Intl.DateTimeFormat(isKo ? 'ko-KR' : 'en-US', { year: 'numeric', month: 'long' }).format(visibleMonth);
   const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => index < firstWeekday ? null : index - firstWeekday + 1);
@@ -53,7 +64,7 @@ export default function DailyPnlCalendar({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-semibold text-white"><CalendarDays className="h-4 w-4 text-primary-300" />{isKo ? '일별 수익 / 손실' : 'Daily Profit / Loss'}</h3>
-          <p className="mt-1 text-[11px] text-dark-500">{isKo ? '종료일 기준 순실현손익 합계 · 선택 기간 내에서만 이동' : 'Net realized PnL by close date · navigation stays within the selected period'}</p>
+          <p className="mt-1 text-[11px] text-dark-500">{isKo ? '종료일 기준 순실현손익 합계 · 선택한 달의 기록을 월 전체로 표시' : 'Net realized PnL by close date · shows the full selected month'}</p>
           <div className={`mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs ${monthSummary.pnl >= 0 ? 'text-bull' : 'text-bear'}`}>
             <span className="text-[10px] text-dark-500">{isKo ? '월간 누적 손익' : 'Monthly cumulative PnL'}</span>
             <span className="font-mono font-bold">{formatSignedPnl(monthSummary.pnl)} USDT</span>

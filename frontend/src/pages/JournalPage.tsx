@@ -572,7 +572,7 @@ function PeriodAnalysis({
             </div>
           </div>
 
-          <DailyPnlCalendar trades={analysisTrades} period={period} isKo={isKo} />
+          <DailyPnlCalendar trades={closedEntries} period={period} isKo={isKo} />
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-dark-500">
             <span>
