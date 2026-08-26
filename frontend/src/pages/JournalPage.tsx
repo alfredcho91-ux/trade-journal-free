@@ -8,9 +8,11 @@ import {
   getJournal,
   getJournalPerformance,
   getJournalQualityAnalysis,
+  getPlanLab,
   syncExchange,
 } from '../api/client';
-import { useLanguage } from '../store/useStore';
+import { useNavigate } from '../router-context';
+import { useLanguage, useTradingStyle } from '../store/useStore';
 import type { ExchangeId, JournalEntry, JournalPerformanceData, TradeQualityItem } from '../types';
 import ExchangeConnectionModal from '../features/journal/ExchangeConnectionModal';
 import JournalSyncPanel from '../features/journal/JournalSyncPanel';
@@ -33,6 +35,12 @@ import { tradeOutcomeAssessment } from '../features/journal/tradeOutcomeAssessme
 import { summarizeTradeStyle } from '../features/journal/tradeStyleSummary';
 import { buildAnalyzedTrades } from '../features/tradeAnalysis/tradeAnalysis';
 import DailyPnlCalendar from '../features/journal/DailyPnlCalendar';
+import TradingStyleSelect from '../features/preferences/TradingStyleSelect';
+import {
+  TRADING_STYLE_CONFIGS,
+  tradingStyleLabel,
+  type JournalMetricId,
+} from '../features/preferences/tradingStyle';
 
 const VISIBLE_TRADE_INCREMENT = 12;
 
@@ -79,6 +87,26 @@ function AnalysisMetric({
       {detail != null && <div className="mt-1 text-[11px] text-dark-500">{detail}</div>}
     </div>
   );
+}
+
+function PlanLabSummary({ data, isKo, onOpen }: {
+  data?: import('../types').PlanLabData;
+  isKo: boolean;
+  onOpen: () => void;
+}) {
+  const summary = data?.summary;
+  return <section className="flex items-center justify-between gap-4 border border-dark-700 bg-dark-900/30 px-4 py-3">
+    <div className="min-w-0">
+      <div className="text-xs font-semibold text-dark-100">{isKo ? '계획 분석' : 'Plan Lab'}</div>
+      {summary?.plan_recorded_count ? <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-dark-400">
+        <span>{isKo ? '계획 입력' : 'Plan coverage'} <strong className="font-mono text-dark-100">{summary.plan_recorded_count}/{data?.coverage.closed_trades || 0}</strong></span>
+        <span>Plan Exp <strong className="font-mono text-dark-100">{formatSignedNumber(summary.plan_expectancy_r, 2)}R</strong></span>
+        <span>Actual <strong className="font-mono text-dark-100">{formatSignedNumber(summary.actual_expectancy_r, 2)}R</strong></span>
+        <span>Δ <strong className={`font-mono ${(summary.execution_delta_r || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{formatSignedNumber(summary.execution_delta_r, 2)}R</strong></span>
+      </div> : <div className="mt-1 text-[11px] text-dark-500">{isKo ? '사전 계획을 기록하면 계획 품질과 실행 이행도를 분석할 수 있습니다.' : 'Record pre-trade plans to analyze plan quality and execution adherence.'}</div>}
+    </div>
+    <button type="button" onClick={onOpen} className="shrink-0 text-xs text-primary-200 hover:text-white">{isKo ? 'Plan Lab에서 자세히 보기 →' : 'Open Plan Lab →'}</button>
+  </section>;
 }
 
 function CumulativePnlChart({ trades, isKo }: { trades: JournalEntry[]; isKo: boolean }) {
@@ -194,6 +222,8 @@ function PeriodAnalysis({
   onPeriodApply: (period: JournalPeriod) => void;
   performance?: JournalPerformanceData;
 }) {
+  const selectedTradingStyle = useTradingStyle();
+  const selectedStyleConfig = TRADING_STYLE_CONFIGS[selectedTradingStyle];
   const [initialPeriod] = useState(() => buildJournalPeriod());
   const [analysisStart, setAnalysisStart] = useState(initialPeriod.start);
   const [analysisEnd, setAnalysisEnd] = useState(initialPeriod.end);
@@ -296,6 +326,64 @@ function PeriodAnalysis({
     () => summarizeTradeStyle(periodAnalyzedTrades, qualityItems, isKo),
     [isKo, periodAnalyzedTrades, qualityItems],
   );
+  const selectedStyleLabel = tradingStyleLabel(selectedTradingStyle, isKo);
+  const metricCards: Record<JournalMetricId, React.ReactNode> = {
+    netReturn: (
+      <AnalysisMetric
+        label={isKo ? '기간 순수익률' : 'Net Return'}
+        value={periodNetReturn == null ? '-' : `${formatSignedNumber(periodNetReturn, 2)}%`}
+        tone={(periodNetReturn || 0) >= 0 ? 'positive' : 'negative'}
+        detail={`${performance?.return_sample_count || 0}${isKo ? '회 · 수수료·펀딩 반영' : ' trades · after fees/funding'}`}
+      />
+    ),
+    netPnl: (
+      <AnalysisMetric
+        label={isKo ? '기간 순수익금' : 'Net Profit'}
+        value={`${formatSignedNumber(netPnl, 2)} USDT`}
+        tone={netPnl >= 0 ? 'positive' : 'negative'}
+        detail={`${performance?.evaluated_trade_count || 0}${isKo ? '회 종료 거래 합계' : ' closed trades'}`}
+      />
+    ),
+    winRate: (
+      <AnalysisMetric
+        label={isKo ? '승률' : 'Win Rate'}
+        value={`${winRate.toFixed(1)}%`}
+        tone="primary"
+        detail={`${performance?.wins || 0}W · ${performance?.losses || 0}L · ${performance?.breakevens || 0}BE`}
+      />
+    ),
+    profitFactor: (
+      <AnalysisMetric
+        label="Profit Factor"
+        value={performance?.profit_factor_infinite ? '∞' : profitFactor == null ? '-' : profitFactor.toFixed(2)}
+        detail={isKo ? '총이익 ÷ 총손실' : 'Gross profit / gross loss'}
+      />
+    ),
+    averageWin: <AnalysisMetric label={isKo ? '평균 수익' : 'Avg Win'} value={`${formatSignedNumber(averageWin, 2)} USDT`} tone="positive" />,
+    averageLoss: <AnalysisMetric label={isKo ? '평균 손실' : 'Avg Loss'} value={`${formatSignedNumber(averageLoss, 2)} USDT`} tone="negative" />,
+    expectancy: (
+      <AnalysisMetric
+        label={isKo ? '거래당 기대값' : 'Expectancy / Trade'}
+        value={`${formatSignedNumber(expectancy, 2)} USDT`}
+        tone={(expectancy ?? 0) >= 0 ? 'positive' : 'negative'}
+      />
+    ),
+    costImpact: (
+      <AnalysisMetric
+        label={isKo ? '비용 순효과' : 'Net Cost Impact'}
+        value={`${formatSignedNumber(periodNetCostImpact, 2)} USDT`}
+        tone={periodNetCostImpact >= 0 ? 'positive' : 'negative'}
+        detail={`${isKo ? '수수료' : 'Fee'} ${formatSignedNumber(periodFeeImpact, 2)} · ${isKo ? '펀딩' : 'Funding'} ${formatSignedNumber(periodFundingImpact, 2)}`}
+      />
+    ),
+    holdingTime: (
+      <AnalysisMetric
+        label={isKo ? '평균 보유 시간' : 'Average Holding Time'}
+        value={formatHoldingMinutes(averageHoldingMinutes, isKo)}
+        detail={isKo ? '선택 기간의 종료 거래 기준' : 'Based on closed trades in selected period'}
+      />
+    ),
+  };
 
   return (
     <section className="card p-5">
@@ -313,6 +401,7 @@ function PeriodAnalysis({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <TradingStyleSelect isKo={isKo} />
           {[7, 30, 90].map((days) => {
             const isActive = activePreset === String(days);
             return (
@@ -424,63 +513,19 @@ function PeriodAnalysis({
       ) : (
         <>
           <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
-            <AnalysisMetric
-              label={isKo ? '기간 순수익률' : 'Net Return'}
-              value={periodNetReturn == null ? '-' : `${formatSignedNumber(periodNetReturn, 2)}%`}
-              tone={(periodNetReturn || 0) >= 0 ? 'positive' : 'negative'}
-              detail={`${performance?.return_sample_count || 0}${isKo ? '회 · 수수료·펀딩 반영' : ' trades · after fees/funding'}`}
-            />
-            <AnalysisMetric
-              label={isKo ? '기간 순수익금' : 'Net Profit'}
-              value={`${formatSignedNumber(netPnl, 2)} USDT`}
-              tone={netPnl >= 0 ? 'positive' : 'negative'}
-              detail={`${performance?.evaluated_trade_count || 0}${isKo ? '회 종료 거래 합계' : ' closed trades'}`}
-            />
-            <AnalysisMetric
-              label={isKo ? '승률' : 'Win Rate'}
-              value={`${winRate.toFixed(1)}%`}
-              tone="primary"
-              detail={`${performance?.wins || 0}W · ${performance?.losses || 0}L · ${performance?.breakevens || 0}BE`}
-            />
-            <AnalysisMetric
-              label="Profit Factor"
-              value={performance?.profit_factor_infinite ? '∞' : profitFactor == null ? '-' : profitFactor.toFixed(2)}
-              detail={isKo ? '총이익 ÷ 총손실' : 'Gross profit / gross loss'}
-            />
-            <AnalysisMetric
-              label={isKo ? '평균 수익' : 'Avg Win'}
-              value={`${formatSignedNumber(averageWin, 2)} USDT`}
-              tone="positive"
-            />
-            <AnalysisMetric
-              label={isKo ? '평균 손실' : 'Avg Loss'}
-              value={`${formatSignedNumber(averageLoss, 2)} USDT`}
-              tone="negative"
-            />
-            <AnalysisMetric
-              label={isKo ? '거래당 기대값' : 'Expectancy / Trade'}
-              value={`${formatSignedNumber(expectancy, 2)} USDT`}
-              tone={(expectancy ?? 0) >= 0 ? 'positive' : 'negative'}
-            />
-            <AnalysisMetric
-              label={isKo ? '비용 순효과' : 'Net Cost Impact'}
-              value={`${formatSignedNumber(periodNetCostImpact, 2)} USDT`}
-              tone={periodNetCostImpact >= 0 ? 'positive' : 'negative'}
-              detail={`${isKo ? '수수료' : 'Fee'} ${formatSignedNumber(periodFeeImpact, 2)} · ${isKo ? '펀딩' : 'Funding'} ${formatSignedNumber(periodFundingImpact, 2)}`}
-            />
-            <AnalysisMetric
-              label={isKo ? '평균 보유 시간' : 'Average Holding Time'}
-              value={formatHoldingMinutes(averageHoldingMinutes, isKo)}
-              detail={isKo ? '선택 기간의 종료 거래 기준' : 'Based on closed trades in selected period'}
-            />
+            {selectedStyleConfig.journalMetricOrder.map((metricId) => (
+              <div key={metricId} className="contents">{metricCards[metricId]}</div>
+            ))}
           </div>
 
           <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-l-2 border-primary-400/60 bg-dark-900/25 px-3 py-2.5 text-sm leading-6 text-dark-200">
             <span className="font-bold text-primary-200">{isKo ? '매매 스타일' : 'Trading style'}</span>
-            <span className="font-medium text-dark-100">
+            <span className="font-semibold text-dark-100">{selectedStyleLabel}</span>
+            <span className="text-dark-600">·</span>
+            <span className="text-xs font-medium text-dark-300 sm:text-sm">
               {tradeStyle.insufficientData
-                ? (isKo ? '분석할 거래가 더 필요합니다' : 'More completed trades are needed to analyze.')
-                : tradeStyle.traits.join(' · ')}
+                ? (isKo ? '실제 거래 분석에 더 많은 거래가 필요합니다' : 'More completed trades are needed for observed-trade analysis.')
+                : `${isKo ? '실제 거래' : 'Observed trades'}: ${tradeStyle.traits.join(' · ')}`}
             </span>
           </div>
 
@@ -597,6 +642,7 @@ export default function JournalPage() {
   const language = useLanguage();
   const isKo = language === 'ko';
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [selectedExchange, setSelectedExchange] = useState<ExchangeId>('deepcoin');
   const [exchangeInstType, setExchangeInstType] = useState<'SWAP' | 'SPOT'>('SWAP');
@@ -631,6 +677,16 @@ export default function JournalPage() {
     }),
     enabled: historyStartTime != null && historyEndTime != null && historyStartTime <= historyEndTime,
     staleTime: 5 * 60_000,
+  });
+  const planLabQuery = useQuery({
+    queryKey: journalQueryKeys.planLab(historyStartTime, historyEndTime),
+    queryFn: () => getPlanLab({
+      start_time: historyStartTime as number,
+      end_time: historyEndTime as number,
+    }),
+    enabled: historyStartTime != null && historyEndTime != null && historyStartTime <= historyEndTime,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
   const qualityByJournalId = useMemo(
     () => new Map((qualityQuery.data?.items || []).map((item) => [item.journal_id, item])),
@@ -798,6 +854,8 @@ export default function JournalPage() {
         }}
         performance={performanceQuery.data}
       />
+
+      <PlanLabSummary data={planLabQuery.data} isKo={isKo} onOpen={() => navigate('/plan-lab')} />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="card p-4 text-center">

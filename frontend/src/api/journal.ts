@@ -24,7 +24,94 @@ import type {
   JournalExitHoldAnalysisData,
   ExitHoldInterval,
   JournalPerformanceData,
+  PlanLabData,
+  PlanRevisionInput,
+  PlanSide,
+  PlanSource,
+  PlanStatus,
+  TradingPlan,
 } from '../types';
+
+export async function getPlans(): Promise<TradingPlan[]> {
+  try {
+    const res = await api.get<ApiResponse<TradingPlan[]>>('/plans');
+    return unwrapApiResponse(res, 'Failed to load trading plans.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load trading plans.');
+  }
+}
+
+export async function createPlan(payload: {
+  exchange: string;
+  symbol: string;
+  side: PlanSide;
+  revision: PlanRevisionInput;
+}): Promise<TradingPlan> {
+  try {
+    const res = await api.post<ApiResponse<TradingPlan>>('/plans', payload);
+    return unwrapApiResponse(res, 'Failed to create the plan.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to create the plan.');
+  }
+}
+
+export async function createRetrospectivePlan(
+  journalEntryId: number,
+  revision: PlanRevisionInput,
+): Promise<TradingPlan> {
+  try {
+    const res = await api.post<ApiResponse<TradingPlan>>('/plans/retrospective', {
+      journal_entry_id: journalEntryId,
+      revision,
+    });
+    return unwrapApiResponse(res, 'Failed to create the retrospective plan.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to create the retrospective plan.');
+  }
+}
+
+export async function addPlanRevision(planId: number, payload: PlanRevisionInput): Promise<TradingPlan> {
+  try {
+    const res = await api.post<ApiResponse<TradingPlan>>(`/plans/${planId}/revisions`, payload);
+    return unwrapApiResponse(res, 'Failed to revise the plan.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to revise the plan.');
+  }
+}
+
+export async function linkPlanToTrade(planId: number, journalEntryId: number): Promise<TradingPlan> {
+  try {
+    const res = await api.post<ApiResponse<TradingPlan>>(`/plans/${planId}/link`, { journal_entry_id: journalEntryId });
+    return unwrapApiResponse(res, 'Failed to link the plan to the trade.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to link the plan to the trade.');
+  }
+}
+
+export async function updatePlanStatus(planId: number, status: PlanStatus): Promise<TradingPlan> {
+  try {
+    const res = await api.patch<ApiResponse<TradingPlan>>(`/plans/${planId}/status`, { status });
+    return unwrapApiResponse(res, 'Failed to update the plan status.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to update the plan status.');
+  }
+}
+
+export async function getPlanLab(params: {
+  start_time: number;
+  end_time: number;
+  direction?: PlanSide;
+  setup?: string;
+  symbol?: string;
+  plan_source?: Exclude<PlanSource, 'UNLINKED'>;
+}): Promise<PlanLabData> {
+  try {
+    const res = await api.get<ApiResponse<PlanLabData>>('/plan-lab', { params, timeout: 180_000 });
+    return unwrapApiResponse(res, 'Failed to load Plan Lab.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load Plan Lab.');
+  }
+}
 
 export async function getJournal(): Promise<JournalEntry[]> {
   try {

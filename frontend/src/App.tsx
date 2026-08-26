@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, type ReactNode } from 'react';
-import { BarChart3, BookOpen, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, Search, ShieldAlert } from 'lucide-react';
+import { BarChart3, BookOpen, ClipboardCheck, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, Search, ShieldAlert } from 'lucide-react';
 
 import { MARKET_COINS } from './constants/market';
 import { BrowserRouter, Navigate } from './router';
@@ -16,6 +16,7 @@ const TradeAnalysisPage = lazy(() => import('./pages/TradeAnalysisPage'));
 const RiskLabPage = lazy(() => import('./pages/RiskLabPage'));
 const TradeExplorerPage = lazy(() => import('./pages/TradeExplorerPage'));
 const HoldReentryPage = lazy(() => import('./pages/HoldReentryPage'));
+const PlanLabPage = lazy(() => import('./pages/PlanLabPage'));
 const feedbackFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdGlwCDcOiTTchsy_MVX33V9ZUXdQK_VA94U7cC2aVARfeV1Q/viewform?usp=publish-editor';
 
 const routeFallback = (
@@ -68,13 +69,14 @@ function Shell({ children }: { children: ReactNode }) {
   const tabs = [
     { path: '/journal', label: isKo ? '매매일지' : 'Journal', icon: BookOpen },
     { path: '/trade-analysis', label: isKo ? '매매분석' : 'Trade Analysis', icon: BarChart3 },
-    { path: '/hold-reentry', label: isKo ? '홀딩 / 재진입' : 'Hold / Re-entry', icon: GitCompareArrows },
     { path: '/risk-lab', label: 'Risk Lab', icon: ShieldAlert },
+    { path: '/plan-lab', label: isKo ? '계획 분석' : 'Plan Lab', icon: ClipboardCheck },
+    { path: '/hold-reentry', label: isKo ? '홀딩 / 재진입' : 'Hold / Re-entry', icon: GitCompareArrows },
     { path: '/trade-explorer', label: isKo ? '거래 탐색' : 'Trade Explorer', icon: Search },
   ];
 
   const navigation = (vertical = false) => (
-    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-5 border border-dark-700'} aria-label="Primary">
+    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-6 border border-dark-700'} aria-label="Primary">
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path;
         return (
@@ -186,6 +188,8 @@ function Routes() {
       <TradeAnalysisPage />
     ) : pathname === '/risk-lab' ? (
       <RiskLabPage />
+    ) : pathname === '/plan-lab' ? (
+      <PlanLabPage />
     ) : pathname === '/trade-explorer' ? (
       <TradeExplorerPage />
     ) : pathname === '/hold-reentry' ? (

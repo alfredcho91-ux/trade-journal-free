@@ -29,7 +29,7 @@ PATH_INTERVAL_MS = 5 * 60 * 1000
 MAX_PATH_CANDLES = 30_000
 TRAIN_RATIO = 0.7
 MAX_GRID_COMBINATIONS = 800
-SL_TP_CACHE_VERSION = 2
+SL_TP_CACHE_VERSION = 3
 SCORE_WEIGHTS = {
     "expectancy": 0.35,
     "profit_factor": 0.25,
@@ -136,27 +136,32 @@ def _compound_performance(returns: Sequence[float]) -> tuple[float, float]:
 
 
 def performance(results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    returns = [float(item["return_pct"]) for item in results]
-    r_values = [float(item["r_multiple"]) for item in results]
+    evaluable = [
+        item for item in results
+        if finite_float(item.get("return_pct")) is not None
+        and finite_float(item.get("r_multiple")) is not None
+    ]
+    returns = [float(item["return_pct"]) for item in evaluable]
+    r_values = [float(item["r_multiple"]) for item in evaluable]
     wins = [value for value in returns if value > 0]
     losses = [value for value in returns if value < 0]
     gross_loss = abs(sum(losses))
     cumulative_return, max_drawdown = _compound_performance(returns)
     return {
-        "trade_count": len(results),
-        "win_rate_pct": len(wins) / len(results) * 100.0 if results else None,
-        "stop_hit_count": sum(bool(item["stop_hit"]) for item in results),
-        "stop_hit_pct": sum(bool(item["stop_hit"]) for item in results) / len(results) * 100.0 if results else None,
-        "tp_hit_count": sum(bool(item["tp_hit"]) for item in results),
-        "tp_hit_pct": sum(bool(item["tp_hit"]) for item in results) / len(results) * 100.0 if results else None,
-        "ambiguous_count": sum(bool(item["ambiguous"]) for item in results),
+        "trade_count": len(evaluable),
+        "win_rate_pct": len(wins) / len(evaluable) * 100.0 if evaluable else None,
+        "stop_hit_count": sum(bool(item["stop_hit"]) for item in evaluable),
+        "stop_hit_pct": sum(bool(item["stop_hit"]) for item in evaluable) / len(evaluable) * 100.0 if evaluable else None,
+        "tp_hit_count": sum(bool(item["tp_hit"]) for item in evaluable),
+        "tp_hit_pct": sum(bool(item["tp_hit"]) for item in evaluable) / len(evaluable) * 100.0 if evaluable else None,
+        "ambiguous_count": sum(bool(item["ambiguous"]) for item in evaluable),
         "average_win_pct": sum(wins) / len(wins) if wins else None,
         "average_loss_pct": sum(losses) / len(losses) if losses else None,
         "expectancy_pct": sum(returns) / len(returns) if returns else None,
         "average_r": sum(r_values) / len(r_values) if r_values else None,
         "profit_factor": sum(wins) / gross_loss if gross_loss > 0 else None,
-        "cumulative_return_pct": cumulative_return if results else None,
-        "max_drawdown_pct": max_drawdown if results else None,
+        "cumulative_return_pct": cumulative_return if evaluable else None,
+        "max_drawdown_pct": max_drawdown if evaluable else None,
     }
 
 
@@ -172,7 +177,7 @@ def _simulate_items(items: Iterable[Dict[str, Any]], sl_pct: float, tp_pct: floa
     return [_simulate_prepared_item(item, sl_pct, tp_pct) for item in items]
 
 
-def _first_barrier_index(item: Dict[str, Any], barrier: str, distance_pct: float) -> Optional[int]:
+def _first_barrier_event(item: Dict[str, Any], barrier: str, distance_pct: float) -> Optional[tuple[int, bool]]:
     cache = item.setdefault("_barrier_indices", {})
     key = (barrier, distance_pct)
     if key in cache:
@@ -193,14 +198,35 @@ def _first_barrier_index(item: Dict[str, Any], barrier: str, distance_pct: float
             else path["high"] >= entry_price * (1.0 + distance_pct / 100.0)
         )
     locations = hits.to_numpy().nonzero()[0]
-    result = int(locations[0]) if len(locations) else None
+    if len(locations):
+        index = int(locations[0])
+        uncertain = bool(path.iloc[index].get("boundary_uncertain", False))
+        result: Optional[tuple[int, bool]] = (index, uncertain)
+    else:
+        result = None
     cache[key] = result
     return result
 
 
 def _simulate_prepared_item(item: Dict[str, Any], sl_pct: float, tp_pct: float) -> Dict[str, Any]:
-    stop_index = _first_barrier_index(item, "stop", sl_pct)
-    target_index = _first_barrier_index(item, "target", tp_pct)
+    stop_event = _first_barrier_event(item, "stop", sl_pct)
+    target_event = _first_barrier_event(item, "target", tp_pct)
+    stop_index = stop_event[0] if stop_event else None
+    target_index = target_event[0] if target_event else None
+    first_index = min(index for index in (stop_index, target_index) if index is not None) if stop_index is not None or target_index is not None else None
+    first_is_uncertain = any(
+        event is not None and event[0] == first_index and event[1]
+        for event in (stop_event, target_event)
+    )
+    if first_is_uncertain:
+        return {
+            "outcome": "not_evaluable",
+            "stop_hit": False,
+            "tp_hit": False,
+            "ambiguous": False,
+            "return_pct": None,
+            "r_multiple": None,
+        }
     if stop_index is not None and target_index is not None and stop_index == target_index:
         outcome = "ambiguous_stop"
         gross_return_pct = -sl_pct
@@ -444,12 +470,20 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
                 if not path_covers_position(candles, entry_time, exit_time, PATH_INTERVAL_MS):
                     warnings.append(f"journal {position['id']}: complete {PATH_INTERVAL} path is unavailable")
                     continue
+                open_times = pd.to_numeric(candles["open_time"], errors="coerce")
+                close_times = pd.to_numeric(candles["close_time"], errors="coerce")
                 path = candles.loc[
-                    (pd.to_numeric(candles["open_time"], errors="coerce") >= entry_time)
-                    & (pd.to_numeric(candles["close_time"], errors="coerce") <= exit_time)
+                    (close_times >= entry_time)
+                    & (open_times < exit_time)
                 ].copy().reset_index(drop=True)
                 if path.empty:
                     continue
+                path_open = pd.to_numeric(path["open_time"], errors="coerce")
+                path_close_exclusive = pd.to_numeric(path["close_time"], errors="coerce") + 1
+                path["boundary_uncertain"] = (
+                    ((path_open < entry_time) & (entry_time < path_close_exclusive))
+                    | ((path_open < exit_time) & (exit_time < path_close_exclusive))
+                )
                 fee_pct = _fee_pct(position)
                 items.append({
                     "journal_id": int(position["id"]),
@@ -560,4 +594,13 @@ def run_journal_sl_tp_analysis_service(
         return result
 
 
-__all__ = ["run_journal_sl_tp_analysis_service"]
+def load_trade_path_items(
+    start_time: int,
+    end_time: int,
+    positions: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Public reuse point for analyses that need the canonical completed 5m path."""
+    return _load_path_items(start_time, end_time, positions)
+
+
+__all__ = ["load_trade_path_items", "run_journal_sl_tp_analysis_service", "simulate_trade_path"]

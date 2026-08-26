@@ -15,13 +15,26 @@ export type EvidenceRequest = {
   filterLabel: string;
   tradeIds: number[];
   period: JournalPeriod;
-  direction: 'Long' | 'Short';
+  direction: 'All' | 'Long' | 'Short';
+  minimumAbsNetReturnPct: number;
   exitHold?: {
     interval: ExitHoldInterval;
     holdId: string;
     resultsByJournalId: Record<number, EvidenceHoldResult>;
   };
 };
+
+export function matchesEvidenceDirection(
+  scopeDirection: EvidenceRequest['direction'],
+  tradeDirection: string | null | undefined,
+): boolean {
+  return scopeDirection === 'All' || tradeDirection === scopeDirection;
+}
+
+export function evidenceMinimumReturnLabel(value: number, isKo: boolean): string {
+  if (value <= 0) return isKo ? '순수익률 전체' : 'all net returns';
+  return `|${isKo ? '순수익률' : 'net return'}| > ${value}%`;
+}
 
 type EvidenceNavigationState = {
   request: EvidenceRequest | null;

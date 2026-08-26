@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, X } from 'lucide-react';
+import { useNavigate } from '../../router-context';
 
 import { getTradeReport } from '../../api/client';
 import { getDeepcoinTradeMarkers, getExchangeExecutions } from '../../api/journal';
@@ -147,6 +148,7 @@ export default function TradeReportModal({
   onClose: () => void;
   onBehaviorUpdated?: () => void;
 }) {
+  const navigate = useNavigate();
   const [reviewMoment, setReviewMoment] = useState<ReviewMoment>('entry');
   const [reportInterval, setReportInterval] = useState<ReportInterval>('4h');
   const isGenericExchange = Boolean(entry.exchange && entry.exchange !== 'Deepcoin');
@@ -545,7 +547,21 @@ export default function TradeReportModal({
                 {pathSummary && <span className="border border-primary-400/25 bg-primary-500/10 px-2 py-1 text-[10px] text-primary-200">{tradePathSummaryText(pathSummary, isKo)}</span>}
               </div>}
             </div>
-            <button type="button" onClick={onClose} className="shrink-0 text-dark-400 transition-colors hover:text-white" title={isKo ? '닫기' : 'Close'}><X className="h-5 w-5" /></button>
+            <div className="flex shrink-0 items-center gap-2">
+              {isClosedPosition(entry) && entry.id != null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    navigate(`/plan-lab?journalId=${entry.id}`);
+                  }}
+                  className="border border-primary-400/35 px-2.5 py-1.5 text-[11px] text-primary-200 transition-colors hover:border-primary-300 hover:text-white"
+                >
+                  {isKo ? '당시 계획 입력' : 'Enter historical plan'}
+                </button>
+              )}
+              <button type="button" onClick={onClose} className="text-dark-400 transition-colors hover:text-white" title={isKo ? '닫기' : 'Close'}><X className="h-5 w-5" /></button>
+            </div>
           </div>
         </header>
 
@@ -590,6 +606,11 @@ export default function TradeReportModal({
             {reportQuery.data && <TradeReferenceSummary vpvr={reportQuery.data.vpvr} vwaps={reportQuery.data.vwaps} isKo={isKo} />}
 
             <CompactSection title={isKo ? '진입 · 종료 시점 지표' : 'Entry · Exit Indicator Snapshot'}>
+              <p className="mb-3 text-[10px] leading-4 text-dark-500">
+                {isKo
+                  ? '보조지표는 Binance USDT-M Futures 가격 데이터를 기준으로 계산·갱신됩니다.'
+                  : 'Indicators are calculated and refreshed from Binance USDT-M Futures price data.'}
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setReviewMoment('entry')} className={`border px-3 py-2.5 text-left transition-colors ${reviewMoment === 'entry' ? 'border-primary-500/60 bg-primary-500/15 text-white' : 'border-dark-700 bg-dark-900/35 text-dark-400 hover:text-white'}`}><div className="text-xs font-semibold">{isKo ? '진입 시점' : 'Entry'}</div><div className="mt-1 text-[10px] text-dark-500">{entrySnapshot && matchedEntry?.datetime ? `${new Date(matchedEntry.datetime).toLocaleString()}${resolvedEntryTime.confidence === 'estimated' ? (isKo ? ' · 추정' : ' · Estimated') : ''}` : (isKo ? '스냅샷 없음' : 'No snapshot')}</div></button>
                 <button type="button" onClick={() => setReviewMoment('exit')} disabled={!entry.datetime} className={`border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${reviewMoment === 'exit' ? 'border-primary-500/60 bg-primary-500/15 text-white' : 'border-dark-700 bg-dark-900/35 text-dark-400 hover:text-white'}`}><div className="text-xs font-semibold">{isKo ? '종료 시점' : 'Exit'}</div><div className="mt-1 text-[10px] text-dark-500">{entry.datetime ? new Date(entry.datetime).toLocaleString() : (isKo ? '종료 시점 없음' : 'No exit time')}</div></button>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, BarChart3, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 
 import { getJournal, getJournalBehaviorAnalysis, getJournalExitHoldAnalysis, getJournalQualityAnalysis } from '../api/client';
@@ -25,11 +25,11 @@ import {
   toDateInputValue,
   type JournalPeriod,
 } from '../features/journal/journalPeriod';
-import { netReturnPct } from '../features/journal/journalReturns';
+import { isIncludedByMinimumAbsNetReturn } from '../features/journal/journalReturns';
 import TradeQualityAnalysis from '../features/tradeAnalysis/TradeQualityAnalysis';
 import MajorFailureAnalysis from '../features/tradeAnalysis/MajorFailureAnalysis';
 import MajorSuccessAnalysis from '../features/tradeAnalysis/MajorSuccessAnalysis';
-import { BehaviorLeakSummary } from '../features/tradeAnalysis/TradeBehaviorAnalysis';
+import TradingReview, { type TradingReviewEvidence } from '../features/tradeAnalysis/TradingReview';
 import AnalysisGroup, { AnalysisAccordion } from '../features/tradeAnalysis/AnalysisGroup';
 import WinLossComparePanel from '../features/tradeAnalysis/WinLossComparePanel';
 import {
@@ -39,10 +39,12 @@ import {
 } from '../features/tradeAnalysis/AnalysisVisualizations';
 import TradeReportModal from '../features/journal/TradeReportModal';
 import { journalQueryKeys } from '../features/journal/journalQueryKeys';
-import { useLanguage } from '../store/useStore';
+import { useLanguage, useTradingStyle } from '../store/useStore';
 import { useNavigate } from '../router-context';
-import { useEvidenceNavigation, type EvidenceHoldResult } from '../features/tradeAnalysis/evidenceNavigation';
-import type { ExitHoldInterval, TradeQualityItem } from '../types';
+import { evidenceMinimumReturnLabel, useEvidenceNavigation, type EvidenceHoldResult } from '../features/tradeAnalysis/evidenceNavigation';
+import type { ExitHoldInterval, PlanLabData, TradeQualityItem } from '../types';
+import TradingStyleSelect from '../features/preferences/TradingStyleSelect';
+import { TRADING_STYLE_CONFIGS, tradingStyleLabel } from '../features/preferences/tradingStyle';
 
 type AnalysisMode = 'all' | 'wins' | 'losses' | 'compare';
 type DirectionFilter = 'Long' | 'Short';
@@ -281,7 +283,10 @@ function TradeQuality({
 
 export default function TradeAnalysisPage() {
   const isKo = useLanguage() === 'ko';
+  const tradingStyle = useTradingStyle();
+  const styleConfig = TRADING_STYLE_CONFIGS[tradingStyle];
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setEvidenceRequest = useEvidenceNavigation((state) => state.setRequest);
   const [period, setPeriod] = useState<JournalPeriod>(() => buildJournalPeriod(DEFAULT_ANALYSIS_DAYS));
   const [draftPeriod, setDraftPeriod] = useState<JournalPeriod>(() => buildJournalPeriod(DEFAULT_ANALYSIS_DAYS));
@@ -290,8 +295,8 @@ export default function TradeAnalysisPage() {
   const [direction, setDirection] = useState<DirectionFilter>('Long');
   const [activeSection, setActiveSection] = useState<AnalysisSection>('overview');
   const [returnRange, setReturnRange] = useState<ReturnRangeId>('all');
-  const [timeframe, setTimeframe] = useState<AnalysisTimeframe>('4h');
-  const [exitHoldInterval, setExitHoldInterval] = useState<ExitHoldInterval>('4h');
+  const [timeframe, setTimeframe] = useState<AnalysisTimeframe>(() => styleConfig.defaultTimeframe);
+  const [exitHoldInterval, setExitHoldInterval] = useState<ExitHoldInterval>(() => styleConfig.defaultExitHoldInterval);
   const [minimumAbsNetReturnPct, setMinimumAbsNetReturnPct] = useState(0);
   const [periodError, setPeriodError] = useState<string | null>(null);
   const [selectedBehaviorTradeId, setSelectedBehaviorTradeId] = useState<number | null>(null);
@@ -416,11 +421,10 @@ export default function TradeAnalysisPage() {
     () => entries.filter((entry) => isJournalEntryWithinPeriod(entry, period)),
     [entries, period],
   );
-  const analysisEntries = useMemo(() => periodEntries.filter((entry) => {
-    if (minimumAbsNetReturnPct <= 0) return true;
-    const returnPct = netReturnPct(entry);
-    return returnPct != null && Math.abs(returnPct) > minimumAbsNetReturnPct;
-  }), [minimumAbsNetReturnPct, periodEntries]);
+  const analysisEntries = useMemo(
+    () => periodEntries.filter((entry) => isIncludedByMinimumAbsNetReturn(entry, minimumAbsNetReturnPct)),
+    [minimumAbsNetReturnPct, periodEntries],
+  );
   const allTrades = useMemo(() => {
     const periodIds = new Set(analysisEntries.map((entry) => entry.id));
     const excursions = qualityQuery.data?.items
@@ -464,13 +468,26 @@ export default function TradeAnalysisPage() {
     const uniqueTradeIds = [...new Set(tradeIds)];
     setEvidenceRequest({
       title: isKo ? `${label} 근거 거래` : `${label} supporting trades`,
-      filterLabel: `${label} · ${evidenceDirection.toUpperCase()} · ${period.start} ~ ${period.end}${returnRange === 'all' ? '' : ` · ${rangeLabels[returnRange]}`} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
+      filterLabel: `${label} · ${evidenceDirection.toUpperCase()} · ${period.start} ~ ${period.end} · ${evidenceMinimumReturnLabel(minimumAbsNetReturnPct, isKo)}${returnRange === 'all' ? '' : ` · ${rangeLabels[returnRange]}`} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
       tradeIds: uniqueTradeIds,
       period,
       direction: evidenceDirection,
+      minimumAbsNetReturnPct,
     });
     navigate('/trade-explorer');
-  }, [direction, isKo, navigate, period, returnRange, setEvidenceRequest]);
+  }, [direction, isKo, minimumAbsNetReturnPct, navigate, period, returnRange, setEvidenceRequest]);
+  const openReviewEvidence = useCallback((evidence: TradingReviewEvidence) => {
+    const uniqueTradeIds = [...new Set(evidence.journalIds)];
+    setEvidenceRequest({
+      title: evidence.title,
+      filterLabel: `${evidence.sourceLabel} · ${period.start} ~ ${period.end} · ${evidenceMinimumReturnLabel(minimumAbsNetReturnPct, isKo)} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
+      tradeIds: uniqueTradeIds,
+      period,
+      direction: evidence.direction,
+      minimumAbsNetReturnPct,
+    });
+    navigate('/trade-explorer');
+  }, [isKo, minimumAbsNetReturnPct, navigate, period, setEvidenceRequest]);
   const openExitHoldEvidence = useCallback((holdId: string) => {
     const intervalLabel = exitHoldIntervalLabel(exitHoldInterval, isKo);
     const pointLabel = exitHoldPointLabel(holdId, exitHoldInterval, isKo);
@@ -495,10 +512,11 @@ export default function TradeAnalysisPage() {
     const uniqueTradeIds = [...new Set(tradeIds)];
     setEvidenceRequest({
       title: isKo ? `${intervalLabel} · ${pointLabel} 근거 거래` : `${intervalLabel} · ${pointLabel} supporting trades`,
-      filterLabel: `${direction.toUpperCase()} · ${period.start} ~ ${period.end} · ${intervalLabel} · ${pointLabel} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
+      filterLabel: `${direction.toUpperCase()} · ${period.start} ~ ${period.end} · ${evidenceMinimumReturnLabel(minimumAbsNetReturnPct, isKo)} · ${intervalLabel} · ${pointLabel} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
       tradeIds: uniqueTradeIds,
       period,
       direction,
+      minimumAbsNetReturnPct,
       exitHold: {
         interval: exitHoldInterval,
         holdId,
@@ -506,7 +524,7 @@ export default function TradeAnalysisPage() {
       },
     });
     navigate('/trade-explorer');
-  }, [direction, exitHoldInterval, exitHoldQuery.data?.items, isKo, navigate, period, setEvidenceRequest]);
+  }, [direction, exitHoldInterval, exitHoldQuery.data?.items, isKo, minimumAbsNetReturnPct, navigate, period, setEvidenceRequest]);
 
   const applyRollingPeriod = () => {
     const next = buildJournalPeriod(DEFAULT_ANALYSIS_DAYS);
@@ -546,6 +564,13 @@ export default function TradeAnalysisPage() {
   const qualitySlice = qualityQuery.data?.direction_breakdown[direction];
   const exitHoldSlice = exitHoldQuery.data?.direction_breakdown[direction];
   const qualitySummary = qualitySlice?.summary;
+  const planLabCacheKey = journalQueryKeys.planLab(startTime, endTime, direction, undefined, undefined, 'ALL');
+  const cachedPlanLab = minimumAbsNetReturnPct > 0
+    ? undefined
+    : queryClient.getQueryData<PlanLabData>(planLabCacheKey);
+  const cachedPlanLabStatus = minimumAbsNetReturnPct > 0
+    ? undefined
+    : queryClient.getQueryState(planLabCacheKey)?.status;
   const strongestCondition = strongestReliableCondition(conditions);
   const marketConclusion = qualitySummary?.worst_regime
     ? (isKo
@@ -571,9 +596,18 @@ export default function TradeAnalysisPage() {
             <BarChart3 className="h-5 w-5 text-primary-400" />
             {isKo ? `매매 분석 · ${activeSection === 'overview' ? '한눈에 보기' : '상세 거래 분석'}` : `Trade Analysis · ${activeSection === 'overview' ? 'Overview' : 'Detailed Analysis'}`}
           </h1>
-          <div className="mt-1 text-xs text-dark-500">{direction.toUpperCase()} · {period.start} ~ {period.end} · {isKo ? '시장 데이터: Binance USDT-M Futures' : 'Market data: Binance USDT-M Futures'}</div>
+          <div className="mt-1 text-xs text-dark-500">{direction.toUpperCase()} · {period.start} ~ {period.end} · {isKo ? '보조지표·시장 분석: Binance USDT-M Futures 가격 기준' : 'Indicators & market analysis: Binance USDT-M Futures prices'}</div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
+          <TradingStyleSelect
+            isKo={isKo}
+            onStyleChange={(nextStyle) => {
+              if (nextStyle === 'custom') return;
+              const nextConfig = TRADING_STYLE_CONFIGS[nextStyle];
+              setTimeframe(nextConfig.defaultTimeframe);
+              setExitHoldInterval(nextConfig.defaultExitHoldInterval);
+            }}
+          />
           <button type="button" onClick={applyRollingPeriod} className="border border-dark-700 bg-dark-800 px-3 py-2 text-xs text-dark-300 hover:text-white">
             {DEFAULT_ANALYSIS_DAYS}{isKo ? '일' : 'D'}
           </button>
@@ -603,6 +637,19 @@ export default function TradeAnalysisPage() {
           {qualityQuery.data?.return_filter && ` ${isKo ? `분석 ${qualityQuery.data.return_filter.included_count}/${qualityQuery.data.return_filter.candidate_count}건` : `${qualityQuery.data.return_filter.included_count}/${qualityQuery.data.return_filter.candidate_count} trades included`}`}
         </div>
       )}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-dark-500">
+        <span className="font-medium text-dark-300">
+          {isKo ? `${tradingStyleLabel(tradingStyle, true)} 보기 우선순위 적용` : `${tradingStyleLabel(tradingStyle, false)} view priority applied`}
+        </span>
+        <span>·</span>
+        <span>{tradingStyle === 'custom'
+          ? (isKo ? `현재 지표 ${timeframe.toUpperCase()}` : `Current indicator ${timeframe.toUpperCase()}`)
+          : (isKo ? `기본 지표 ${styleConfig.defaultTimeframe.toUpperCase()}` : `Default indicator ${styleConfig.defaultTimeframe.toUpperCase()}`)}</span>
+        <span>·</span>
+        <span>{tradingStyle === 'custom'
+          ? (isKo ? `현재 청산 복기 ${exitHoldIntervalLabel(exitHoldInterval, true)}` : `Current exit review ${exitHoldInterval.toUpperCase()}`)
+          : (isKo ? `기본 청산 복기 ${exitHoldIntervalLabel(styleConfig.defaultExitHoldInterval, true)}` : `Default exit review ${styleConfig.defaultExitHoldInterval.toUpperCase()}`)}</span>
+      </div>
       {isJournalError && (
         <div className="flex items-center gap-3 border border-amber-300/30 bg-amber-300/5 px-3 py-2 text-xs text-amber-200">
           <span>{isKo ? '거래 기록을 불러오지 못했습니다. 분석 결과가 불완전할 수 있습니다.' : 'Trade history could not be loaded; analysis may be incomplete.'}</span>
@@ -650,13 +697,20 @@ export default function TradeAnalysisPage() {
         onOpenDetails={openDetailedSection}
       />}
 
-      {activeSection === 'overview' && <BehaviorLeakSummary
-        data={behaviorQuery.data}
-        isLoading={behaviorQuery.isLoading}
-        isError={behaviorQuery.isError}
+      {activeSection === 'overview' && <TradingReview
+        behavior={behaviorQuery.data}
+        behaviorLoading={behaviorQuery.isLoading}
+        behaviorError={behaviorQuery.isError}
+        quality={qualityQuery.data}
+        qualityLoading={qualityQuery.isLoading}
+        qualityError={qualityQuery.isError}
+        direction={direction}
+        cachedPlanLab={cachedPlanLab}
+        cachedPlanLabStatus={cachedPlanLabStatus}
+        minimumAbsNetReturnPct={minimumAbsNetReturnPct}
         isKo={isKo}
-        onRetry={() => void behaviorQuery.refetch()}
-        onSelectTrade={setSelectedBehaviorTradeId}
+        onOpenEvidence={openReviewEvidence}
+        onOpenPlanLab={() => navigate('/plan-lab')}
       />}
 
       {activeSection === 'overview' && <MajorSuccessAnalysis
@@ -685,10 +739,11 @@ export default function TradeAnalysisPage() {
       </button>}
 
       {activeSection === 'entry' && <>
-        <div className="space-y-10">
+        <div className="flex flex-col gap-10">
+          <div style={{ order: styleConfig.analysisOrder.indexOf('market') }}>
             <AnalysisGroup
               id="market-performance"
-              index={1}
+              index={styleConfig.analysisOrder.indexOf('market') + 1}
               isKo={isKo}
               title={isKo ? '시장 상황과 성과' : 'Market context and performance'}
               detail={isKo ? '진입 당시 완료된 주봉·일봉·4시간봉 기준입니다.' : 'Uses only completed Weekly, Daily, and 4H candles at entry.'}
@@ -710,10 +765,12 @@ export default function TradeAnalysisPage() {
                 <TradeQualityAnalysis data={qualityQuery.data} isLoading={qualityQuery.isLoading || qualityQuery.isFetching} isError={qualityQuery.isError} isKo={isKo} direction={direction} onRetry={() => void qualityQuery.refetch()} showOverview={false} showExitAnalysis={false} showComparisons={false} onSelectEvidence={openEvidence} />
               </AnalysisAccordion>
             </AnalysisGroup>
+          </div>
 
+          <div style={{ order: styleConfig.analysisOrder.indexOf('execution') }}>
             <AnalysisGroup
               id="entry-exit-quality"
-              index={2}
+              index={styleConfig.analysisOrder.indexOf('execution') + 1}
               isKo={isKo}
               title={isKo ? '진입 · 청산 품질' : 'Entry and exit quality'}
               detail={isKo ? '실제 종료, 추가 보유 결과, 진입 후 가격 흐름을 함께 봅니다.' : 'Review actual exits, additional holding, and price movement after entry.'}
@@ -746,10 +803,12 @@ export default function TradeAnalysisPage() {
                 <TradeQuality trades={selectedTrades} qualityItems={qualityQuery.data?.items || []} isKo={isKo} isLoading={qualityQuery.isFetching} onSelectEvidence={openEvidence} />
               </AnalysisAccordion>
             </AnalysisGroup>
+          </div>
 
+          <div style={{ order: styleConfig.analysisOrder.indexOf('indicators') }}>
             <AnalysisGroup
               id="indicator-analysis"
-              index={3}
+              index={styleConfig.analysisOrder.indexOf('indicators') + 1}
               isKo={isKo}
               title={isKo ? '지표 기반 승패 분석' : 'Indicator-based win and loss analysis'}
               detail={isKo ? '진입 직전 완료봉의 보조지표만 사용합니다.' : 'Uses only the completed candle immediately before entry.'}
@@ -767,8 +826,9 @@ export default function TradeAnalysisPage() {
                 <div className="space-y-4"><div><div className="mb-1 text-[11px] text-dark-500">{isKo ? '원시 평균 대상' : 'Raw average sample'}</div><div className="grid grid-cols-2 gap-1 border border-dark-700 bg-dark-900/35 p-1 sm:grid-cols-4">{([{ id: 'all', label: isKo ? '전체' : 'All' }, { id: 'wins', label: isKo ? '승리 거래' : 'Wins' }, { id: 'losses', label: isKo ? '패배 거래' : 'Losses' }, { id: 'compare', label: isKo ? '승 vs 패' : 'Wins vs Losses' }] as Array<{ id: AnalysisMode; label: string }>).map((item) => <button key={item.id} type="button" onClick={() => setMode(item.id)} className={`min-h-8 px-2 text-xs font-medium transition-colors ${mode === item.id ? 'bg-primary-500/20 text-primary-200' : 'text-dark-400 hover:text-white'}`}>{item.label}</button>)}</div></div><div className="grid grid-cols-5 border border-dark-700 bg-dark-900/35 p-1">{returnRanges.map((item) => <button key={item.id} type="button" onClick={() => setReturnRange(item.id)} className={`min-h-8 px-1 text-xs font-medium transition-colors ${returnRange === item.id ? 'bg-primary-500/20 text-primary-200' : 'text-dark-400 hover:text-white'}`}>{item.label}</button>)}</div><div className="grid gap-x-6 md:grid-cols-2">{averages.map((row) => <div key={row.id} className="flex items-center justify-between border-b border-dark-800 py-2 text-xs"><span className="text-dark-300">{row.label}</span><span className="font-mono text-white">{plain(row.average, 3)} <span className="text-dark-600">({row.count})</span></span></div>)}</div></div>
               </AnalysisAccordion>
             </AnalysisGroup>
+          </div>
 
-            {(qualityQuery.isError || (qualityQuery.data?.warnings.length || 0) > 1) && <div className="text-xs text-amber-300">{isKo ? '일부 거래의 시장 데이터를 불러오지 못했습니다.' : 'Market data was unavailable for some trades.'}</div>}
+            {(qualityQuery.isError || (qualityQuery.data?.warnings.length || 0) > 1) && <div className="text-xs text-amber-300" style={{ order: 4 }}>{isKo ? '일부 거래의 시장 데이터를 불러오지 못했습니다.' : 'Market data was unavailable for some trades.'}</div>}
         </div>
       </>}
       {selectedBehaviorEntry && <TradeReportModal

@@ -26,7 +26,7 @@ export default function TradeExitReviewList({
 }: {
   entries: JournalEntry[];
   qualityItems: TradeQualityItem[];
-  direction: 'Long' | 'Short';
+  direction?: 'Long' | 'Short';
   isKo: boolean;
   onViewAll?: (journalIds: number[]) => void;
 }) {
@@ -34,7 +34,7 @@ export default function TradeExitReviewList({
   const [filter, setFilter] = useState<'all' | 'win' | 'loss' | 'early' | 'poor'>('all');
   const entryById = useMemo(() => new Map(entries.flatMap((entry) => entry.id == null ? [] : [[entry.id, entry] as const])), [entries]);
   const rows = useMemo(() => qualityItems
-    .filter((item) => item.direction === direction)
+    .filter((item) => direction == null || item.direction === direction)
     .map((item) => ({ item, entry: entryById.get(item.journal_id), review: buildExitReview(item) }))
     .filter((row): row is { item: TradeQualityItem; entry: JournalEntry; review: ReturnType<typeof buildExitReview> } => Boolean(row.entry))
     .sort((left, right) => new Date(right.item.exit_datetime || 0).getTime() - new Date(left.item.exit_datetime || 0).getTime()), [direction, entryById, qualityItems]);
@@ -59,7 +59,7 @@ export default function TradeExitReviewList({
         <h2 className="text-sm font-semibold text-white">{isKo ? '거래별 청산 복기' : 'Exit Review by Trade'}</h2>
         <p className="mt-1 text-[11px] text-dark-500">{isKo ? '최신 거래부터 표시합니다. 거래를 누르면 해당 1건의 리포트를 엽니다.' : 'Newest trades first. Select a trade to open its single-trade report.'}</p>
       </div>
-      <div className="flex items-center gap-3"><span className="font-mono text-xs text-dark-400">{direction.toUpperCase()} · {rows.length}{isKo ? '건' : ' trades'}</span>{onViewAll && <button type="button" onClick={() => onViewAll(filteredRows.map(({ item }) => item.journal_id))} className="text-xs text-primary-200 hover:text-white hover:underline">{isKo ? '전체 거래 보기 →' : 'View all →'}</button>}</div>
+      <div className="flex items-center gap-3"><span className="font-mono text-xs text-dark-400">{direction?.toUpperCase() || 'ALL'} · {rows.length}{isKo ? '건' : ' trades'}</span>{onViewAll && <button type="button" onClick={() => onViewAll(filteredRows.map(({ item }) => item.journal_id))} className="text-xs text-primary-200 hover:text-white hover:underline">{isKo ? '전체 거래 보기 →' : 'View all →'}</button>}</div>
     </div>
     <div className="flex flex-wrap gap-1.5 border-b border-dark-700 px-4 py-2.5">
       {([

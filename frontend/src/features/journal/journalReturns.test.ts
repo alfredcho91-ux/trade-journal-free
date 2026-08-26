@@ -6,6 +6,7 @@ import {
   aggregateNetReturnPct,
   feeImpact,
   fundingImpact,
+  isIncludedByMinimumAbsNetReturn,
   investedAmount,
   netCostImpact,
   netReturnPct,
@@ -89,6 +90,18 @@ describe('journal net returns', () => {
   it('does not invent a return when size or entry price is missing', () => {
     expect(netReturnPct({ realized_pnl: 10 })).toBeNull();
     expect(aggregateNetReturnPct([{ realized_pnl: 10 }])).toBeNull();
+  });
+
+  it('preserves the strict minimum absolute net-return scope used by trade analysis', () => {
+    const profit: JournalEntry = { invested_amount: 100, realized_pnl: 3 };
+    const loss: JournalEntry = { invested_amount: 100, realized_pnl: -2.5 };
+    const boundary: JournalEntry = { invested_amount: 100, realized_pnl: 2 };
+
+    expect(isIncludedByMinimumAbsNetReturn(profit, 2)).toBe(true);
+    expect(isIncludedByMinimumAbsNetReturn(loss, 2)).toBe(true);
+    expect(isIncludedByMinimumAbsNetReturn(boundary, 2)).toBe(false);
+    expect(isIncludedByMinimumAbsNetReturn({ realized_pnl: 3 }, 2)).toBe(false);
+    expect(isIncludedByMinimumAbsNetReturn({ realized_pnl: 3 }, 0)).toBe(true);
   });
 
   it('sums only finite realized PnL values', () => {

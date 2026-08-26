@@ -153,3 +153,26 @@ def test_biggest_leak_keeps_realized_loss_and_exit_opportunity_separate():
     assert rows[0]["loss_impact_pnl"] == 0.0
     assert rows[0]["opportunity_sample_count"] == 1
     assert rows[0]["average_opportunity_pct"] == pytest.approx(3.5)
+
+
+def test_biggest_leak_order_uses_the_same_pnl_metric_exposed_as_primary_impact():
+    rows = _biggest_leaks([
+        {
+            "journal_id": 1,
+            "exit_datetime": "2026-08-01",
+            "realized_pnl": -1_000.0,
+            "r_multiple": -1.0,
+            "issues": [{"id": "large_pnl", "label": "A"}],
+        },
+        {
+            "journal_id": 2,
+            "exit_datetime": "2026-08-02",
+            "realized_pnl": -100.0,
+            "r_multiple": -5.0,
+            "issues": [{"id": "large_r", "label": "B"}],
+        },
+    ])
+
+    assert [row["id"] for row in rows] == ["large_pnl", "large_r"]
+    assert rows[0]["loss_impact_pnl"] == pytest.approx(1_000.0)
+    assert rows[0]["loss_impact_r"] == pytest.approx(1.0)

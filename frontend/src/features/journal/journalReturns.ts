@@ -41,6 +41,16 @@ export function netReturnPct(entry: JournalEntry): number | null {
   return (netPnl / invested) * 100;
 }
 
+export function isIncludedByMinimumAbsNetReturn(
+  entry: JournalEntry,
+  minimumAbsNetReturnPct: number,
+): boolean {
+  const threshold = Math.max(0, Number.isFinite(minimumAbsNetReturnPct) ? minimumAbsNetReturnPct : 0);
+  if (threshold <= 0) return true;
+  const returnPct = netReturnPct(entry);
+  return returnPct != null && Math.abs(returnPct) > threshold;
+}
+
 export function investedAmount(entry: JournalEntry): number | null {
   const stored = entry.invested_amount;
   if (stored != null && Number.isFinite(stored) && stored > 0) return stored;

@@ -5,10 +5,12 @@ from pydantic import ValidationError
 from backend.modules.journal.schemas import JournalSlTpQuery
 from backend.modules.journal.sl_tp_analysis import (
     _analysis_bundle,
+    _build_path_items,
     grid_values,
     performance,
     simulate_trade_path,
 )
+from backend.modules.plan_lab.analysis import _barrier_result, plan_geometry
 
 
 def _path(*rows):
@@ -118,3 +120,71 @@ def test_query_rejects_reversed_or_excessive_grids():
             tp_max=10,
             tp_step=0.1,
         )
+
+
+def test_partial_entry_and_horizon_candles_are_preserved_as_uncertain(monkeypatch):
+    minute = 60_000
+    base = pd.Timestamp("2026-01-01T10:00:00Z").value // 1_000_000
+    candles = pd.DataFrame([
+        {"open_time": base, "close_time": base + 5 * minute - 1, "high": 101.0, "low": 97.5},
+        {"open_time": base + 5 * minute, "close_time": base + 10 * minute - 1, "high": 101.0, "low": 99.0},
+        {"open_time": base + 10 * minute, "close_time": base + 15 * minute - 1, "high": 104.5, "low": 99.0},
+    ])
+    monkeypatch.setattr(
+        "backend.modules.journal.sl_tp_analysis.load_journal_ohlcv",
+        lambda *args, **kwargs: candles,
+    )
+    position = {
+        "id": 91,
+        "exchange": "binance",
+        "symbol": "BTC/USDT",
+        "direction": "Long",
+        "entry_datetime": pd.Timestamp(base + 2 * minute, unit="ms", tz="UTC").isoformat(),
+        "datetime": pd.Timestamp(base + 13 * minute, unit="ms", tz="UTC").isoformat(),
+        "entry_price": 100.0,
+        "exit_price": 101.0,
+    }
+
+    items, warnings = _build_path_items([position])
+
+    assert warnings == []
+    assert len(items) == 1
+    assert items[0]["path"]["boundary_uncertain"].tolist() == [True, False, True]
+    assert _barrier_result(items[0]["path"], plan_geometry("Long", {
+        "entry_price": 100.0, "stop_loss": 98.0, "take_profit": 104.0,
+    }), "Long")["status"] == "NOT_EVALUABLE"
+
+    exact_position = {
+        **position,
+        "id": 92,
+        "entry_datetime": pd.Timestamp(base + 5 * minute, unit="ms", tz="UTC").isoformat(),
+        "datetime": pd.Timestamp(base + 15 * minute, unit="ms", tz="UTC").isoformat(),
+    }
+    exact_items, exact_warnings = _build_path_items([exact_position])
+    assert exact_warnings == []
+    assert exact_items[0]["path"]["boundary_uncertain"].tolist() == [False, False]
+    assert _barrier_result(exact_items[0]["path"], plan_geometry("Long", {
+        "entry_price": 100.0, "stop_loss": 98.0, "take_profit": 104.0,
+    }), "Long")["status"] == "TP_FIRST"
+
+
+def test_exact_boundaries_and_safe_partial_candles_keep_normal_barrier_results():
+    exact = pd.DataFrame([
+        {"high": 101.0, "low": 99.0, "boundary_uncertain": False},
+        {"high": 104.5, "low": 99.0, "boundary_uncertain": False},
+    ])
+    safe_partial = pd.DataFrame([
+        {"high": 101.0, "low": 99.0, "boundary_uncertain": True},
+        {"high": 104.5, "low": 99.0, "boundary_uncertain": False},
+    ])
+    uncertain_horizon = pd.DataFrame([
+        {"high": 101.0, "low": 99.0, "boundary_uncertain": False},
+        {"high": 104.5, "low": 99.0, "boundary_uncertain": True},
+    ])
+    geometry = plan_geometry("Long", {
+        "entry_price": 100.0, "stop_loss": 98.0, "take_profit": 104.0,
+    })
+
+    assert _barrier_result(exact, geometry, "Long")["status"] == "TP_FIRST"
+    assert _barrier_result(safe_partial, geometry, "Long")["status"] == "TP_FIRST"
+    assert _barrier_result(uncertain_horizon, geometry, "Long")["status"] == "NOT_EVALUABLE"

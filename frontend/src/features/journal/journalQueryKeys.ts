@@ -26,6 +26,15 @@ export const journalQueryKeys = {
     tpStep: number,
   ) => ['journal-sl-tp-analysis', startTime, endTime, slMin, slMax, slStep, tpMin, tpMax, tpStep] as const,
   currentMarket: (coin: string) => ['journal-current-market', coin] as const,
+  plans: ['trading-plans'] as const,
+  planLab: (
+    startTime: number | null,
+    endTime: number | null,
+    direction?: string,
+    setup?: string,
+    symbol?: string,
+    source?: string,
+  ) => ['plan-lab', startTime, endTime, direction, setup, symbol, source] as const,
 };
 
 export const journalDerivedQueryPrefixes = [
@@ -39,4 +48,5 @@ export const journalDerivedQueryPrefixes = [
   ['journal-stop-optimization'],
   ['journal-sl-tp-analysis'],
   ['journal-current-market'],
+  ['plan-lab'],
 ] as const;
