@@ -123,6 +123,20 @@ def test_retrospective_plan_is_evaluated_but_never_labelled_verified():
     assert result["evaluation_status"] == "TP_FIRST"
 
 
+def test_retrospective_without_planned_entry_uses_actual_entry_only_for_execution():
+    plan = _plan(revision=_revision(entry_price=None))
+    plan["source"] = "RETROSPECTIVE"
+    plan["revisions"][0]["received_at"] = "2026-01-02T10:00:00+00:00"
+
+    result = evaluate_plan(plan, _entry(entry_price=100.0), _path((104.2, 99.5)))
+
+    assert result["evaluation_status"] == "TP_FIRST"
+    assert result["geometry"]["entry"] == 100.0
+    assert result["planned_result_r"] == 2.0
+    assert result["original_planned_rr"] is None
+    assert result["adherence"]["entry"]["status"] == "NOT_EVALUABLE"
+
+
 def test_execution_geometry_uses_actual_entry_not_planned_entry():
     result = evaluate_plan(
         _plan(revision=_revision(entry_price=99.0, stop_loss=98.0, take_profit=106.0)),

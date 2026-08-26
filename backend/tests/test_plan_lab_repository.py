@@ -1,9 +1,11 @@
 import sqlite3
 
 import pytest
+from pydantic import ValidationError
 
 from backend.modules.journal import repository as journal_repository
 from backend.modules.plan_lab import repository
+from backend.modules.plan_lab.schemas import PlanRevisionInput, RetrospectivePlanCreate
 
 
 def _revision(entry_price=100.0):
@@ -29,6 +31,105 @@ def _plan_payload():
         "client_created_at": "1999-01-01T00:00:00Z",
         "revision": _revision(),
     }
+
+
+def _retrospective_payload():
+    revision = _revision(None)
+    return {
+        "exchange": "binance",
+        "symbol": "BTC/USDT",
+        "side": "Long",
+        "revision": revision,
+    }
+
+
+def _closed_entry(db_path, external_id="binance:position:retrospective"):
+    entry, _ = journal_repository.add_entry_if_new_external_id(
+        {
+            "external_id": external_id,
+            "exchange": "binance",
+            "source": "binance_position",
+            "symbol": "BTC/USDT",
+            "direction": "Long",
+            "entry_datetime": "2026-01-01T10:00:00+00:00",
+            "datetime": "2026-01-01T11:00:00+00:00",
+            "entry_price": 100.0,
+            "exit_price": 104.0,
+        },
+        db_path=db_path,
+    )
+    return entry
+
+
+def _table_counts(db_path):
+    with sqlite3.connect(db_path) as conn:
+        return tuple(
+            conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (repository.PLAN_TABLE, repository.REVISION_TABLE, repository.LINK_TABLE)
+        )
+
+
+def test_retrospective_schema_allows_missing_plan_entry_only():
+    retrospective = RetrospectivePlanCreate.model_validate({
+        "journal_entry_id": 1,
+        "revision": _revision(None),
+    })
+
+    assert retrospective.revision.entry_price is None
+    with pytest.raises(ValidationError, match="Retrospective plan entry must be empty"):
+        RetrospectivePlanCreate.model_validate({
+            "journal_entry_id": 1,
+            "revision": _revision(100.0),
+        })
+    with pytest.raises(ValidationError, match="Plan entry is required"):
+        PlanRevisionInput.model_validate(_revision(None))
+
+
+def test_retrospective_save_is_atomic_and_keeps_planned_entry_empty(tmp_path):
+    db_path = tmp_path / "journal.db"
+    entry = _closed_entry(db_path)
+
+    plan = repository.create_retrospective_plan(
+        _retrospective_payload(), entry["id"], db_path=db_path,
+    )
+
+    assert _table_counts(db_path) == (1, 1, 1)
+    assert plan["source"] == "RETROSPECTIVE"
+    assert plan["link"]["journal_entry_id"] == entry["id"]
+    assert plan["latest_revision"]["entry_price"] is None
+
+
+def test_retrospective_duplicate_link_does_not_leave_orphans(tmp_path):
+    db_path = tmp_path / "journal.db"
+    entry = _closed_entry(db_path)
+    first = repository.create_retrospective_plan(
+        _retrospective_payload(), entry["id"], db_path=db_path,
+    )
+    before = _table_counts(db_path)
+
+    with pytest.raises(ValueError, match="already linked"):
+        repository.create_retrospective_plan(
+            _retrospective_payload(), entry["id"], db_path=db_path,
+        )
+
+    assert _table_counts(db_path) == before == (1, 1, 1)
+    assert repository.get_plan(first["id"], db_path=db_path)["link"]["journal_entry_id"] == entry["id"]
+
+
+def test_retrospective_link_failure_rolls_back_plan_and_revision(tmp_path, monkeypatch):
+    db_path = tmp_path / "journal.db"
+    entry = _closed_entry(db_path)
+
+    def fail_link(*_args, **_kwargs):
+        raise RuntimeError("injected link failure")
+
+    monkeypatch.setattr(repository, "_insert_link_row", fail_link)
+    with pytest.raises(RuntimeError, match="injected link failure"):
+        repository.create_retrospective_plan(
+            _retrospective_payload(), entry["id"], db_path=db_path,
+        )
+
+    assert _table_counts(db_path) == (0, 0, 0)
 
 
 def test_server_received_time_controls_official_revision(tmp_path):

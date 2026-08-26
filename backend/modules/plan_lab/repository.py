@@ -104,27 +104,39 @@ def _revision_payload(revision: Dict[str, Any], server_time: str) -> tuple[Any, 
     )
 
 
+def _insert_plan_with_revision(
+    conn: sqlite3.Connection,
+    payload: Dict[str, Any],
+    server_time: str,
+    *,
+    status: str = "active",
+    source: str = "UNLINKED",
+) -> int:
+    cursor = conn.execute(
+        f"""INSERT INTO {PLAN_TABLE}
+        (exchange, symbol, symbol_key, side, status, source, client_created_at, received_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            str(payload["exchange"]).strip().lower(), str(payload["symbol"]).strip().upper(),
+            normalize_symbol(payload["symbol"]), payload["side"], status, source,
+            payload.get("client_created_at"), server_time, server_time, server_time,
+        ),
+    )
+    plan_id = int(cursor.lastrowid)
+    conn.execute(
+        f"""INSERT INTO {REVISION_TABLE}
+        (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit,
+         setup, entry_note, exit_note, memo, max_hold_hours, client_created_at, received_at, created_at)
+        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (plan_id, *_revision_payload(payload["revision"], server_time)),
+    )
+    return plan_id
+
+
 def create_plan(payload: Dict[str, Any], *, db_path: Optional[Path] = None) -> Dict[str, Any]:
     server_time = utc_now()
     with _connect(db_path) as conn:
-        cursor = conn.execute(
-            f"""INSERT INTO {PLAN_TABLE}
-            (exchange, symbol, symbol_key, side, status, source, client_created_at, received_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'active', 'UNLINKED', ?, ?, ?, ?)""",
-            (
-                str(payload["exchange"]).strip().lower(), str(payload["symbol"]).strip().upper(),
-                normalize_symbol(payload["symbol"]), payload["side"], payload.get("client_created_at"),
-                server_time, server_time, server_time,
-            ),
-        )
-        plan_id = int(cursor.lastrowid)
-        conn.execute(
-            f"""INSERT INTO {REVISION_TABLE}
-            (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit,
-             setup, entry_note, exit_note, memo, max_hold_hours, client_created_at, received_at, created_at)
-            VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (plan_id, *_revision_payload(payload["revision"], server_time)),
-        )
+        plan_id = _insert_plan_with_revision(conn, payload, server_time)
         conn.commit()
     return get_plan(plan_id, db_path=db_path)
 
@@ -189,6 +201,42 @@ def update_status(plan_id: int, status: str, *, db_path: Optional[Path] = None) 
     return get_plan(plan_id, db_path=db_path)
 
 
+def _assert_trade_link_available(
+    conn: sqlite3.Connection,
+    journal_entry_id: int,
+    external_id: Optional[str],
+    *,
+    excluding_plan_id: Optional[int] = None,
+) -> None:
+    params: List[Any] = [journal_entry_id]
+    conditions = ["journal_entry_id=?"]
+    if external_id is not None:
+        conditions.append("(journal_external_id=? AND link_status='LINKED')")
+        params.append(external_id)
+    query = f"SELECT plan_id FROM {LINK_TABLE} WHERE ({' OR '.join(conditions)})"
+    if excluding_plan_id is not None:
+        query += " AND plan_id<>?"
+        params.append(excluding_plan_id)
+    if conn.execute(query, tuple(params)).fetchone() is not None:
+        raise ValueError("Trade is already linked to another plan")
+
+
+def _insert_link_row(
+    conn: sqlite3.Connection,
+    plan_id: int,
+    journal_entry_id: int,
+    external_id: Optional[str],
+    link_status: str,
+    server_time: str,
+) -> None:
+    conn.execute(
+        f"""INSERT INTO {LINK_TABLE}
+        (plan_id, journal_entry_id, journal_external_id, link_status, linked_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)""",
+        (plan_id, journal_entry_id, external_id, link_status, server_time, server_time),
+    )
+
+
 def link_plan(plan_id: int, journal_entry_id: int, *, db_path: Optional[Path] = None) -> Dict[str, Any]:
     entries = {int(entry["id"]): entry for entry in journal_repository.list_entries(db_path=db_path)}
     entry = entries.get(journal_entry_id)
@@ -221,19 +269,10 @@ def link_plan(plan_id: int, journal_entry_id: int, *, db_path: Optional[Path] = 
             if same_internal or same_external:
                 return get_plan(plan_id, db_path=db_path)
             raise ValueError("Plan is already linked to a different trade")
-        if external_id is not None:
-            conflict = conn.execute(
-                f"SELECT plan_id FROM {LINK_TABLE} WHERE journal_external_id=? AND link_status='LINKED' AND plan_id<>?",
-                (external_id, plan_id),
-            ).fetchone()
-            if conflict is not None:
-                raise ValueError("Trade is already linked to another plan")
-        conn.execute(
-            f"""INSERT INTO {LINK_TABLE}
-            (plan_id, journal_entry_id, journal_external_id, link_status, linked_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)""",
-            (plan_id, journal_entry_id, external_id, link_status, server_time, server_time),
+        _assert_trade_link_available(
+            conn, journal_entry_id, external_id, excluding_plan_id=plan_id,
         )
+        _insert_link_row(conn, plan_id, journal_entry_id, external_id, link_status, server_time)
         conn.execute(
             f"UPDATE {PLAN_TABLE} SET status='linked', source=?, updated_at=? WHERE id=?",
             (plan_source, server_time, plan_id),
@@ -319,5 +358,33 @@ def create_retrospective_plan(
     payload: Dict[str, Any], journal_entry_id: int, *, db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Create a hindsight-labelled plan and explicitly attach it to one closed trade."""
-    plan = create_plan(payload, db_path=db_path)
-    return link_plan(int(plan["id"]), journal_entry_id, db_path=db_path)
+    entries = {int(entry["id"]): entry for entry in journal_repository.list_entries(db_path=db_path)}
+    entry = entries.get(journal_entry_id)
+    if (
+        entry is None
+        or not str(entry.get("source") or "").endswith("_position")
+        or not entry.get("entry_datetime")
+        or not entry.get("datetime")
+        or entry.get("entry_price") is None
+        or entry.get("exit_price") is None
+    ):
+        raise ValueError("Closed journal trade not found")
+    if normalize_symbol(entry.get("symbol")) != normalize_symbol(payload.get("symbol")) or entry.get("direction") != payload.get("side"):
+        raise ValueError("Plan and trade symbol/side do not match")
+    plan_exchange = str(payload.get("exchange") or "").lower()
+    trade_exchange = str(entry.get("exchange") or "").lower()
+    if plan_exchange and trade_exchange and plan_exchange != trade_exchange:
+        raise ValueError("Plan and trade exchange do not match")
+
+    external_id = str(entry.get("external_id") or "").strip() or None
+    link_status = "LINKED" if external_id is not None else "AMBIGUOUS_LINK"
+    server_time = utc_now()
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _assert_trade_link_available(conn, journal_entry_id, external_id)
+        plan_id = _insert_plan_with_revision(
+            conn, payload, server_time, status="linked", source="RETROSPECTIVE",
+        )
+        _insert_link_row(conn, plan_id, journal_entry_id, external_id, link_status, server_time)
+        conn.commit()
+    return get_plan(plan_id, db_path=db_path)

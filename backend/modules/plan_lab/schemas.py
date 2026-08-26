@@ -12,7 +12,7 @@ PlanStatus = Literal["active", "linked", "cancelled"]
 PlanSource = Literal["RETROSPECTIVE", "VERIFIED_PRETRADE"]
 
 
-class PlanRevisionInput(BaseModel):
+class PlanRevisionFields(BaseModel):
     entry_price: Optional[float] = Field(default=None, gt=0)
     entry_min: Optional[float] = Field(default=None, gt=0)
     entry_max: Optional[float] = Field(default=None, gt=0)
@@ -26,16 +26,38 @@ class PlanRevisionInput(BaseModel):
     client_created_at: Optional[str] = Field(default=None, max_length=80)
 
     @model_validator(mode="after")
-    def validate_entry(self):
+    def validate_entry_shape(self):
         has_exact = self.entry_price is not None
         has_range = self.entry_min is not None or self.entry_max is not None
-        if has_exact == has_range:
+        if has_exact and has_range:
             raise ValueError("Use either entry_price or entry_min/entry_max")
         if has_range:
             if self.entry_min is None or self.entry_max is None:
                 raise ValueError("Both entry_min and entry_max are required")
             if self.entry_min > self.entry_max:
                 raise ValueError("entry_min must not exceed entry_max")
+        return self
+
+
+class PlanRevisionInput(PlanRevisionFields):
+    @model_validator(mode="after")
+    def require_planned_entry(self):
+        if self.entry_price is None and self.entry_min is None and self.entry_max is None:
+            raise ValueError("Plan entry is required")
+        return self
+
+
+class RetrospectivePlanRevisionInput(PlanRevisionFields):
+    """A hindsight plan may omit the user's original entry intention.
+
+    Execution-only analysis uses the linked trade's actual entry without storing
+    it as a planned entry.
+    """
+
+    @model_validator(mode="after")
+    def forbid_planned_entry(self):
+        if self.entry_price is not None or self.entry_min is not None or self.entry_max is not None:
+            raise ValueError("Retrospective plan entry must be empty")
         return self
 
 
@@ -49,7 +71,7 @@ class PlanCreate(BaseModel):
 
 class RetrospectivePlanCreate(BaseModel):
     journal_entry_id: int = Field(gt=0)
-    revision: PlanRevisionInput
+    revision: RetrospectivePlanRevisionInput
 
 
 class PlanRevisionCreate(PlanRevisionInput):
