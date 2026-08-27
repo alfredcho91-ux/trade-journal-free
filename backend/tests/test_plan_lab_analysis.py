@@ -6,11 +6,15 @@ import pytest
 from backend.modules.plan_lab.analysis import (
     _aggregate_group,
     _diagnosis,
+    _early_exit_analysis,
+    _eligible_for_post_exit_analysis,
     _grouped,
     _largest_execution_gap,
     _optimizer,
     _path_mfe_r,
     _post_exit_outcome,
+    _primary_attribution,
+    _split_post_exit_unsupported,
     evaluate_plan,
     plan_geometry,
 )
@@ -204,6 +208,7 @@ def test_split_plan_does_not_silently_use_tp1_only_post_exit_analysis():
 
     assert result["planned_result_r"] == 2.0
     assert result["post_exit_outcome"] == "NOT_EVALUABLE"
+    assert result["primary_execution_category"] == "NOT_EVALUABLE"
 
 
 def test_evaluation_uses_official_usdt_r_and_tp_first():
@@ -298,6 +303,79 @@ def test_optimizer_keeps_discovery_and_validation_confidence_separate():
     assert plan_variant["validation"]["trade_count"] == 6
     assert plan_variant["validation"]["sample_confidence"] == "low"
     assert plan_variant["validation_status"] == "observed_low_sample"
+
+
+def _post_exit_sample(journal_id, outcome, mode="SINGLE_TP"):
+    return {
+        "journal_id": journal_id,
+        "exit_datetime": f"2026-01-{journal_id if journal_id < 10 else 9:02d}T00:00:00+00:00",
+        "r_basis": "usdt",
+        "actual_r": 0.25,
+        "planned_result_r": 1.0,
+        "execution_delta_r": -0.75,
+        "actual_return_pct": 0.5,
+        "geometry": {"reward_pct": 2.0},
+        "post_exit_outcome": outcome,
+        "plan_execution_mode": mode,
+        "primary_execution_category": (
+            "EARLY_TP_EXIT"
+            if outcome == "POST_EXIT_TP"
+            else "NOT_EVALUABLE"
+            if outcome == "NOT_EVALUABLE"
+            else "OTHER"
+        ),
+    }
+
+
+def test_unsupported_split_is_excluded_from_all_post_exit_samples():
+    unsupported = _post_exit_sample(991, "NOT_EVALUABLE", "SPLIT_TP_50_50")
+
+    assert _eligible_for_post_exit_analysis(unsupported) is False
+    assert _early_exit_analysis([unsupported]) == []
+    assert [item["journal_id"] for item in _split_post_exit_unsupported([unsupported])] == [991]
+
+    variant = next(
+        item for item in _optimizer([unsupported])["variants"]
+        if item["id"] == "PLAN_TP_ON_EARLY_EXIT"
+    )
+    assert variant["overall"]["trade_count"] == 0
+    assert variant["journal_ids"] == []
+
+
+def test_mixed_post_exit_sample_keeps_summary_and_evidence_on_same_eligible_set():
+    eligible = [
+        _post_exit_sample(1, "POST_EXIT_TP"),
+        _post_exit_sample(2, "POST_EXIT_SL"),
+        _post_exit_sample(3, "NO_BARRIER"),
+    ]
+    unsupported = [
+        _post_exit_sample(991, "NOT_EVALUABLE", "SPLIT_TP_50_50"),
+        _post_exit_sample(992, "NOT_EVALUABLE", "SPLIT_TP_50_50"),
+    ]
+    items = eligible + unsupported
+
+    rows = _early_exit_analysis(items)
+    evidence_ids = {
+        journal_id
+        for row in rows
+        for journal_id in row["journal_ids"]
+    }
+    assert sum(row["trade_count"] for row in rows) == 3
+    assert evidence_ids == {1, 2, 3}
+    assert len(_split_post_exit_unsupported(items)) == 2
+    attribution_ids = {
+        journal_id
+        for row in _primary_attribution(items)
+        for journal_id in row["journal_ids"]
+    }
+    assert attribution_ids == {1, 2, 3}
+
+    variant = next(
+        item for item in _optimizer(items)["variants"]
+        if item["id"] == "PLAN_TP_ON_EARLY_EXIT"
+    )
+    assert variant["overall"]["trade_count"] == 3
+    assert set(variant["journal_ids"]) == {1, 2, 3}
 
 
 def test_group_evidence_ids_match_the_official_r_sample():
@@ -459,7 +537,9 @@ def test_post_exit_uncertain_is_not_added_to_early_exit_optimizer():
         item for item in _optimizer([result])["variants"]
         if item["id"] == "PLAN_TP_ON_EARLY_EXIT"
     )
-    assert variant["overall"]["expectancy_r"] == result["actual_r"]
+    assert variant["overall"]["trade_count"] == 0
+    assert variant["overall"]["expectancy_r"] is None
+    assert variant["journal_ids"] == []
 
 
 def test_mfe_boundary_does_not_use_unobservable_partial_extreme():

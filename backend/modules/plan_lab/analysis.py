@@ -22,6 +22,7 @@ DEFAULT_POST_EXIT_HORIZON_HOURS = 40.0
 DISCOVERY_RATIO = 0.70
 TP1_EXIT_FRACTION = 0.50
 REMAINING_EXIT_FRACTION = 0.50
+POST_EXIT_ELIGIBLE_OUTCOMES = frozenset({"POST_EXIT_TP", "POST_EXIT_SL", "NO_BARRIER"})
 
 
 def _mean(values: Iterable[Optional[float]]) -> Optional[float]:
@@ -412,6 +413,19 @@ def _post_exit_outcome(
     }.get(result["status"], "NOT_EVALUABLE")
 
 
+def _eligible_for_post_exit_analysis(item: Dict[str, Any]) -> bool:
+    """Return whether a trade has an observable post-exit outcome."""
+    return item.get("post_exit_outcome") in POST_EXIT_ELIGIBLE_OUTCOMES
+
+
+def _split_post_exit_unsupported(items: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        item for item in items
+        if item.get("plan_execution_mode") == "SPLIT_TP_50_50"
+        and not _eligible_for_post_exit_analysis(item)
+    ]
+
+
 def _classify_execution(
     actual_return_pct: Optional[float], geometry: Dict[str, Any], simulation: Dict[str, Any],
     post_exit_outcome: str, entry_part: Dict[str, Any], actual_exit_ms: Optional[int] = None,
@@ -429,16 +443,20 @@ def _classify_execution(
     touch_confirmed_before_exit = (
         touch_time is not None and actual_exit_ms is not None and touch_time < actual_exit_ms
     )
+    split_post_exit_unsupported = (
+        geometry.get("execution_mode") == "SPLIT_TP_50_50"
+        and post_exit_outcome not in POST_EXIT_ELIGIBLE_OUTCOMES
+    )
     if actual_return_pct < -risk_pct * 1.05:
         primary = "STOP_OVERRUN"
         tags.append("LOSS_BEYOND_PLAN_SL")
     elif actual_return_pct < 0 and actual_return_pct > -risk_pct * 0.95 and simulation["status"] == "SL_FIRST":
         primary = "DISCRETIONARY_EARLY_STOP"
     elif (
-        post_exit_outcome == "NOT_EVALUABLE"
+        (post_exit_outcome == "NOT_EVALUABLE" or split_post_exit_unsupported)
         and (simulation.get("tp1_filled") or simulation["status"] == "TP_FIRST")
         and actual_return_pct < reward_pct * 0.95
-        and not touch_confirmed_before_exit
+        and (split_post_exit_unsupported or not touch_confirmed_before_exit)
     ):
         primary = "NOT_EVALUABLE"
     elif 0 <= actual_return_pct < reward_pct * 0.95 and post_exit_outcome == "POST_EXIT_TP":
@@ -628,7 +646,10 @@ def _matrix(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _primary_attribution(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return _grouped(_official(items), lambda item: item.get("primary_execution_category"))
+    return _grouped(
+        [item for item in _official(items) if item.get("primary_execution_category") != "NOT_EVALUABLE"],
+        lambda item: item.get("primary_execution_category"),
+    )
 
 
 def _secondary_observations(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -688,16 +709,20 @@ def _variant_bundle(name: str, items: List[Dict[str, Any]], resolver) -> Dict[st
 
 
 def _optimizer(items: List[Dict[str, Any]]) -> Dict[str, Any]:
-    variants = [
-        _variant_bundle("ACTUAL", items, lambda item: item.get("actual_r")),
-        _variant_bundle("PLAN", items, lambda item: item.get("planned_result_r")),
-        _variant_bundle("PLAN_TP_ON_EARLY_EXIT", items, lambda item: item.get("planned_result_r") if item.get("primary_execution_category") == "EARLY_TP_EXIT" else item.get("actual_r")),
-        _variant_bundle("PLAN_SL_ON_OVERRUN", items, lambda item: item.get("planned_result_r") if item.get("primary_execution_category") == "STOP_OVERRUN" else item.get("actual_r")),
-        _variant_bundle("KEEP_EARLY_STOP_PLAN_TP", items, lambda item: item.get("actual_r") if item.get("primary_execution_category") == "DISCRETIONARY_EARLY_STOP" else item.get("planned_result_r") if item.get("primary_execution_category") == "EARLY_TP_EXIT" else item.get("actual_r")),
+    post_exit_items = [item for item in items if _eligible_for_post_exit_analysis(item)]
+    specs = [
+        ("ACTUAL", items, lambda item: item.get("actual_r")),
+        ("PLAN", items, lambda item: item.get("planned_result_r")),
+        ("PLAN_TP_ON_EARLY_EXIT", post_exit_items, lambda item: item.get("planned_result_r") if item.get("primary_execution_category") == "EARLY_TP_EXIT" else item.get("actual_r")),
+        ("PLAN_SL_ON_OVERRUN", items, lambda item: item.get("planned_result_r") if item.get("primary_execution_category") == "STOP_OVERRUN" else item.get("actual_r")),
+        ("KEEP_EARLY_STOP_PLAN_TP", post_exit_items, lambda item: item.get("actual_r") if item.get("primary_execution_category") == "DISCRETIONARY_EARLY_STOP" else item.get("planned_result_r") if item.get("primary_execution_category") == "EARLY_TP_EXIT" else item.get("actual_r")),
     ]
-    baseline_discovery = variants[0]["discovery"].get("expectancy_r")
-    baseline_validation = variants[0]["validation"].get("expectancy_r")
-    for variant in variants:
+    variants = []
+    for name, sample, resolver in specs:
+        variant = _variant_bundle(name, sample, resolver)
+        baseline = _variant_bundle("ACTUAL_BASELINE", sample, lambda item: item.get("actual_r"))
+        baseline_discovery = baseline["discovery"].get("expectancy_r")
+        baseline_validation = baseline["validation"].get("expectancy_r")
         discovery = variant["discovery"]
         validation = variant["validation"]
         discovery["delta_vs_actual_r"] = discovery["expectancy_r"] - baseline_discovery if discovery["expectancy_r"] is not None and baseline_discovery is not None else None
@@ -707,7 +732,19 @@ def _optimizer(items: List[Dict[str, Any]]) -> Dict[str, Any]:
             and discovery["delta_vs_actual_r"] > 0 and validation["delta_vs_actual_r"] > 0
         )
         variant["validation_status"] = "supported" if same_direction and validation["sample_confidence"] != "low" else "observed_low_sample" if same_direction else "not_maintained"
+        variants.append(variant)
     return {"split": "chronological_70_30", "variants": variants}
+
+
+def _early_exit_analysis(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    eligible = [
+        item for item in _official(items)
+        if _eligible_for_post_exit_analysis(item)
+        and item.get("actual_return_pct") is not None
+        and item.get("geometry", {}).get("reward_pct") is not None
+        and 0 <= item["actual_return_pct"] < item["geometry"]["reward_pct"] * 0.95
+    ]
+    return _grouped(eligible, lambda item: item.get("post_exit_outcome"))
 
 
 def _largest_execution_gap(attribution: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -824,10 +861,7 @@ def run_plan_lab_service(
         "plan_recording_rate_pct": len(evaluations) / len(closed) * 100 if closed else None,
     })
     attribution = _primary_attribution(evaluations)
-    early_exit = _grouped(
-        [item for item in _official(evaluations) if item.get("actual_return_pct") is not None and item.get("geometry", {}).get("reward_pct") is not None and 0 <= item["actual_return_pct"] < item["geometry"]["reward_pct"] * 0.95],
-        lambda item: item.get("post_exit_outcome"),
-    )
+    early_exit = _early_exit_analysis(evaluations)
     stop_behavior = _grouped(
         [item for item in _official(evaluations) if item.get("primary_execution_category") in {"STOP_OVERRUN", "DISCRETIONARY_EARLY_STOP", "PLAN_LIKE"}],
         lambda item: item.get("primary_execution_category"),
@@ -862,11 +896,7 @@ def run_plan_lab_service(
             "retrospective": sum(item.get("plan_source") == "RETROSPECTIVE" for item in evaluations),
             "legacy_single_tp": sum(item.get("plan_execution_mode") == "SINGLE_TP" for item in evaluations),
             "split_tp": sum(item.get("plan_execution_mode") == "SPLIT_TP_50_50" for item in evaluations),
-            "split_post_exit_unsupported": sum(
-                item.get("plan_execution_mode") == "SPLIT_TP_50_50"
-                and item.get("post_exit_outcome") == "NOT_EVALUABLE"
-                for item in evaluations
-            ),
+            "split_post_exit_unsupported": len(_split_post_exit_unsupported(evaluations)),
             "ambiguous_links": sum(plan.get("link", {}).get("link_status") == "AMBIGUOUS_LINK" for plan in plans if plan.get("link")),
         },
         "cumulative_curve": _cumulative_curve(evaluations),

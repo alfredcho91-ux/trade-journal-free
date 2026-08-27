@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { JournalEntry, PlanEvaluation, TradingPlan } from '../types';
+import type { JournalEntry, PlanEvaluation, PlanLabData, TradingPlan } from '../types';
 import {
   calculateTargetRiskReward,
   calculateTargetRiskRewardFromDraft,
@@ -15,6 +15,7 @@ import {
   type PlanDraft,
 } from '../features/planLab/pastTradePlan';
 import { PlanDetailsDrawer } from '../features/planLab/PlanTradeDetailDrawer';
+import { planCoverageItems } from '../features/planLab/planCoverage';
 import { PlanForm } from './PlanLabPage';
 
 const draft: PlanDraft = {
@@ -144,6 +145,30 @@ describe('Past Trade Plan Input reliability', () => {
     const result = calculateTargetRiskRewardFromDraft(draft, 100);
     expect(result).toMatchObject({ valid: true, tp1R: 2, mode: 'TP1_ONLY' });
     expect(revisionPayload(draft, true)?.entry_price).toBeNull();
+    const html = renderPlanForm();
+    expect(html).toContain('목표 손익비');
+    expect(html).toContain('실제 진입가를 기준으로 현재 입력한 SL/TP 가격 구조');
+    expect(html).toContain('공식 계획 결과(Plan R)는 실제 가격 경로로 별도 계산');
+  });
+
+  it('keeps unsupported split post-exit coverage separate from the official analysis n', () => {
+    const rows = planCoverageItems({ coverage: {
+      closed_trades: 5,
+      plan_recorded: 5,
+      official_r: 3,
+      price_r_only: 0,
+      r_unavailable: 0,
+      ambiguous: 0,
+      not_evaluable: 0,
+      verified_pretrade: 0,
+      retrospective: 5,
+      legacy_single_tp: 3,
+      split_tp: 2,
+      split_post_exit_unsupported: 2,
+    } } as Pick<PlanLabData, 'coverage'>, true);
+
+    expect(rows.find((row) => row.label === '공식 USDT R')?.value).toBe(3);
+    expect(rows.find((row) => row.label === '분할 계획 청산 후 분석 제외')?.value).toBe(2);
   });
 
   it('does not produce numeric R:R for missing or invalid price structures', () => {

@@ -22,6 +22,7 @@ import {
   shouldLoadPlanLabAnalysis,
   type PlanDraft,
 } from '../features/planLab/pastTradePlan';
+import { planCoverageItems } from '../features/planLab/planCoverage';
 import { isClosedPosition } from '../features/journal/journalEntries';
 import {
   buildJournalPeriod,
@@ -127,7 +128,10 @@ function TargetRiskRewardPreview({ draft, trade, isKo }: { draft: PlanDraft; tra
       {result.tp2R != null && <div className="flex justify-between gap-3"><span className="text-dark-400">TP2 · 50%</span><span className="font-mono text-primary-200">{signed(result.tp2R, 2, 'R')}</span></div>}
       {result.splitTargetR != null && <div className="flex justify-between gap-3 border-t border-dark-800 pt-2"><span className="text-dark-300">{isKo ? '분할익절 목표' : 'Split target'} <small className="text-dark-500">(50% + 50%)</small></span><b className="font-mono text-white">{signed(result.splitTargetR, 2, 'R')}</b></div>}
     </div>}
-    <p className="mt-3 text-[10px] leading-4 text-dark-500">{isKo ? '저장 후 공식 계획 결과(Plan R)는 실제 가격 경로로 별도 계산됩니다.' : 'Official Plan R is calculated separately from the historical price path after saving.'}</p>
+    <p className="mt-3 text-[10px] leading-4 text-dark-500">{trade
+      ? (isKo ? '실제 진입가를 기준으로 현재 입력한 SL/TP 가격 구조의 손익비를 계산합니다.' : 'Uses the actual entry as the reference for the SL/TP price structure entered here.')
+      : (isKo ? '입력한 Plan Entry를 기준으로 현재 SL/TP 가격 구조의 손익비를 계산합니다.' : 'Uses the entered Plan Entry as the reference for the current SL/TP price structure.')}</p>
+    <p className="mt-1 text-[10px] leading-4 text-dark-500">{isKo ? '저장 후 공식 계획 결과(Plan R)는 실제 가격 경로로 별도 계산됩니다.' : 'Official Plan R is calculated separately from the historical price path after saving.'}</p>
   </div>;
 }
 
@@ -452,20 +456,7 @@ export default function PlanLabPage() {
     }, 0);
   };
   const summary = data?.summary;
-  const coverageItems = data ? [
-    { label: isKo ? '종료 거래' : 'Closed', value: data.coverage.closed_trades },
-    { label: isKo ? 'Plan 입력' : 'Plans', value: data.coverage.plan_recorded },
-    { label: isKo ? '공식 USDT R' : 'Official USDT R', value: data.coverage.official_r },
-    { label: isKo ? '가격 R만 가능' : 'Price R only', value: data.coverage.price_r_only },
-    { label: isKo ? 'R 계산 불가' : 'R unavailable', value: data.coverage.r_unavailable },
-    { label: isKo ? '동일 봉 충돌' : 'Ambiguous', value: data.coverage.ambiguous },
-    { label: isKo ? '경계·경로 불확실' : 'Not evaluable', value: data.coverage.not_evaluable },
-    { label: isKo ? '사전 기록' : 'Verified', value: data.coverage.verified_pretrade },
-    { label: isKo ? '회고 입력' : 'Retrospective', value: data.coverage.retrospective },
-    { label: isKo ? 'TP1 단일 계획' : 'Single-TP plans', value: data.coverage.legacy_single_tp || 0 },
-    { label: isKo ? 'TP1·TP2 분할 계획' : 'Split-TP plans', value: data.coverage.split_tp || 0 },
-    { label: isKo ? '분할 계획 청산 후 분석 제외' : 'Split post-exit excluded', value: data.coverage.split_post_exit_unsupported || 0 },
-  ] : [];
+  const coverageItems = data ? planCoverageItems(data, isKo) : [];
   const evidenceEvaluations = evidence ? evaluations.filter((item) => evidence.ids.includes(item.journal_id)) : [];
   const selectedTradeEvaluation = selectedTrade?.id == null ? undefined : evaluations.find((item) => item.journal_id === selectedTrade.id);
   const hasNextMissing = nextMissingTrade(selectedTrade, missingPlans) != null;
