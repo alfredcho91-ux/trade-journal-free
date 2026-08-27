@@ -9,6 +9,7 @@ export interface PlanRevisionInput {
   entry_max?: number | null;
   stop_loss: number;
   take_profit: number;
+  take_profit_2?: number | null;
   setup?: string | null;
   entry_note?: string | null;
   exit_note?: string | null;
@@ -59,11 +60,16 @@ export interface PlanGeometry {
   entry?: number | null;
   stop?: number | null;
   target?: number | null;
+  target_2?: number | null;
+  execution_mode?: 'SINGLE_TP' | 'SPLIT_TP_50_50';
   risk_distance?: number | null;
   reward_distance?: number | null;
   risk_pct?: number | null;
   reward_pct?: number | null;
   planned_rr?: number | null;
+  planned_rr_2?: number | null;
+  planned_total_rr?: number | null;
+  planned_total_reward_pct?: number | null;
   break_even_win_rate_pct?: number | null;
 }
 
@@ -71,6 +77,17 @@ export interface PlanAdherencePart {
   score?: number | null;
   status: string;
   deviation_r?: number | null;
+}
+
+export interface PlanExecutionLeg {
+  type: 'TP1' | 'TP2' | 'SL' | 'HORIZON';
+  fraction: number;
+  exit_price: number;
+  exit_time?: number | null;
+  price_r: number;
+  contribution_r: number;
+  contribution_pnl?: number | null;
+  status: 'FILLED';
 }
 
 export interface PlanEvaluation {
@@ -83,8 +100,12 @@ export interface PlanEvaluation {
   entry_datetime?: string | null;
   exit_datetime?: string | null;
   evaluation_status: string;
+  plan_execution_mode?: 'SINGLE_TP' | 'SPLIT_TP_50_50';
+  plan_legs?: PlanExecutionLeg[];
+  simulation_ambiguity_reason?: string | null;
   geometry?: PlanGeometry;
   planned_result_r?: number | null;
+  planned_result_pnl?: number | null;
   actual_r?: number | null;
   r_basis: 'usdt' | 'price' | 'unavailable';
   planned_risk_usdt?: number | null;
@@ -221,6 +242,7 @@ export interface PlanLabData {
     verified_pretrade: string;
     retrospective: string;
     simulation_mode: string;
+    split_tp?: string;
     default_horizon: string;
     setup_identity: string;
   };
@@ -237,6 +259,9 @@ export interface PlanLabData {
     not_evaluable: number;
     verified_pretrade: number;
     retrospective: number;
+    legacy_single_tp?: number;
+    split_tp?: number;
+    split_post_exit_unsupported?: number;
   };
   cumulative_curve: PlanCurvePoint[];
   primary_attribution: PlanBehaviorCost[];

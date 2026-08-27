@@ -13,8 +13,10 @@ import {
   updatePlanStatus,
 } from '../api/client';
 import { CumulativeRChart, ActualPlanRows, DeltaBars, DeltaDistribution } from '../features/planLab/PlanLabCharts';
+import { PlanDetailsDrawer as LargePlanDetailsDrawer, TradeAnalysisSummary } from '../features/planLab/PlanTradeDetailDrawer';
 import {
   nextMissingTrade,
+  calculateTargetRiskRewardFromDraft,
   planEntryLabel,
   revisionPayload,
   shouldLoadPlanLabAnalysis,
@@ -51,7 +53,7 @@ type PlanStatusFilter = 'ALL' | 'NO_PLAN' | 'RECORDED';
 
 const EMPTY_DRAFT: PlanDraft = {
   exchange: 'deepcoin', symbol: 'BTC/USDT', side: 'Long', entryMode: 'exact',
-  entryPrice: '', entryMin: '', entryMax: '', stopLoss: '', takeProfit: '',
+  entryPrice: '', entryMin: '', entryMax: '', stopLoss: '', takeProfit: '', takeProfit2: '',
   maxHoldHours: '', setup: '', entryNote: '', exitNote: '', memo: '',
 };
 
@@ -74,7 +76,7 @@ function draftFromPlan(plan: TradingPlan): PlanDraft {
     entryPrice: revision.entry_price?.toString() || '',
     entryMin: revision.entry_min?.toString() || '',
     entryMax: revision.entry_max?.toString() || '',
-    stopLoss: revision.stop_loss.toString(), takeProfit: revision.take_profit.toString(),
+    stopLoss: revision.stop_loss.toString(), takeProfit: revision.take_profit.toString(), takeProfit2: revision.take_profit_2?.toString() || '',
     maxHoldHours: revision.max_hold_hours?.toString() || '',
     setup: revision.setup || '', entryNote: revision.entry_note || '',
     exitNote: revision.exit_note || '', memo: revision.memo || '',
@@ -93,6 +95,40 @@ function signed(value: number | null | undefined, digits = 2, suffix = ''): stri
 function price(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value);
+}
+
+function targetRiskRewardError(error: NonNullable<ReturnType<typeof calculateTargetRiskRewardFromDraft>>['validationError'], isKo: boolean): string {
+  const ko: Record<string, string> = {
+    ENTRY_REQUIRED: '진입가를 입력하면 계산할 수 있습니다.',
+    STOP_REQUIRED: '손절가를 입력하면 계산할 수 있습니다.',
+    TP1_REQUIRED: 'TP1을 입력하면 계산할 수 있습니다.',
+    TP2_INVALID: 'TP2 값을 확인하세요.',
+    RISK_INVALID: '손절폭을 계산할 수 없습니다.',
+    LONG_STOP: 'LONG 기준 손절가는 진입가보다 낮아야 합니다.',
+    SHORT_STOP: 'SHORT 기준 손절가는 진입가보다 높아야 합니다.',
+    LONG_TP1: 'LONG 기준 TP1은 진입가보다 높아야 합니다.',
+    SHORT_TP1: 'SHORT 기준 TP1은 진입가보다 낮아야 합니다.',
+    LONG_TP2_ORDER: 'LONG 기준 TP2는 TP1보다 높아야 합니다.',
+    SHORT_TP2_ORDER: 'SHORT 기준 TP2는 TP1보다 낮아야 합니다.',
+  };
+  const en: Record<string, string> = {
+    ENTRY_REQUIRED: 'Enter an entry price to calculate.', STOP_REQUIRED: 'Enter a stop loss to calculate.', TP1_REQUIRED: 'Enter TP1 to calculate.', TP2_INVALID: 'Check the TP2 value.', RISK_INVALID: 'Risk distance cannot be calculated.', LONG_STOP: 'For LONG, stop loss must be below entry.', SHORT_STOP: 'For SHORT, stop loss must be above entry.', LONG_TP1: 'For LONG, TP1 must be above entry.', SHORT_TP1: 'For SHORT, TP1 must be below entry.', LONG_TP2_ORDER: 'For LONG, TP2 must be above TP1.', SHORT_TP2_ORDER: 'For SHORT, TP2 must be below TP1.',
+  };
+  return (isKo ? ko : en)[error || ''] || (isKo ? 'SL과 TP를 입력하면 자동 계산됩니다.' : 'Enter SL and TP to calculate.');
+}
+
+function TargetRiskRewardPreview({ draft, trade, isKo }: { draft: PlanDraft; trade?: JournalEntry; isKo: boolean }) {
+  const result = calculateTargetRiskRewardFromDraft(draft, trade?.entry_price, trade?.direction === 'Short' ? 'Short' : draft.side);
+  return <div className="mt-4 border border-dark-700 bg-dark-900/45 px-3 py-3">
+    <div className="flex flex-wrap items-baseline justify-between gap-2"><b className="text-xs text-dark-200">{isKo ? '목표 손익비' : 'Target R:R'}</b><span className="text-[10px] text-dark-500">{isKo ? '입력 가격 구조 미리보기' : 'Input-price preview'}</span></div>
+    {!result.valid ? <p className={`mt-2 text-[11px] ${result.mode === 'INVALID' ? 'text-amber-200' : 'text-dark-400'}`}>{targetRiskRewardError(result.validationError, isKo)}</p> : <div className="mt-3 space-y-2 text-[11px]">
+      <div className="flex justify-between gap-3"><span className="text-dark-400">{isKo ? '손절폭' : 'Risk distance'}</span><span className="font-mono text-dark-100">{price(result.riskDistance)} · {result.riskPct?.toFixed(2)}%</span></div>
+      <div className="flex justify-between gap-3"><span className="text-dark-400">TP1 · {result.mode === 'TP1_ONLY' ? '100%' : '50%'}</span><span className="font-mono text-primary-200">{signed(result.tp1R, 2, 'R')}</span></div>
+      {result.tp2R != null && <div className="flex justify-between gap-3"><span className="text-dark-400">TP2 · 50%</span><span className="font-mono text-primary-200">{signed(result.tp2R, 2, 'R')}</span></div>}
+      {result.splitTargetR != null && <div className="flex justify-between gap-3 border-t border-dark-800 pt-2"><span className="text-dark-300">{isKo ? '분할익절 목표' : 'Split target'} <small className="text-dark-500">(50% + 50%)</small></span><b className="font-mono text-white">{signed(result.splitTargetR, 2, 'R')}</b></div>}
+    </div>}
+    <p className="mt-3 text-[10px] leading-4 text-dark-500">{isKo ? '저장 후 공식 계획 결과(Plan R)는 실제 가격 경로로 별도 계산됩니다.' : 'Official Plan R is calculated separately from the historical price path after saving.'}</p>
+  </div>;
 }
 
 function actualResultLabel(entry: JournalEntry): string {
@@ -169,7 +205,7 @@ function sourceLabel(source: PlanSource, isKo: boolean): string {
   return isKo ? '미연결' : 'Unlinked';
 }
 
-export function PlanForm({ draft, isKo, trade, revisionTarget, pending, error, saved, evaluation, hasNextMissing, onChange, onSubmit, onCancel, onViewAnalysis, onNextMissing }: {
+export function PlanForm({ draft, isKo, trade, revisionTarget, pending, error, saved, evaluation, hasNextMissing, entries = [], onChange, onSubmit, onCancel, onViewAnalysis, onNextMissing }: {
   draft: PlanDraft;
   isKo: boolean;
   trade?: JournalEntry;
@@ -179,49 +215,57 @@ export function PlanForm({ draft, isKo, trade, revisionTarget, pending, error, s
   saved: boolean;
   evaluation?: PlanEvaluation;
   hasNextMissing: boolean;
+  entries?: JournalEntry[];
   onChange: (draft: PlanDraft) => void;
   onSubmit: () => void;
   onCancel: () => void;
   onViewAnalysis: () => void;
   onNextMissing: () => void;
 }) {
-  const inputClass = 'mt-1 h-9 w-full border border-dark-700 bg-dark-950 px-2.5 text-xs text-dark-100 outline-none focus:border-primary-400';
+  const inputClass = 'mt-1 h-10 w-full border border-dark-700 bg-dark-950 px-3 text-xs text-dark-100 outline-none transition-colors focus:border-primary-400';
   const retrospective = Boolean(trade);
-  const content = <section className="border border-primary-400/30 bg-primary-500/5 p-5">
-    <div className="flex items-start justify-between">
-      <SectionHeading
-        title={revisionTarget ? (isKo ? `계획 #${revisionTarget.id} 수정 이력 추가` : 'Add plan revision') : retrospective ? (isKo ? '과거 거래의 당시 계획 입력' : 'Enter the plan for this historical trade') : (isKo ? '사전 계획 기록' : 'Record a pre-trade plan')}
-        description={retrospective ? (isKo ? '결과를 보며 계획을 끼워 맞추지 않도록 저장 전에는 실제 청산과 손익을 표시하지 않습니다.' : 'Actual exit and result stay hidden until the plan is saved.') : (isKo ? '서버 수신 시각이 실제 최초 진입보다 빠를 때만 사전 기록으로 검증됩니다.' : 'Verified only when server receipt precedes the first actual entry.')}
-      />
-      <button type="button" onClick={onCancel} className="text-xs text-dark-400 hover:text-white">{isKo ? '닫기' : 'Close'}</button>
-    </div>
-    {trade && <div className="mt-4 grid grid-cols-1 gap-2 border-y border-dark-700 py-3 text-xs sm:grid-cols-[1fr,auto,auto]"><strong className="text-white">{trade.symbol} · {trade.direction?.toUpperCase()}</strong><span className="text-dark-400">{dateLabel(trade.entry_datetime, isKo)}</span><span className="font-mono text-dark-300">{isKo ? '실제 진입가' : 'Actual entry'} {price(trade.entry_price)}</span><span className="rounded-sm border border-amber-300/30 px-2 py-1 text-[10px] text-amber-200 sm:col-span-3">{isKo ? '회고 입력 · 과거 거래에 대해 지금 입력한 계획입니다.' : 'Retrospective · This plan is entered after the historical trade.'}</span></div>}
-    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
+  const [activeTab, setActiveTab] = useState<'comparison' | 'analysis'>('comparison');
+  const planFields = <>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       {!trade && !revisionTarget && <>
-        <label className="text-[10px] text-dark-500">{isKo ? '거래소' : 'Exchange'}<select value={draft.exchange} onChange={(event) => onChange({ ...draft, exchange: event.target.value as PlanDraft['exchange'] })} className={inputClass}><option value="deepcoin">Deepcoin</option><option value="binance">Binance</option></select></label>
-        <label className="col-span-2 text-[10px] text-dark-500">Symbol<input value={draft.symbol} onChange={(event) => onChange({ ...draft, symbol: event.target.value })} className={inputClass} /></label>
+        <label className="text-[11px] text-dark-400">{isKo ? '거래소' : 'Exchange'}<select value={draft.exchange} onChange={(event) => onChange({ ...draft, exchange: event.target.value as PlanDraft['exchange'] })} className={inputClass}><option value="deepcoin">Deepcoin</option><option value="binance">Binance</option></select></label>
+        <label className="text-[11px] text-dark-400">Symbol<input value={draft.symbol} onChange={(event) => onChange({ ...draft, symbol: event.target.value })} className={inputClass} /></label>
         <label className="text-[10px] text-dark-500">{isKo ? '방향' : 'Side'}<select value={draft.side} onChange={(event) => onChange({ ...draft, side: event.target.value as PlanSide })} className={inputClass}><option value="Long">LONG</option><option value="Short">SHORT</option></select></label>
       </>}
       {!retrospective && <>
-        <div className="col-span-2 text-[10px] text-dark-500"><div>{isKo ? '진입 방식' : 'Entry mode'}</div><div className="mt-1 grid h-9 grid-cols-2 border border-dark-700 p-0.5">{(['exact', 'range'] as const).map((mode) => <button key={mode} type="button" onClick={() => onChange({ ...draft, entryMode: mode })} className={`text-xs ${draft.entryMode === mode ? 'bg-primary-500/20 text-primary-200' : 'text-dark-400'}`}>{mode === 'exact' ? (isKo ? '단일 가격' : 'Exact') : (isKo ? '가격 범위' : 'Range')}</button>)}</div></div>
+        <div className="text-[11px] text-dark-400"><div>{isKo ? '진입 방식' : 'Entry mode'}</div><div className="mt-1 grid h-10 grid-cols-2 border border-dark-700 p-0.5">{(['exact', 'range'] as const).map((mode) => <button key={mode} type="button" onClick={() => onChange({ ...draft, entryMode: mode })} className={`text-xs ${draft.entryMode === mode ? 'bg-primary-500/20 text-primary-200' : 'text-dark-400'}`}>{mode === 'exact' ? (isKo ? '단일 가격' : 'Exact') : (isKo ? '가격 범위' : 'Range')}</button>)}</div></div>
         {draft.entryMode === 'exact'
-          ? <label className="col-span-2 text-[10px] text-dark-500">Plan Entry<input inputMode="decimal" value={draft.entryPrice} onChange={(event) => onChange({ ...draft, entryPrice: event.target.value })} className={`${inputClass} font-mono`} /></label>
+          ? <label className="text-[11px] text-dark-400">Plan Entry<input inputMode="decimal" value={draft.entryPrice} onChange={(event) => onChange({ ...draft, entryPrice: event.target.value })} className={`${inputClass} font-mono`} /></label>
           : <><label className="text-[10px] text-dark-500">Entry min<input inputMode="decimal" value={draft.entryMin} onChange={(event) => onChange({ ...draft, entryMin: event.target.value })} className={`${inputClass} font-mono`} /></label><label className="text-[10px] text-dark-500">Entry max<input inputMode="decimal" value={draft.entryMax} onChange={(event) => onChange({ ...draft, entryMax: event.target.value })} className={`${inputClass} font-mono`} /></label></>}
       </>}
-      <label className="col-span-2 text-[10px] text-dark-500">Stop Loss<input inputMode="decimal" value={draft.stopLoss} onChange={(event) => onChange({ ...draft, stopLoss: event.target.value })} className={`${inputClass} font-mono`} /></label>
-      <label className="col-span-2 text-[10px] text-dark-500">Take Profit<input inputMode="decimal" value={draft.takeProfit} onChange={(event) => onChange({ ...draft, takeProfit: event.target.value })} className={`${inputClass} font-mono`} /></label>
-      <label className="col-span-2 text-[10px] text-dark-500">{isKo ? '최대 보유시간(선택)' : 'Maximum hold hours'}<input inputMode="decimal" value={draft.maxHoldHours} onChange={(event) => onChange({ ...draft, maxHoldHours: event.target.value })} className={`${inputClass} font-mono`} /></label>
-      <label className="col-span-2 text-[10px] text-dark-500">Setup<input value={draft.setup} onChange={(event) => onChange({ ...draft, setup: event.target.value })} className={inputClass} /></label>
-      <label className="col-span-3 text-[10px] text-dark-500">{isKo ? '진입 근거' : 'Entry rationale'}<textarea value={draft.entryNote} onChange={(event) => onChange({ ...draft, entryNote: event.target.value })} className="mt-1 h-20 w-full border border-dark-700 bg-dark-950 p-2 text-xs" /></label>
-      <label className="col-span-3 text-[10px] text-dark-500">{isKo ? '계획 청산 조건' : 'Planned exit condition'}<textarea value={draft.exitNote} onChange={(event) => onChange({ ...draft, exitNote: event.target.value })} className="mt-1 h-20 w-full border border-dark-700 bg-dark-950 p-2 text-xs" /></label>
-      <label className="col-span-2 text-[10px] text-dark-500 lg:col-span-6">Memo ({isKo ? '선택' : 'optional'})<textarea value={draft.memo} onChange={(event) => onChange({ ...draft, memo: event.target.value })} className="mt-1 h-20 w-full border border-dark-700 bg-dark-950 p-2 text-xs" /></label>
+      <label className="text-[11px] text-dark-400">Stop Loss<input inputMode="decimal" value={draft.stopLoss} onChange={(event) => onChange({ ...draft, stopLoss: event.target.value })} className={`${inputClass} font-mono`} /></label>
+      <label className="text-[11px] text-dark-400">{draft.takeProfit2 ? (isKo ? 'TP1 · 50%' : 'TP1 · 50%') : (isKo ? 'TP1 · 100%' : 'TP1 · 100%')}<input inputMode="decimal" value={draft.takeProfit} onChange={(event) => onChange({ ...draft, takeProfit: event.target.value })} className={`${inputClass} font-mono`} /></label>
+      <label className="text-[11px] text-dark-400">{isKo ? 'TP2 · 잔여 50% (선택)' : 'TP2 · remaining 50% (optional)'}<input inputMode="decimal" value={draft.takeProfit2} onChange={(event) => onChange({ ...draft, takeProfit2: event.target.value })} className={`${inputClass} font-mono`} /><span className="mt-1 block text-[10px] leading-4 text-dark-500">{isKo ? 'TP2를 입력하면 TP1 50% + TP2 50% 고정 규칙이 적용됩니다.' : 'Entering TP2 activates the fixed TP1 50% + TP2 50% rule.'}</span></label>
     </div>
-    {retrospective && <div className="mt-3 text-[10px] text-amber-200">{isKo ? '회고 입력은 기억 편향 또는 사후 편향을 포함할 수 있으며 사전 기록으로 표시되지 않습니다.' : 'Retrospective plans may contain hindsight bias and are never labelled pre-trade.'}</div>}
-    {error && <div className="mt-3 text-xs text-bear">{error}</div>}
-    {saved && retrospective ? <div className="mt-5 border border-bull/30 bg-bull/5 p-4"><b className="text-sm text-white">{isKo ? '회고 계획이 저장되었습니다.' : 'Retrospective plan saved.'}</b><div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-4"><span>{isKo ? '실제' : 'Actual'} <strong className="font-mono text-white">{signed(evaluation?.actual_r, 2, 'R')}</strong></span><span>{isKo ? '계획' : 'Plan'} <strong className="font-mono text-white">{signed(evaluation?.planned_result_r, 2, 'R')}</strong></span><span>{isKo ? '차이' : 'Delta'} <strong className="font-mono text-white">{signed(evaluation?.execution_delta_r, 2, 'R')}</strong></span><span>{isKo ? '실행' : 'Execution'} <strong className="text-white">{evaluation ? behaviorLabel(evaluation.primary_execution_category || '', isKo) : (isKo ? '공식 결과 계산 중' : 'Calculating')}</strong></span></div>{!hasNextMissing && <p className="mt-4 text-xs text-bull">{isKo ? '현재 필터 범위의 계획 미입력 거래를 모두 입력했습니다.' : 'All trades without plans in the current filter have been completed.'}</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={onViewAnalysis} className="btn-primary px-3 py-2 text-xs">{isKo ? '상세 분석 보기' : 'View analysis'}</button><button type="button" disabled={!hasNextMissing} onClick={onNextMissing} className="border border-dark-700 px-3 py-2 text-xs text-dark-200 disabled:cursor-not-allowed disabled:opacity-40">{isKo ? '다음 미입력 거래' : 'Next trade without plan'}</button>{!hasNextMissing && <button type="button" onClick={onCancel} className="border border-dark-700 px-3 py-2 text-xs text-dark-200">{isKo ? '목록으로 돌아가기' : 'Back to list'}</button>}</div></div> : <button type="button" disabled={pending} onClick={onSubmit} className="btn-primary mt-4 px-4 py-2 text-xs disabled:opacity-50">{pending ? (isKo ? '저장 중' : 'Saving') : (isKo ? '계획 저장' : 'Save plan')}</button>}
+    <TargetRiskRewardPreview draft={draft} trade={trade} isKo={isKo} />
+    <label className="mt-4 block max-w-sm text-[11px] text-dark-400">{isKo ? '최대 보유시간(선택)' : 'Maximum hold hours'}<input inputMode="decimal" value={draft.maxHoldHours} onChange={(event) => onChange({ ...draft, maxHoldHours: event.target.value })} className={`${inputClass} font-mono`} /></label>
+    <details className="mt-5 border-t border-dark-800 pt-4"><summary className="cursor-pointer text-xs text-dark-300">{isKo ? '추가 계획 메모' : 'Additional plan notes'}</summary><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-[11px] text-dark-400">{isKo ? '진입 근거' : 'Entry rationale'}<textarea value={draft.entryNote} onChange={(event) => onChange({ ...draft, entryNote: event.target.value })} className="mt-1 h-20 w-full border border-dark-700 bg-dark-950 p-3 text-xs" /></label><label className="text-[11px] text-dark-400">{isKo ? '계획 청산 조건' : 'Planned exit condition'}<textarea value={draft.exitNote} onChange={(event) => onChange({ ...draft, exitNote: event.target.value })} className="mt-1 h-20 w-full border border-dark-700 bg-dark-950 p-3 text-xs" /></label></div></details>
+    <label className="mt-5 block text-[11px] text-dark-400">Memo ({isKo ? '선택' : 'optional'})<textarea value={draft.memo} onChange={(event) => onChange({ ...draft, memo: event.target.value })} className="mt-1 h-24 w-full border border-dark-700 bg-dark-950 p-3 text-xs" /></label>
+  </>;
+  const content = <section className="min-h-full bg-dark-950">
+    <header className="sticky top-0 z-10 border-b border-dark-700 bg-dark-950/95 px-5 py-5 backdrop-blur sm:px-7">
+      <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">{revisionTarget ? (isKo ? `계획 #${revisionTarget.id} 수정 이력 추가` : 'Add plan revision') : retrospective ? (isKo ? '과거 거래의 당시 계획 입력' : 'Enter the historical trade plan') : (isKo ? '사전 계획 기록' : 'Record a pre-trade plan')}</h2>{trade && <p className="mt-2 text-xs text-dark-300"><b className="text-white">{trade.symbol} · {trade.direction?.toUpperCase()}</b><span className="mx-2 text-dark-700">|</span>{dateLabel(trade.entry_datetime, isKo)}<span className="mx-2 text-dark-700">|</span>{isKo ? '실제 진입' : 'Actual entry'} <b className="font-mono text-white">{price(trade.entry_price)}</b>{saved && <><span className="mx-2 text-dark-700">|</span>{isKo ? '실제 청산' : 'Actual exit'} <b className="font-mono text-white">{price(trade.exit_price)}</b></>}</p>}</div><button type="button" onClick={onCancel} className="border border-dark-700 px-3 py-2 text-xs text-dark-300 hover:text-white">{isKo ? '닫기' : 'Close'}</button></div>
+      {retrospective && <div className="mt-5 flex gap-6"><button type="button" onClick={() => setActiveTab('comparison')} className={`border-b-2 pb-3 text-xs ${activeTab === 'comparison' ? 'border-primary-400 text-primary-200' : 'border-transparent text-dark-400'}`}>{isKo ? '계획 비교' : 'Plan comparison'}</button><button type="button" onClick={() => setActiveTab('analysis')} className={`border-b-2 pb-3 text-xs ${activeTab === 'analysis' ? 'border-primary-400 text-primary-200' : 'border-transparent text-dark-400'}`}>{isKo ? '거래 분석' : 'Trade analysis'}</button></div>}
+    </header>
+    <div className="p-5 sm:p-7">{retrospective && activeTab === 'analysis' ? <TradeAnalysisSummary entry={trade} evaluation={evaluation} entries={entries} isKo={isKo} /> : <>
+      {retrospective && <div className="mb-5 border border-amber-300/25 bg-amber-300/5 px-4 py-3 text-[11px] leading-5 text-amber-200">{saved ? (isKo ? '저장된 회고 계획과 실제 결과를 비교합니다.' : 'Comparing the saved retrospective plan with the actual result.') : (isKo ? '회고 입력입니다. 계획을 저장하기 전에는 실제 청산가와 손익을 숨깁니다.' : 'Retrospective input. Actual exit and result remain hidden until save.')}</div>}
+      {retrospective && !saved ? <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="border-r-0 border-dark-700 lg:border-r lg:pr-6"><h3 className="text-sm font-semibold text-white">{isKo ? '실제 거래 기준' : 'Actual trade reference'}</h3><div className="mt-4 space-y-3"><Kpi label={isKo ? '실제 진입가' : 'Actual entry'} value={price(trade?.entry_price)} /><Kpi label={isKo ? '실제 청산 결과' : 'Actual exit result'} value={isKo ? '계획 저장 후 표시' : 'Shown after save'} detail={isKo ? '사후 편향을 줄이기 위해 숨김' : 'Hidden to reduce hindsight bias'} /></div></div>
+        <div><h3 className="text-sm font-semibold text-white">{isKo ? '당시 계획 입력' : 'Enter the intended plan'}</h3><p className="mt-1 text-xs text-dark-500">{isKo ? '손절·목표가·최대 보유 기준을 입력하세요.' : 'Enter stop, targets, and maximum hold.'}</p><div className="mt-5">{planFields}</div>{error && <div className="mt-3 text-xs text-bear">{error}</div>}<button type="button" disabled={pending} onClick={onSubmit} className="btn-primary mt-5 px-5 py-2.5 text-xs disabled:opacity-50">{pending ? (isKo ? '저장 중' : 'Saving') : (isKo ? '계획 저장' : 'Save plan')}</button></div>
+      </div> : <>
+        {planFields}
+        {error && <div className="mt-3 text-xs text-bear">{error}</div>}
+        {saved && retrospective ? <div className="mt-6"><h3 className="mb-3 text-sm font-semibold text-white">{isKo ? '회고 계획이 저장되었습니다.' : 'Retrospective plan saved.'}</h3><div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Kpi label={isKo ? '실제 결과' : 'Actual'} value={signed(evaluation?.actual_r, 2, 'R')} tone={(evaluation?.actual_r || 0) >= 0 ? 'positive' : 'negative'} /><Kpi label={isKo ? '계획대로 실행' : 'Plan result'} value={signed(evaluation?.planned_result_r, 2, 'R')} tone={(evaluation?.planned_result_r || 0) >= 0 ? 'positive' : 'negative'} /><Kpi label={isKo ? '실행 차이' : 'Execution delta'} value={signed(evaluation?.execution_delta_r, 2, 'R')} tone={(evaluation?.execution_delta_r || 0) >= 0 ? 'positive' : 'negative'} /></div><div className="mt-4 border-l-2 border-primary-400 bg-primary-500/5 px-4 py-3 text-xs text-dark-200">{evaluation ? `${behaviorLabel(evaluation.primary_execution_category || '', isKo)} · ${isKo ? '실제와 계획의 차이를 과거 가격 경로로 비교한 결과입니다.' : 'Historical path comparison between actual and planned execution.'}` : (isKo ? '공식 비교 결과를 계산하고 있습니다.' : 'Calculating official comparison.')}</div>{!hasNextMissing && <p className="mt-4 text-xs text-bull">{isKo ? '현재 필터 범위의 계획 미입력 거래를 모두 입력했습니다.' : 'All trades without plans in this filter are complete.'}</p>}<div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={onViewAnalysis} className="btn-primary px-4 py-2 text-xs">{isKo ? '상세 분석 보기' : 'View analysis'}</button><button type="button" disabled={!hasNextMissing} onClick={onNextMissing} className="border border-dark-700 px-4 py-2 text-xs text-dark-200 disabled:opacity-40">{isKo ? '다음 미입력 거래' : 'Next missing trade'}</button>{!hasNextMissing && <button type="button" onClick={onCancel} className="border border-dark-700 px-4 py-2 text-xs text-dark-200">{isKo ? '목록으로 돌아가기' : 'Back to list'}</button>}</div></div> : <button type="button" disabled={pending} onClick={onSubmit} className="btn-primary mt-5 px-5 py-2.5 text-xs disabled:opacity-50">{pending ? (isKo ? '저장 중' : 'Saving') : (isKo ? '계획 저장' : 'Save plan')}</button>}
+      </>}
+    </>}</div>
   </section>;
   if (!retrospective) return content;
-  return <div className="fixed inset-0 z-[80] bg-black/60" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><aside className="ml-auto h-full w-full max-w-[620px] overflow-y-auto border-l border-dark-700 bg-dark-950 p-4 sm:p-6">{content}</aside></div>;
+  return <div className="fixed inset-0 z-[80] bg-black/65" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><aside className="ml-auto h-full w-full max-w-[980px] overflow-y-auto border-l border-dark-700 bg-dark-950 shadow-2xl">{content}</aside></div>;
 }
 
 function EvidenceDrawer({ title, evaluations, entries, isKo, onClose, onSelect }: {
@@ -259,7 +303,7 @@ function EvaluationModal({ evaluation, entry, entries, isKo, onClose }: {
   </section></div>{reportOpen && entry && <TradeReportModal entry={entry} allEntries={entries} isKo={isKo} onClose={() => setReportOpen(false)} />}</>;
 }
 
-function PlanDetailsDrawer({ plan, entry, evaluation, analysisRequested, analysisLoading, isKo, onClose, onRevise, onLoadAnalysis }: {
+export function LegacyPlanDetailsDrawer({ plan, entry, evaluation, analysisRequested, analysisLoading, isKo, onClose, onRevise, onLoadAnalysis }: {
   plan: TradingPlan;
   entry?: JournalEntry;
   evaluation?: PlanEvaluation;
@@ -275,7 +319,7 @@ function PlanDetailsDrawer({ plan, entry, evaluation, analysisRequested, analysi
     <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">{isKo ? '입력한 거래 계획' : 'Recorded trade plan'}</h2><p className="mt-1 text-xs text-dark-500">{entry ? `${dateLabel(entry.entry_datetime, isKo)} · ${entry.direction?.toUpperCase()} · ${entry.symbol}` : `${plan.symbol} · ${plan.side.toUpperCase()}`}</p></div><button type="button" onClick={onClose}><X className="h-5 w-5" /></button></div>
     <div className="mt-5 flex flex-wrap gap-2"><span className={`border px-2 py-1 text-[10px] ${plan.source === 'VERIFIED_PRETRADE' ? 'border-bull/40 text-bull' : 'border-amber-300/40 text-amber-200'}`}>{plan.source === 'VERIFIED_PRETRADE' ? (isKo ? '사전 기록 확인됨' : 'Verified pre-trade') : (isKo ? '회고 입력' : 'Retrospective')}</span><span className="border border-dark-700 px-2 py-1 text-[10px] text-dark-400">v{revision.version}</span></div>
     <p className="mt-3 text-xs leading-5 text-dark-400">{plan.source === 'VERIFIED_PRETRADE' ? (isKo ? '실제 진입 전에 서버에 저장된 계획입니다.' : 'This plan was server-recorded before the actual entry.') : (isKo ? '과거 거래에 대해 나중에 입력한 계획입니다.' : 'This plan was entered after the historical trade.')}</p>
-    <div className="mt-5 grid grid-cols-2 gap-3"><Kpi label="Stop Loss" value={price(revision.stop_loss)} /><Kpi label="Take Profit" value={price(revision.take_profit)} /><Kpi label={isKo ? '최대 보유시간' : 'Maximum hold'} value={revision.max_hold_hours == null ? '-' : `${revision.max_hold_hours}h`} /><Kpi label="Setup" value={revision.setup || '-'} /></div>
+    <div className="mt-5 grid grid-cols-2 gap-3"><Kpi label="Stop Loss" value={price(revision.stop_loss)} /><Kpi label={isKo ? '1차 목표가' : 'TP1'} value={price(revision.take_profit)} /><Kpi label={isKo ? '2차 목표가' : 'TP2'} value={price(revision.take_profit_2)} /><Kpi label={isKo ? '최대 보유시간' : 'Maximum hold'} value={revision.max_hold_hours == null ? '-' : `${revision.max_hold_hours}h`} /></div>
     {(revision.entry_note || revision.exit_note || revision.memo) && <div className="mt-5 space-y-3 text-xs"><div className="border border-dark-700 p-3"><span className="block text-dark-500">{isKo ? '진입 근거' : 'Entry rationale'}</span><p className="mt-1 whitespace-pre-wrap text-dark-200">{revision.entry_note || '-'}</p></div><div className="border border-dark-700 p-3"><span className="block text-dark-500">{isKo ? '계획 청산 조건' : 'Planned exit condition'}</span><p className="mt-1 whitespace-pre-wrap text-dark-200">{revision.exit_note || '-'}</p></div>{revision.memo && <div className="border border-dark-700 p-3"><span className="block text-dark-500">Memo</span><p className="mt-1 whitespace-pre-wrap text-dark-200">{revision.memo}</p></div>}</div>}
     <div className="mt-5 border border-primary-400/30 bg-primary-500/5 p-4"><b className="text-sm text-white">{isKo ? 'Actual vs Plan' : 'Actual vs plan'}</b>{evaluation ? <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><span>{isKo ? '실제' : 'Actual'} <strong className="block font-mono text-white">{signed(evaluation.actual_r, 2, 'R')}</strong></span><span>{isKo ? '계획' : 'Plan'} <strong className="block font-mono text-white">{signed(evaluation.planned_result_r, 2, 'R')}</strong></span><span>{isKo ? '차이' : 'Delta'} <strong className="block font-mono text-white">{signed(evaluation.execution_delta_r, 2, 'R')}</strong></span></div> : <div><p className="mt-2 text-xs text-dark-400">{analysisRequested ? (analysisLoading ? (isKo ? '공식 비교 결과를 계산하고 있습니다.' : 'Calculating the official comparison.') : (isKo ? '비교 가능한 가격 경로가 없습니다.' : 'No comparable price path is available.')) : (isKo ? '공식 비교는 요청할 때만 계산합니다.' : 'The official comparison is calculated on request.')}</p>{!analysisRequested && <button type="button" onClick={onLoadAnalysis} className="mt-3 border border-primary-400/40 px-3 py-2 text-xs text-primary-200">{isKo ? '공식 분석 불러오기' : 'Load official analysis'}</button>}</div>}</div>
     <button type="button" onClick={onRevise} className="mt-5 border border-dark-700 px-3 py-2 text-xs text-dark-200">{isKo ? '수정 이력 추가' : 'Add revision'}</button>
@@ -418,6 +462,9 @@ export default function PlanLabPage() {
     { label: isKo ? '경계·경로 불확실' : 'Not evaluable', value: data.coverage.not_evaluable },
     { label: isKo ? '사전 기록' : 'Verified', value: data.coverage.verified_pretrade },
     { label: isKo ? '회고 입력' : 'Retrospective', value: data.coverage.retrospective },
+    { label: isKo ? 'TP1 단일 계획' : 'Single-TP plans', value: data.coverage.legacy_single_tp || 0 },
+    { label: isKo ? 'TP1·TP2 분할 계획' : 'Split-TP plans', value: data.coverage.split_tp || 0 },
+    { label: isKo ? '분할 계획 청산 후 분석 제외' : 'Split post-exit excluded', value: data.coverage.split_post_exit_unsupported || 0 },
   ] : [];
   const evidenceEvaluations = evidence ? evaluations.filter((item) => evidence.ids.includes(item.journal_id)) : [];
   const selectedTradeEvaluation = selectedTrade?.id == null ? undefined : evaluations.find((item) => item.journal_id === selectedTrade.id);
@@ -430,9 +477,9 @@ export default function PlanLabPage() {
 
     <section className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Kpi label={isKo ? '종료 거래' : 'Closed trades'} value={String(closedInPeriod.length)} detail={isKo ? '현재 목록 범위' : 'Current list scope'} /><Kpi label={isKo ? '계획 입력 완료' : 'Plans recorded'} value={String(closedInPeriod.length - missingPlans.length)} detail={isKo ? '현재 목록 범위' : 'Current list scope'} tone="positive" /><Kpi label={isKo ? '계획 미입력' : 'Plans missing'} value={String(missingPlans.length)} detail={isKo ? '현재 목록 범위' : 'Current list scope'} tone="primary" /></section>
 
-    <section className="border border-dark-700 bg-dark-900/25 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><SectionHeading title={isKo ? '종료 거래에서 계획 입력' : 'Enter plans from closed trades'} description={isKo ? '계획이 없는 거래는 분석 불가 상태일 뿐, 실패나 규칙 위반으로 처리하지 않습니다.' : 'A missing plan only means the trade is not yet comparable; it is not a failure or rule violation.'} /></div><button type="button" onClick={() => setShowPretrade(true)} className="self-start border border-dark-700 px-3 py-2 text-xs text-dark-300">{isKo ? '사전 계획 기록' : 'Record pre-trade'}</button></div><div className="mt-4 flex flex-wrap gap-2">{([{ id: 'ALL', ko: '전체', en: 'All' }, { id: 'NO_PLAN', ko: '계획 미입력', en: 'Missing plans' }, { id: 'RECORDED', ko: '입력 완료', en: 'Recorded' }] as const).map((item) => <button key={item.id} type="button" onClick={() => setPlanStatus(item.id)} className={`border px-3 py-2 text-xs ${planStatus === item.id ? 'border-primary-400 bg-primary-500/10 text-primary-200' : 'border-dark-700 text-dark-400 hover:text-white'}`}>{isKo ? item.ko : item.en}</button>)}</div><div className="mt-4 overflow-x-auto"><table className="min-w-[780px] w-full text-left text-xs"><thead className="border-y border-dark-700 text-[10px] text-dark-500"><tr><th className="px-3 py-3 font-medium">{isKo ? '날짜' : 'Date'}</th><th className="px-3 py-3 font-medium">{isKo ? '방향' : 'Side'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 진입가' : 'Actual entry'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 결과' : 'Actual result'}</th><th className="px-3 py-3 font-medium">{isKo ? 'Plan 상태' : 'Plan status'}</th><th className="px-3 py-3 text-right font-medium">{isKo ? '액션' : 'Action'}</th></tr></thead><tbody>{listedTrades.map((entry) => { const plan = entry.id == null ? undefined : planByJournalId.get(entry.id); return <tr key={entry.id} className="border-b border-dark-800/80"><td className="px-3 py-3 text-dark-300">{dateLabel(entry.entry_datetime, isKo)}</td><td className="px-3 py-3"><b className={entry.direction === 'Long' ? 'text-bull' : 'text-bear'}>{entry.direction?.toUpperCase() || '-'}</b></td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.entry_price)}</td><td className={`px-3 py-3 font-mono ${(entry.r_multiple ?? entry.pnl_pct ?? entry.realized_pnl ?? 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{actualResultLabel(entry)}</td><td className="px-3 py-3">{plan ? <span className={`border px-2 py-1 text-[10px] ${plan.source === 'VERIFIED_PRETRADE' ? 'border-bull/40 text-bull' : 'border-amber-300/40 text-amber-200'}`}>{sourceLabel(plan.source, isKo)}</span> : <span className="border border-dark-700 px-2 py-1 text-[10px] text-dark-400">{isKo ? '미입력' : 'No plan'}</span>}</td><td className="px-3 py-3 text-right">{plan ? <button type="button" onClick={() => setViewPlan(plan)} className="border border-dark-700 px-3 py-1.5 text-xs text-dark-200 hover:border-primary-400 hover:text-white">{isKo ? '계획 보기' : 'View plan'}</button> : <button type="button" onClick={() => openHistoricalTrade(entry)} className="btn-primary px-3 py-1.5 text-xs">{isKo ? '계획 입력' : 'Enter plan'}</button>}</td></tr>; })}</tbody></table></div>{!listedTrades.length && <p className="py-10 text-center text-xs text-dark-500">{isKo ? '현재 조건에 맞는 종료 거래가 없습니다.' : 'No closed trades match these filters.'}</p>}</section>
+    <section className="border border-dark-700 bg-dark-900/25 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><SectionHeading title={isKo ? '종료 거래에서 계획 입력' : 'Enter plans from closed trades'} description={isKo ? '계획이 없는 거래는 분석 불가 상태일 뿐, 실패나 규칙 위반으로 처리하지 않습니다.' : 'A missing plan only means the trade is not yet comparable; it is not a failure or rule violation.'} /></div><button type="button" onClick={() => setShowPretrade(true)} className="self-start border border-dark-700 px-3 py-2 text-xs text-dark-300">{isKo ? '사전 계획 기록' : 'Record pre-trade'}</button></div><div className="mt-4 flex flex-wrap gap-2">{([{ id: 'ALL', ko: '전체', en: 'All' }, { id: 'NO_PLAN', ko: '계획 미입력', en: 'Missing plans' }, { id: 'RECORDED', ko: '입력 완료', en: 'Recorded' }] as const).map((item) => <button key={item.id} type="button" onClick={() => setPlanStatus(item.id)} className={`border px-3 py-2 text-xs ${planStatus === item.id ? 'border-primary-400 bg-primary-500/10 text-primary-200' : 'border-dark-700 text-dark-400 hover:text-white'}`}>{isKo ? item.ko : item.en}</button>)}</div><div className="mt-4 overflow-x-auto"><table className="min-w-[900px] w-full text-left text-xs"><thead className="border-y border-dark-700 text-[10px] text-dark-500"><tr><th className="px-3 py-3 font-medium">{isKo ? '날짜' : 'Date'}</th><th className="px-3 py-3 font-medium">{isKo ? '코인' : 'Symbol'}</th><th className="px-3 py-3 font-medium">{isKo ? '방향' : 'Side'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 진입가' : 'Actual entry'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 청산가' : 'Actual exit'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 결과' : 'Actual result'}</th><th className="px-3 py-3 font-medium">{isKo ? 'Plan 상태' : 'Plan status'}</th><th className="px-3 py-3 text-right font-medium">{isKo ? '액션' : 'Action'}</th></tr></thead><tbody>{listedTrades.map((entry) => { const plan = entry.id == null ? undefined : planByJournalId.get(entry.id); return <tr key={entry.id} className="border-b border-dark-800/80"><td className="px-3 py-3 text-dark-300">{dateLabel(entry.entry_datetime, isKo)}</td><td className="px-3 py-3 font-mono text-dark-200">{entry.symbol || '-'}</td><td className="px-3 py-3"><b className={entry.direction === 'Long' ? 'text-bull' : 'text-bear'}>{entry.direction?.toUpperCase() || '-'}</b></td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.entry_price)}</td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.exit_price)}</td><td className={`px-3 py-3 font-mono ${(entry.r_multiple ?? entry.pnl_pct ?? entry.realized_pnl ?? 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{actualResultLabel(entry)}</td><td className="px-3 py-3">{plan ? <span className={`border px-2 py-1 text-[10px] ${plan.source === 'VERIFIED_PRETRADE' ? 'border-bull/40 text-bull' : 'border-amber-300/40 text-amber-200'}`}>{sourceLabel(plan.source, isKo)}</span> : <span className="border border-dark-700 px-2 py-1 text-[10px] text-dark-400">{isKo ? '미입력' : 'No plan'}</span>}</td><td className="px-3 py-3 text-right">{plan ? <button type="button" onClick={() => setViewPlan(plan)} className="border border-dark-700 px-3 py-1.5 text-xs text-dark-200 hover:border-primary-400 hover:text-white">{isKo ? '열기' : 'Open'}</button> : <button type="button" onClick={() => openHistoricalTrade(entry)} className="btn-primary px-3 py-1.5 text-xs">{isKo ? '열기' : 'Open'}</button>}</td></tr>; })}</tbody></table></div>{!listedTrades.length && <p className="py-10 text-center text-xs text-dark-500">{isKo ? '현재 조건에 맞는 종료 거래가 없습니다.' : 'No closed trades match these filters.'}</p>}</section>
 
-    {(selectedTrade || revisionTarget || showPretrade) && <PlanForm draft={draft} isKo={isKo} trade={selectedTrade} revisionTarget={revisionTarget} pending={saveMutation.isPending} error={formError} saved={selectedTrade?.id != null && savedTradeId === selectedTrade.id} evaluation={selectedTradeEvaluation} hasNextMissing={hasNextMissing} onChange={setDraft} onSubmit={() => saveMutation.mutate()} onCancel={() => { setHistoricalTradeId(null); setSavedTradeId(null); setRevisionTarget(undefined); setShowPretrade(false); setDraft(EMPTY_DRAFT); }} onViewAnalysis={() => { setHistoricalTradeId(null); setSavedTradeId(null); requestAnalysis(); }} onNextMissing={() => openNextMissing(selectedTrade)} />}
+    {(selectedTrade || revisionTarget || showPretrade) && <PlanForm draft={draft} isKo={isKo} trade={selectedTrade} revisionTarget={revisionTarget} pending={saveMutation.isPending} error={formError} saved={selectedTrade?.id != null && savedTradeId === selectedTrade.id} evaluation={selectedTradeEvaluation} hasNextMissing={hasNextMissing} entries={entries} onChange={setDraft} onSubmit={() => saveMutation.mutate()} onCancel={() => { setHistoricalTradeId(null); setSavedTradeId(null); setRevisionTarget(undefined); setShowPretrade(false); setDraft(EMPTY_DRAFT); }} onViewAnalysis={() => { setHistoricalTradeId(null); setSavedTradeId(null); requestAnalysis(); }} onNextMissing={() => openNextMissing(selectedTrade)} />}
 
     {!analysisRequested && <section id="plan-lab-analysis" className="border border-dark-700 bg-dark-900/25 p-5"><SectionHeading title={isKo ? '기존 Plan Lab 분석' : 'Existing Plan Lab analysis'} description={isKo ? '가격 경로·품질·Optimizer 계산은 목록을 보는 동안 실행하지 않습니다. 필요할 때만 공식 분석을 불러옵니다.' : 'Path, quality, and optimizer calculations stay idle while browsing the list and load only on request.'} /><button type="button" onClick={requestAnalysis} className="btn-primary mt-4 px-4 py-2 text-xs">{isKo ? '공식 분석 불러오기' : 'Load official analysis'}</button></section>}
 
@@ -479,6 +526,6 @@ export default function PlanLabPage() {
     {evidence && <EvidenceDrawer title={evidence.title} evaluations={evidenceEvaluations} entries={entries} isKo={isKo} onClose={() => setEvidence(null)} onSelect={(evaluation) => { setEvidence(null); setSelectedEvaluation(evaluation); }} />}
     {selectedEvaluation && <EvaluationModal evaluation={selectedEvaluation} entry={entries.find((entry) => entry.id === selectedEvaluation.journal_id)} entries={entries} isKo={isKo} onClose={() => setSelectedEvaluation(null)} />}
     </>}
-    {viewPlan && <PlanDetailsDrawer plan={viewPlan} entry={entries.find((entry) => entry.id === viewPlan.link?.journal_entry_id)} evaluation={evaluations.find((item) => item.journal_id === viewPlan.link?.journal_entry_id)} analysisRequested={analysisRequested} analysisLoading={analysisQuery.isLoading} isKo={isKo} onClose={() => setViewPlan(null)} onLoadAnalysis={requestAnalysis} onRevise={() => { setViewPlan(null); setRevisionTarget(viewPlan); setDraft(draftFromPlan(viewPlan)); setHistoricalTradeId(null); setSavedTradeId(null); }} />}
+    {viewPlan && <LargePlanDetailsDrawer plan={viewPlan} entry={entries.find((entry) => entry.id === viewPlan.link?.journal_entry_id)} evaluation={evaluations.find((item) => item.journal_id === viewPlan.link?.journal_entry_id)} entries={entries} analysisRequested={analysisRequested} analysisLoading={analysisQuery.isLoading} isKo={isKo} onClose={() => setViewPlan(null)} onLoadAnalysis={requestAnalysis} onRevise={() => { setViewPlan(null); setRevisionTarget(viewPlan); setDraft(draftFromPlan(viewPlan)); setHistoricalTradeId(null); setSavedTradeId(null); }} />}
   </div>;
 }

@@ -20,6 +20,8 @@ ENTRY_MINOR_DEVIATION_R = 0.10
 ENTRY_MAJOR_DEVIATION_R = 0.50
 DEFAULT_POST_EXIT_HORIZON_HOURS = 40.0
 DISCOVERY_RATIO = 0.70
+TP1_EXIT_FRACTION = 0.50
+REMAINING_EXIT_FRACTION = 0.50
 
 
 def _mean(values: Iterable[Optional[float]]) -> Optional[float]:
@@ -46,23 +48,35 @@ def plan_geometry(
     entry = finite_float(entry_override) if entry_override is not None else _entry_reference(revision)
     stop = finite_float(revision.get("stop_loss"))
     target = finite_float(revision.get("take_profit"))
+    target_2 = finite_float(revision.get("take_profit_2"))
     if entry is None or stop is None or target is None:
         return {"valid": False, "status": "INVALID_PLAN", "entry": entry}
     risk = entry - stop if side == "Long" else stop - entry
     reward = target - entry if side == "Long" else entry - target
-    valid = risk > 0 and reward > 0
+    reward_2 = target_2 - entry if side == "Long" and target_2 is not None else entry - target_2 if target_2 is not None else None
+    split_valid = target_2 is None or (reward_2 is not None and reward_2 > reward)
+    valid = risk > 0 and reward > 0 and split_valid
+    planned_total_reward = (
+        TP1_EXIT_FRACTION * reward + REMAINING_EXIT_FRACTION * reward_2
+        if reward_2 is not None else reward
+    )
     return {
         "valid": valid,
         "status": "VALID" if valid else "INVALID_PLAN",
         "entry": entry,
         "stop": stop,
         "target": target,
+        "target_2": target_2,
+        "execution_mode": "SPLIT_TP_50_50" if target_2 is not None else "SINGLE_TP",
         "risk_distance": risk if valid else None,
         "reward_distance": reward if valid else None,
         "risk_pct": risk / entry * 100 if valid else None,
         "reward_pct": reward / entry * 100 if valid else None,
         "planned_rr": reward / risk if valid else None,
-        "break_even_win_rate_pct": 100 / (1 + reward / risk) if valid else None,
+        "planned_rr_2": reward_2 / risk if valid and reward_2 is not None else None,
+        "planned_total_rr": planned_total_reward / risk if valid else None,
+        "planned_total_reward_pct": planned_total_reward / entry * 100 if valid else None,
+        "break_even_win_rate_pct": 100 / (1 + planned_total_reward / risk) if valid else None,
     }
 
 
@@ -109,17 +123,167 @@ def _barrier_result(path: pd.DataFrame, geometry: Dict[str, Any], side: str) -> 
     return {"status": "UNRESOLVED", "planned_r": None, "touch_time": None}
 
 
+def _touch_time(row: Any, fallback: int) -> float:
+    value = finite_float(getattr(row, "close_time", None))
+    return value if value is not None else float(fallback)
+
+
+def _split_leg(
+    leg_type: str,
+    fraction: float,
+    exit_price: float,
+    touch_time: Optional[float],
+    price_r: float,
+) -> Dict[str, Any]:
+    return {
+        "type": leg_type,
+        "fraction": fraction,
+        "exit_price": exit_price,
+        "exit_time": touch_time,
+        "price_r": price_r,
+        "contribution_r": fraction * price_r,
+        "status": "FILLED",
+    }
+
+
+def _split_barrier_result(path: pd.DataFrame, geometry: Dict[str, Any], side: str) -> Dict[str, Any]:
+    """Resolve a fixed TP1 50% / remaining 50% plan without guessing OHLC order."""
+    if not geometry.get("valid") or geometry.get("target_2") is None:
+        return {"status": "INVALID_PLAN", "planned_r": None, "touch_time": None, "legs": []}
+    if path is None or path.empty:
+        return {"status": "NOT_EVALUABLE", "planned_r": None, "touch_time": None, "legs": []}
+
+    stop = float(geometry["stop"])
+    target_1 = float(geometry["target"])
+    target_2 = float(geometry["target_2"])
+    rr_1 = float(geometry["planned_rr"])
+    rr_2 = float(geometry["planned_rr_2"])
+    tp1_leg: Optional[Dict[str, Any]] = None
+
+    for index, row in enumerate(path.itertuples(index=False)):
+        high = finite_float(getattr(row, "high", None))
+        low = finite_float(getattr(row, "low", None))
+        if high is None or low is None:
+            continue
+        if side == "Short":
+            stop_hit = high >= stop
+            tp1_hit = low <= target_1
+            tp2_hit = low <= target_2
+        else:
+            stop_hit = low <= stop
+            tp1_hit = high >= target_1
+            tp2_hit = high >= target_2
+        boundary_uncertain = bool(getattr(row, "boundary_uncertain", False))
+        relevant_hit = stop_hit or (tp2_hit if tp1_leg is not None else tp1_hit)
+        if boundary_uncertain and relevant_hit:
+            return {
+                "status": "NOT_EVALUABLE", "planned_r": None, "touch_time": None,
+                "legs": [tp1_leg] if tp1_leg is not None else [],
+                "tp1_filled": tp1_leg is not None,
+                "ambiguity_reason": "BOUNDARY_PARTIAL_CANDLE",
+            }
+        touch_time = _touch_time(row, index)
+
+        if tp1_leg is None:
+            if stop_hit and tp1_hit:
+                return {
+                    "status": "NOT_EVALUABLE", "planned_r": None, "touch_time": touch_time,
+                    "legs": [], "ambiguity_reason": "TP1_SL_SAME_CANDLE",
+                }
+            if tp2_hit:
+                legs = [
+                    _split_leg("TP1", TP1_EXIT_FRACTION, target_1, touch_time, rr_1),
+                    _split_leg("TP2", REMAINING_EXIT_FRACTION, target_2, touch_time, rr_2),
+                ]
+                return {
+                    "status": "TP1_TP2", "planned_r": sum(item["contribution_r"] for item in legs),
+                    "touch_time": touch_time, "legs": legs, "tp1_filled": True,
+                    "tp2_filled": True, "stop_filled": False, "horizon_filled": False,
+                }
+            if tp1_hit:
+                tp1_leg = _split_leg("TP1", TP1_EXIT_FRACTION, target_1, touch_time, rr_1)
+                continue
+            if stop_hit:
+                leg = _split_leg("SL", 1.0, stop, touch_time, -1.0)
+                return {
+                    "status": "SL_FIRST", "planned_r": -1.0, "touch_time": touch_time,
+                    "legs": [leg], "tp1_filled": False, "tp2_filled": False,
+                    "stop_filled": True, "horizon_filled": False,
+                }
+        else:
+            if stop_hit and tp2_hit:
+                return {
+                    "status": "NOT_EVALUABLE", "planned_r": None, "touch_time": touch_time,
+                    "legs": [tp1_leg], "tp1_filled": True,
+                    "ambiguity_reason": "TP2_SL_SAME_CANDLE_AFTER_TP1",
+                }
+            if tp2_hit:
+                second = _split_leg("TP2", REMAINING_EXIT_FRACTION, target_2, touch_time, rr_2)
+                legs = [tp1_leg, second]
+                return {
+                    "status": "TP1_TP2", "planned_r": sum(item["contribution_r"] for item in legs),
+                    "touch_time": touch_time, "legs": legs, "tp1_filled": True,
+                    "tp2_filled": True, "stop_filled": False, "horizon_filled": False,
+                }
+            if stop_hit:
+                second = _split_leg("SL", REMAINING_EXIT_FRACTION, stop, touch_time, -1.0)
+                legs = [tp1_leg, second]
+                return {
+                    "status": "TP1_SL", "planned_r": sum(item["contribution_r"] for item in legs),
+                    "touch_time": touch_time, "legs": legs, "tp1_filled": True,
+                    "tp2_filled": False, "stop_filled": True, "horizon_filled": False,
+                }
+
+    final_row = path.iloc[-1]
+    horizon_price = finite_float(final_row.get("close"))
+    if bool(final_row.get("boundary_uncertain", False)) or horizon_price is None:
+        return {
+            "status": "NOT_EVALUABLE" if bool(final_row.get("boundary_uncertain", False)) else "UNRESOLVED",
+            "planned_r": None, "touch_time": None,
+            "legs": [tp1_leg] if tp1_leg is not None else [],
+            "tp1_filled": tp1_leg is not None,
+            "ambiguity_reason": "HORIZON_PARTIAL_CANDLE" if bool(final_row.get("boundary_uncertain", False)) else None,
+        }
+    horizon_r = _directional_return(float(geometry["entry"]), horizon_price, side) / float(geometry["risk_pct"])
+    touch_time = finite_float(final_row.get("close_time"))
+    if tp1_leg is None:
+        leg = _split_leg("HORIZON", 1.0, horizon_price, touch_time, horizon_r)
+        return {
+            "status": "HORIZON", "planned_r": horizon_r, "touch_time": touch_time,
+            "legs": [leg], "tp1_filled": False, "tp2_filled": False,
+            "stop_filled": False, "horizon_filled": True,
+        }
+    second = _split_leg("HORIZON", REMAINING_EXIT_FRACTION, horizon_price, touch_time, horizon_r)
+    legs = [tp1_leg, second]
+    return {
+        "status": "TP1_HORIZON", "planned_r": sum(item["contribution_r"] for item in legs),
+        "touch_time": touch_time, "legs": legs, "tp1_filled": True,
+        "tp2_filled": False, "stop_filled": False, "horizon_filled": True,
+    }
+
+
 def _simulation(
     path_item: Optional[Dict[str, Any]], geometry: Dict[str, Any], side: str,
 ) -> Dict[str, Any]:
     if path_item is None or not isinstance(path_item.get("path"), pd.DataFrame):
         return {"status": "NOT_EVALUABLE", "planned_r": None, "touch_time": None}
-    result = _barrier_result(path_item["path"], geometry, side)
+    result = (
+        _split_barrier_result(path_item["path"], geometry, side)
+        if geometry.get("execution_mode") == "SPLIT_TP_50_50"
+        else _barrier_result(path_item["path"], geometry, side)
+    )
     planned_r = result.get("planned_r")
     fee_pct = finite_float(path_item.get("fee_pct")) or 0.0
     risk_pct = finite_float(geometry.get("risk_pct"))
     if planned_r is not None and risk_pct and risk_pct > 0:
-        planned_r -= fee_pct / risk_pct
+        fee_r = fee_pct / risk_pct
+        planned_r -= fee_r
+        legs = result.get("legs") or []
+        if legs:
+            result["legs"] = [
+                {**leg, "contribution_r": float(leg["contribution_r"]) - fee_r * float(leg["fraction"])}
+                for leg in legs
+            ]
     return {**result, "planned_r": planned_r}
 
 
@@ -153,11 +317,11 @@ def _stop_adherence(actual_return_pct: Optional[float], geometry: Dict[str, Any]
     risk_pct = float(geometry["risk_pct"])
     if actual_return_pct < -risk_pct * 1.05:
         return {"score": 0.0, "status": "STOP_OVERRUN"}
-    if simulation["status"] == "SL_FIRST":
+    if simulation.get("stop_filled") or simulation["status"] == "SL_FIRST":
         if actual_return_pct > -risk_pct * 0.95:
             return {"score": 60.0, "status": "DISCRETIONARY_EARLY_STOP"}
         return {"score": 100.0, "status": "PLANNED_STOP"}
-    if simulation["status"] == "TP_FIRST":
+    if simulation.get("tp1_filled") or simulation["status"] == "TP_FIRST":
         return {"score": 100.0, "status": "TP_BEFORE_STOP"}
     return {"score": None, "status": "NOT_TRIGGERED"}
 
@@ -165,12 +329,14 @@ def _stop_adherence(actual_return_pct: Optional[float], geometry: Dict[str, Any]
 def _exit_adherence(actual_return_pct: Optional[float], geometry: Dict[str, Any], simulation: Dict[str, Any]) -> Dict[str, Any]:
     if actual_return_pct is None or not geometry.get("valid"):
         return {"score": None, "status": "NOT_EVALUABLE"}
-    reward_pct = float(geometry["reward_pct"])
+    reward_pct = float(geometry.get("planned_total_reward_pct") or geometry["reward_pct"])
     if actual_return_pct >= reward_pct * 0.95:
         return {"score": 100.0, "status": "PLANNED_TARGET"}
-    if simulation["status"] == "TP_FIRST":
+    if simulation.get("tp2_filled") or simulation["status"] == "TP_FIRST":
         return {"score": 30.0, "status": "TARGET_SHORTFALL"}
-    if simulation["status"] == "UNRESOLVED":
+    if simulation.get("tp1_filled"):
+        return {"score": 60.0, "status": "PARTIAL_TARGET"}
+    if simulation["status"] in {"UNRESOLVED", "HORIZON", "TP1_HORIZON"}:
         return {"score": 60.0, "status": "DISCRETIONARY_EXIT"}
     return {"score": None, "status": "STOP_SCENARIO"}
 
@@ -224,6 +390,10 @@ def _path_after_timestamp(path: pd.DataFrame, boundary_ms: int) -> Optional[pd.D
 def _post_exit_outcome(
     path_item: Optional[Dict[str, Any]], geometry: Dict[str, Any], side: str, exit_time: Any,
 ) -> str:
+    # A post-exit slice cannot establish whether TP1 had filled before the
+    # actual exit. Do not silently evaluate a split plan as a TP1-only plan.
+    if geometry.get("execution_mode") == "SPLIT_TP_50_50":
+        return "NOT_EVALUABLE"
     if path_item is None or not isinstance(path_item.get("path"), pd.DataFrame):
         return "NOT_EVALUABLE"
     path = path_item["path"]
@@ -249,7 +419,7 @@ def _classify_execution(
     if actual_return_pct is None or not geometry.get("valid"):
         return "NOT_EVALUABLE", []
     risk_pct = float(geometry["risk_pct"])
-    reward_pct = float(geometry["reward_pct"])
+    reward_pct = float(geometry.get("planned_total_reward_pct") or geometry["reward_pct"])
     tags: List[str] = []
     if entry_part.get("status") in {"PARTIAL", "VIOLATION"}:
         tags.append("ENTRY_DEVIATION")
@@ -266,14 +436,14 @@ def _classify_execution(
         primary = "DISCRETIONARY_EARLY_STOP"
     elif (
         post_exit_outcome == "NOT_EVALUABLE"
-        and simulation["status"] == "TP_FIRST"
+        and (simulation.get("tp1_filled") or simulation["status"] == "TP_FIRST")
         and actual_return_pct < reward_pct * 0.95
         and not touch_confirmed_before_exit
     ):
         primary = "NOT_EVALUABLE"
     elif 0 <= actual_return_pct < reward_pct * 0.95 and post_exit_outcome == "POST_EXIT_TP":
         primary = "EARLY_TP_EXIT"
-    elif simulation["status"] == "TP_FIRST" and actual_return_pct < reward_pct * 0.95:
+    elif (simulation.get("tp1_filled") or simulation["status"] == "TP_FIRST") and actual_return_pct < reward_pct * 0.95:
         primary = "TARGET_GIVEBACK"
     elif actual_return_pct > reward_pct * 1.05:
         primary = "HOLD_AFTER_TP"
@@ -320,6 +490,17 @@ def evaluate_plan(plan: Dict[str, Any], entry: Dict[str, Any], path_item: Option
     }
     adherence = _overall_adherence(parts)
     planned_r = simulation.get("planned_r")
+    planned_pnl = planned_r * planned_risk_usdt if planned_r is not None and planned_risk_usdt is not None else None
+    plan_legs = [
+        {
+            **leg,
+            "contribution_pnl": (
+                float(leg["contribution_r"]) * planned_risk_usdt
+                if planned_risk_usdt is not None else None
+            ),
+        }
+        for leg in (simulation.get("legs") or [])
+    ]
     execution_delta = actual_r - planned_r if r_basis == "usdt" and actual_r is not None and planned_r is not None else None
     execution_delta_usdt = execution_delta * planned_risk_usdt if execution_delta is not None and planned_risk_usdt is not None else None
     mfe_r = _path_mfe_r(path_item, geometry, plan["side"])
@@ -335,16 +516,20 @@ def evaluate_plan(plan: Dict[str, Any], entry: Dict[str, Any], path_item: Option
     return {
         **base, "evaluation_status": simulation["status"], "geometry": geometry,
         "original_planned_rr": original_geometry.get("planned_rr"),
-        "planned_result_r": planned_r, "actual_r": actual_r, "r_basis": r_basis,
+        "planned_result_r": planned_r, "planned_result_pnl": planned_pnl,
+        "actual_r": actual_r, "r_basis": r_basis,
         "planned_risk_usdt": planned_risk_usdt, "net_pnl": net_pnl,
         "execution_delta_r": execution_delta, "execution_delta_usdt": execution_delta_usdt,
         "actual_return_pct": actual_return_pct,
         "adherence": {**parts, "overall": adherence},
         "adherent": adherence is not None and adherence >= ADHERENCE_THRESHOLD,
         "mfe_r": mfe_r,
-        "target_calibration": geometry.get("planned_rr") / mfe_r if mfe_r and mfe_r > 0 else None,
+        "target_calibration": geometry.get("planned_total_rr") / mfe_r if mfe_r and mfe_r > 0 else None,
         "primary_execution_category": primary, "secondary_tags": secondary,
         "post_exit_outcome": post_exit, "simulation_touch_time": simulation.get("touch_time"),
+        "plan_execution_mode": geometry.get("execution_mode"),
+        "plan_legs": plan_legs,
+        "simulation_ambiguity_reason": simulation.get("ambiguity_reason"),
         "simulation_horizon_end": path_item.get("horizon_end") if path_item else None,
         "simulation_horizon_hours": path_item.get("horizon_hours") if path_item else None,
     }
@@ -385,7 +570,11 @@ def _stats(items: List[Dict[str, Any]]) -> Dict[str, Any]:
         "actual_expectancy_r": actual["expectancy_r"],
         "execution_delta_r": _mean(item.get("execution_delta_r") for item in official),
         "execution_delta_total_r": sum(item.get("execution_delta_r") or 0 for item in official),
-        "average_planned_rr": _mean(item.get("geometry", {}).get("planned_rr") for item in items),
+        "average_planned_rr": _mean(
+            item.get("geometry", {}).get("planned_total_rr")
+            or item.get("geometry", {}).get("planned_rr")
+            for item in items
+        ),
         "average_break_even_win_rate_pct": _mean(item.get("geometry", {}).get("break_even_win_rate_pct") for item in items),
         "adherence_pct": _mean(item.get("adherence", {}).get("overall") for item in adherence_items),
         "adherent_trade_pct": sum(bool(item.get("adherent")) for item in adherence_items) / len(adherence_items) * 100 if adherence_items else None,
@@ -653,6 +842,7 @@ def run_plan_lab_service(
             "official_r_basis": "actual_net_pnl_over_planned_risk_usdt",
             "adherence_weights": ADHERENCE_WEIGHTS, "adherence_threshold": ADHERENCE_THRESHOLD,
             "fees_funding": "actual_uses_existing_net_pnl_plan_uses_recorded_fee_proxy",
+            "split_tp": "tp2_present_means_tp1_50_percent_then_remaining_50_percent",
             "setup_identity": "immutable_text_snapshot_no_stable_setup_registry",
         },
         "summary": summary, "diagnosis": _diagnosis(summary, attribution),
@@ -670,6 +860,13 @@ def run_plan_lab_service(
             ),
             "verified_pretrade": sum(item.get("plan_source") == "VERIFIED_PRETRADE" for item in evaluations),
             "retrospective": sum(item.get("plan_source") == "RETROSPECTIVE" for item in evaluations),
+            "legacy_single_tp": sum(item.get("plan_execution_mode") == "SINGLE_TP" for item in evaluations),
+            "split_tp": sum(item.get("plan_execution_mode") == "SPLIT_TP_50_50" for item in evaluations),
+            "split_post_exit_unsupported": sum(
+                item.get("plan_execution_mode") == "SPLIT_TP_50_50"
+                and item.get("post_exit_outcome") == "NOT_EVALUABLE"
+                for item in evaluations
+            ),
             "ambiguous_links": sum(plan.get("link", {}).get("link_status") == "AMBIGUOUS_LINK" for plan in plans if plan.get("link")),
         },
         "cumulative_curve": _cumulative_curve(evaluations),

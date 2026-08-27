@@ -25,6 +25,31 @@ def normalize_symbol(value: Any) -> str:
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper().split(":", 1)[0])
 
 
+def _validate_split_target_order(
+    side: str,
+    revision: Dict[str, Any],
+    *,
+    entry_override: Optional[float] = None,
+) -> None:
+    """Validate only TP2 plans; TP1-only persistence remains backward compatible."""
+    tp2 = revision.get("take_profit_2")
+    if tp2 is None:
+        return
+    exact = entry_override if entry_override is not None else revision.get("entry_price")
+    if exact is None and revision.get("entry_min") is not None and revision.get("entry_max") is not None:
+        exact = (float(revision["entry_min"]) + float(revision["entry_max"])) / 2
+    if exact is None:
+        raise ValueError("TP2 validation requires an entry reference")
+    entry = float(exact)
+    stop = float(revision["stop_loss"])
+    tp1 = float(revision["take_profit"])
+    tp2_value = float(tp2)
+    valid = stop < entry < tp1 < tp2_value if side == "Long" else stop > entry > tp1 > tp2_value
+    if not valid:
+        relation = "SL < Entry < TP1 < TP2" if side == "Long" else "SL > Entry > TP1 > TP2"
+        raise ValueError(f"Split TP order must satisfy {relation}")
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         f"""
@@ -50,6 +75,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             entry_max REAL,
             stop_loss REAL NOT NULL,
             take_profit REAL NOT NULL,
+            take_profit_2 REAL,
             setup TEXT,
             entry_note TEXT,
             exit_note TEXT,
@@ -82,6 +108,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     revision_columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({REVISION_TABLE})")}
     if "max_hold_hours" not in revision_columns:
         conn.execute(f"ALTER TABLE {REVISION_TABLE} ADD COLUMN max_hold_hours REAL")
+    if "take_profit_2" not in revision_columns:
+        conn.execute(f"ALTER TABLE {REVISION_TABLE} ADD COLUMN take_profit_2 REAL")
 
 
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -94,7 +122,7 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def _revision_payload(revision: Dict[str, Any], server_time: str) -> tuple[Any, ...]:
     return (
         revision.get("entry_price"), revision.get("entry_min"), revision.get("entry_max"),
-        revision["stop_loss"], revision["take_profit"],
+        revision["stop_loss"], revision["take_profit"], revision.get("take_profit_2"),
         (str(revision.get("setup") or "").strip() or None),
         (str(revision.get("entry_note") or "").strip() or None),
         (str(revision.get("exit_note") or "").strip() or None),
@@ -125,15 +153,16 @@ def _insert_plan_with_revision(
     plan_id = int(cursor.lastrowid)
     conn.execute(
         f"""INSERT INTO {REVISION_TABLE}
-        (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit,
+        (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit, take_profit_2,
          setup, entry_note, exit_note, memo, max_hold_hours, client_created_at, received_at, created_at)
-        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (plan_id, *_revision_payload(payload["revision"], server_time)),
     )
     return plan_id
 
 
 def create_plan(payload: Dict[str, Any], *, db_path: Optional[Path] = None) -> Dict[str, Any]:
+    _validate_split_target_order(payload["side"], payload["revision"])
     server_time = utc_now()
     with _connect(db_path) as conn:
         plan_id = _insert_plan_with_revision(conn, payload, server_time)
@@ -144,17 +173,18 @@ def create_plan(payload: Dict[str, Any], *, db_path: Optional[Path] = None) -> D
 def add_revision(plan_id: int, revision: Dict[str, Any], *, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     server_time = utc_now()
     with _connect(db_path) as conn:
-        plan = conn.execute(f"SELECT id FROM {PLAN_TABLE} WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute(f"SELECT id, side FROM {PLAN_TABLE} WHERE id = ?", (plan_id,)).fetchone()
         if plan is None:
             return None
+        _validate_split_target_order(str(plan["side"]), revision)
         version = int(conn.execute(
             f"SELECT COALESCE(MAX(version), 0) + 1 FROM {REVISION_TABLE} WHERE plan_id = ?", (plan_id,),
         ).fetchone()[0])
         conn.execute(
             f"""INSERT INTO {REVISION_TABLE}
-            (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit,
+            (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit, take_profit_2,
              setup, entry_note, exit_note, memo, max_hold_hours, client_created_at, received_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (plan_id, version, *_revision_payload(revision, server_time)),
         )
         conn.execute(f"UPDATE {PLAN_TABLE} SET updated_at = ? WHERE id = ?", (server_time, plan_id))
@@ -375,6 +405,11 @@ def create_retrospective_plan(
     trade_exchange = str(entry.get("exchange") or "").lower()
     if plan_exchange and trade_exchange and plan_exchange != trade_exchange:
         raise ValueError("Plan and trade exchange do not match")
+    _validate_split_target_order(
+        str(payload.get("side") or ""),
+        payload["revision"],
+        entry_override=float(entry["entry_price"]),
+    )
 
     external_id = str(entry.get("external_id") or "").strip() or None
     link_status = "LINKED" if external_id is not None else "AMBIGUOUS_LINK"

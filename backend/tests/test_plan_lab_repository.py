@@ -15,6 +15,7 @@ def _revision(entry_price=100.0):
         "entry_max": None,
         "stop_loss": 98.0,
         "take_profit": 104.0,
+        "take_profit_2": None,
         "setup": "pullback",
         "entry_note": None,
         "exit_note": None,
@@ -85,18 +86,110 @@ def test_retrospective_schema_allows_missing_plan_entry_only():
         PlanRevisionInput.model_validate(_revision(None))
 
 
+def test_secondary_target_is_optional_and_uses_primary_target_validation():
+    assert PlanRevisionInput.model_validate(_revision()).take_profit_2 is None
+    assert PlanRevisionInput.model_validate({**_revision(), "take_profit_2": 108.0}).take_profit_2 == 108.0
+    with pytest.raises(ValidationError):
+        PlanRevisionInput.model_validate({**_revision(), "take_profit_2": 0})
+
+
+def test_secondary_target_persists_across_create_and_immutable_revisions(tmp_path):
+    db_path = tmp_path / "journal.db"
+    payload = _plan_payload()
+    payload["revision"]["take_profit_2"] = 108.0
+
+    created = repository.create_plan(payload, db_path=db_path)
+    updated = repository.add_revision(
+        created["id"], {**_revision(101.0), "take_profit_2": 110.0}, db_path=db_path,
+    )
+
+    assert [item["take_profit_2"] for item in updated["revisions"]] == [108.0, 110.0]
+    assert updated["latest_revision"]["take_profit_2"] == 110.0
+
+
+def test_split_target_order_is_validated_for_long_short_and_retrospective(tmp_path):
+    db_path = tmp_path / "journal.db"
+    invalid_long = _plan_payload()
+    invalid_long["revision"]["take_profit_2"] = 103.0
+    with pytest.raises(ValueError, match="SL < Entry < TP1 < TP2"):
+        repository.create_plan(invalid_long, db_path=db_path)
+
+    short_payload = _plan_payload()
+    short_payload["side"] = "Short"
+    short_payload["revision"] = {
+        **_revision(), "stop_loss": 102.0, "take_profit": 98.0, "take_profit_2": 94.0,
+    }
+    short_plan = repository.create_plan(short_payload, db_path=db_path)
+    assert short_plan["latest_revision"]["take_profit_2"] == 94.0
+
+    entry = _closed_entry(db_path, external_id="binance:position:split-order")
+    bad_retrospective = _retrospective_payload()
+    bad_retrospective["revision"]["take_profit_2"] = 103.0
+    with pytest.raises(ValueError, match="SL < Entry < TP1 < TP2"):
+        repository.create_retrospective_plan(bad_retrospective, entry["id"], db_path=db_path)
+
+
+def test_secondary_target_migrates_existing_tp1_only_rows_to_null(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript("""
+            CREATE TABLE trading_plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exchange TEXT NOT NULL, symbol TEXT NOT NULL, symbol_key TEXT NOT NULL,
+                side TEXT NOT NULL, status TEXT NOT NULL, client_created_at TEXT,
+                received_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE trading_plan_revisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id INTEGER NOT NULL, version INTEGER NOT NULL,
+                entry_price REAL, entry_min REAL, entry_max REAL,
+                stop_loss REAL NOT NULL, take_profit REAL NOT NULL,
+                setup TEXT, entry_note TEXT, exit_note TEXT, memo TEXT,
+                client_created_at TEXT, received_at TEXT NOT NULL, created_at TEXT NOT NULL,
+                UNIQUE(plan_id, version)
+            );
+        """)
+        conn.execute(
+            """INSERT INTO trading_plans
+            (exchange, symbol, symbol_key, side, status, client_created_at, received_at, created_at, updated_at)
+            VALUES ('binance', 'BTC/USDT', 'BTCUSDT', 'Long', 'active', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"""
+        )
+        conn.execute(
+            """INSERT INTO trading_plan_revisions
+            (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit, setup, entry_note, exit_note, memo, client_created_at, received_at, created_at)
+            VALUES (1, 1, 100, NULL, NULL, 98, 104, NULL, NULL, NULL, NULL, NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"""
+        )
+
+    migrated = repository.get_plan(1, db_path=db_path)
+
+    assert migrated["latest_revision"]["take_profit"] == 104.0
+    assert migrated["latest_revision"]["take_profit_2"] is None
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(trading_plan_revisions)")}
+    assert {"max_hold_hours", "take_profit_2"}.issubset(columns)
+
+
+def test_secondary_target_is_present_on_fresh_database_when_omitted(tmp_path):
+    plan = repository.create_plan(_plan_payload(), db_path=tmp_path / "journal.db")
+
+    assert plan["latest_revision"]["take_profit_2"] is None
+
+
 def test_retrospective_save_is_atomic_and_keeps_planned_entry_empty(tmp_path):
     db_path = tmp_path / "journal.db"
     entry = _closed_entry(db_path)
+    payload = _retrospective_payload()
+    payload["revision"]["take_profit_2"] = 108.0
 
     plan = repository.create_retrospective_plan(
-        _retrospective_payload(), entry["id"], db_path=db_path,
+        payload, entry["id"], db_path=db_path,
     )
 
     assert _table_counts(db_path) == (1, 1, 1)
     assert plan["source"] == "RETROSPECTIVE"
     assert plan["link"]["journal_entry_id"] == entry["id"]
     assert plan["latest_revision"]["entry_price"] is None
+    assert plan["latest_revision"]["take_profit_2"] == 108.0
 
 
 def test_retrospective_duplicate_link_does_not_leave_orphans(tmp_path):
@@ -109,7 +202,7 @@ def test_retrospective_duplicate_link_does_not_leave_orphans(tmp_path):
 
     with pytest.raises(ValueError, match="already linked"):
         repository.create_retrospective_plan(
-            _retrospective_payload(), entry["id"], db_path=db_path,
+            {**_retrospective_payload(), "revision": {**_revision(None), "take_profit_2": 108.0}}, entry["id"], db_path=db_path,
         )
 
     assert _table_counts(db_path) == before == (1, 1, 1)
@@ -126,7 +219,7 @@ def test_retrospective_link_failure_rolls_back_plan_and_revision(tmp_path, monke
     monkeypatch.setattr(repository, "_insert_link_row", fail_link)
     with pytest.raises(RuntimeError, match="injected link failure"):
         repository.create_retrospective_plan(
-            _retrospective_payload(), entry["id"], db_path=db_path,
+            {**_retrospective_payload(), "revision": {**_revision(None), "take_profit_2": 108.0}}, entry["id"], db_path=db_path,
         )
 
     assert _table_counts(db_path) == (0, 0, 0)

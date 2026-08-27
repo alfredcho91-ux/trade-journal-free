@@ -18,6 +18,8 @@ class PlanRevisionFields(BaseModel):
     entry_max: Optional[float] = Field(default=None, gt=0)
     stop_loss: float = Field(gt=0)
     take_profit: float = Field(gt=0)
+    # TP2 activates the official fixed split rule: TP1 50%, TP2 remaining 50%.
+    take_profit_2: Optional[float] = Field(default=None, gt=0)
     setup: Optional[str] = Field(default=None, max_length=120)
     entry_note: Optional[str] = Field(default=None, max_length=1000)
     exit_note: Optional[str] = Field(default=None, max_length=1000)

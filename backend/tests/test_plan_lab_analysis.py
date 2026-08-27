@@ -1,4 +1,7 @@
+import json
+
 import pandas as pd
+import pytest
 
 from backend.modules.plan_lab.analysis import (
     _aggregate_group,
@@ -75,6 +78,132 @@ def test_plan_geometry_handles_long_short_and_invalid_plans():
     assert short_geometry["planned_rr"] == 2.0
     assert plan_geometry("Long", _revision(stop_loss=101.0))["status"] == "INVALID_PLAN"
     assert plan_geometry("Short", _revision(stop_loss=99.0, take_profit=96.0))["status"] == "INVALID_PLAN"
+
+
+def test_tp2_activates_official_split_plan_while_tp1_only_stays_legacy():
+    tp1_only = evaluate_plan(_plan(), _entry(), _path((104.2, 99.5)))
+    with_secondary = evaluate_plan(
+        _plan(revision=_revision(take_profit=102.0, take_profit_2=106.0)),
+        _entry(),
+        {"path": pd.DataFrame([
+            {"high": 102.2, "low": 99.5, "close": 101.5},
+            {"high": 106.2, "low": 101.0, "close": 106.0},
+        ])},
+    )
+
+    assert tp1_only["plan_execution_mode"] == "SINGLE_TP"
+    assert tp1_only["planned_result_r"] == 2.0
+    assert with_secondary["plan_execution_mode"] == "SPLIT_TP_50_50"
+    assert with_secondary["evaluation_status"] == "TP1_TP2"
+    assert with_secondary["planned_result_r"] == 2.0
+    assert with_secondary["planned_result_pnl"] == 40.0
+    assert with_secondary["geometry"]["planned_total_rr"] == 2.0
+    assert [leg["type"] for leg in with_secondary["plan_legs"]] == ["TP1", "TP2"]
+    assert [leg["fraction"] for leg in with_secondary["plan_legs"]] == [0.5, 0.5]
+    assert [leg["contribution_pnl"] for leg in with_secondary["plan_legs"]] == [10.0, 30.0]
+    assert _aggregate_group("split", [with_secondary], 1)["average_planned_r"] == 2.0
+    assert next(
+        item for item in _optimizer([with_secondary])["variants"] if item["id"] == "PLAN"
+    )["overall"]["expectancy_r"] == 2.0
+    assert '"plan_execution_mode": "SPLIT_TP_50_50"' in json.dumps(with_secondary)
+
+
+def test_split_fee_proxy_is_allocated_across_legs_without_changing_total_math():
+    result = evaluate_plan(
+        _plan(revision=_revision(take_profit=102.0, take_profit_2=106.0)),
+        _entry(),
+        {
+            "path": pd.DataFrame([{"high": 106.2, "low": 99.5, "close": 106.0}]),
+            "fee_pct": 0.1,
+        },
+    )
+
+    assert result["planned_result_r"] == pytest.approx(1.95)
+    assert result["planned_result_pnl"] == pytest.approx(39.0)
+    assert sum(leg["contribution_r"] for leg in result["plan_legs"]) == pytest.approx(1.95)
+
+
+def _split_evaluation(*rows, side="Long", revision=None):
+    revision = revision or _revision(take_profit=102.0, take_profit_2=106.0)
+    plan = _plan(side=side, revision=revision)
+    entry = _entry(direction=side)
+    return evaluate_plan(plan, entry, {"path": pd.DataFrame(rows)})
+
+
+def test_split_tp1_then_sl_and_horizon_math():
+    tp1_sl = _split_evaluation(
+        {"high": 102.2, "low": 99.5, "close": 101.0},
+        {"high": 101.0, "low": 97.8, "close": 98.0},
+    )
+    tp1_horizon = _split_evaluation(
+        {"high": 102.2, "low": 99.5, "close": 101.0},
+    )
+    horizon_before_tp1 = _split_evaluation(
+        {"high": 101.5, "low": 99.5, "close": 101.0},
+    )
+
+    assert tp1_sl["evaluation_status"] == "TP1_SL"
+    assert tp1_sl["planned_result_r"] == 0.0
+    assert [leg["type"] for leg in tp1_sl["plan_legs"]] == ["TP1", "SL"]
+    assert tp1_horizon["evaluation_status"] == "TP1_HORIZON"
+    assert tp1_horizon["planned_result_r"] == 0.75
+    assert [leg["type"] for leg in tp1_horizon["plan_legs"]] == ["TP1", "HORIZON"]
+    assert horizon_before_tp1["evaluation_status"] == "HORIZON"
+    assert horizon_before_tp1["planned_result_r"] == 0.5
+
+
+def test_split_stop_before_tp1_and_same_candle_rules():
+    stop_first = _split_evaluation({"high": 101.0, "low": 97.8, "close": 98.0})
+    tp1_tp2_same = _split_evaluation({"high": 106.2, "low": 99.0, "close": 106.0})
+    tp1_sl_same = _split_evaluation({"high": 102.2, "low": 97.8, "close": 100.0})
+    tp2_sl_same_before_tp1 = _split_evaluation({"high": 106.2, "low": 97.8, "close": 100.0})
+    tp2_sl_after_tp1 = _split_evaluation(
+        {"high": 102.2, "low": 99.0, "close": 101.0},
+        {"high": 106.2, "low": 97.8, "close": 100.0},
+    )
+
+    assert stop_first["evaluation_status"] == "SL_FIRST"
+    assert stop_first["planned_result_r"] == -1.0
+    assert tp1_tp2_same["evaluation_status"] == "TP1_TP2"
+    assert tp1_tp2_same["planned_result_r"] == 2.0
+    assert tp1_sl_same["evaluation_status"] == "NOT_EVALUABLE"
+    assert tp1_sl_same["simulation_ambiguity_reason"] == "TP1_SL_SAME_CANDLE"
+    assert tp2_sl_same_before_tp1["evaluation_status"] == "NOT_EVALUABLE"
+    assert tp2_sl_same_before_tp1["simulation_ambiguity_reason"] == "TP1_SL_SAME_CANDLE"
+    assert tp2_sl_after_tp1["evaluation_status"] == "NOT_EVALUABLE"
+    assert tp2_sl_after_tp1["simulation_ambiguity_reason"] == "TP2_SL_SAME_CANDLE_AFTER_TP1"
+
+
+def test_split_short_mirrors_long_and_partial_horizon_is_not_evaluable():
+    short_result = _split_evaluation(
+        {"high": 100.5, "low": 97.8, "close": 98.0},
+        {"high": 99.0, "low": 93.8, "close": 94.0},
+        side="Short",
+        revision=_revision(stop_loss=102.0, take_profit=98.0, take_profit_2=94.0),
+    )
+    partial_horizon = _split_evaluation(
+        {"high": 101.5, "low": 99.5, "close": 101.0, "boundary_uncertain": True},
+    )
+    partial_target = _split_evaluation(
+        {"high": 102.2, "low": 99.5, "close": 101.0, "boundary_uncertain": True},
+    )
+
+    assert short_result["evaluation_status"] == "TP1_TP2"
+    assert short_result["planned_result_r"] == 2.0
+    assert partial_horizon["evaluation_status"] == "NOT_EVALUABLE"
+    assert partial_horizon["simulation_ambiguity_reason"] == "HORIZON_PARTIAL_CANDLE"
+    assert partial_target["evaluation_status"] == "NOT_EVALUABLE"
+    assert partial_target["simulation_ambiguity_reason"] == "BOUNDARY_PARTIAL_CANDLE"
+
+
+def test_split_plan_does_not_silently_use_tp1_only_post_exit_analysis():
+    result = _split_evaluation(
+        {"high": 102.2, "low": 99.5, "close": 101.0, "open_time": 0, "close_time": 299_999},
+        {"high": 106.2, "low": 101.0, "close": 106.0, "open_time": 300_000, "close_time": 599_999},
+    )
+
+    assert result["planned_result_r"] == 2.0
+    assert result["post_exit_outcome"] == "NOT_EVALUABLE"
 
 
 def test_evaluation_uses_official_usdt_r_and_tp_first():

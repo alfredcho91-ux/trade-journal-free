@@ -13,7 +13,7 @@
 - 승패·진입·청산 품질과 대성공·대실패 거래 분석, 별도 Risk Lab의 손절·SL/TP 기대값 분석
 - 매매분석 상단 Trading Review: 기존 행동 분석의 수익 누수, 품질 분석의 반복 강점, 이미 계산된 Plan Lab 실행 요약을 한 번에 보고 근거 거래로 이동
 - 거래별 계획 SL/TP·Setup·Mistake 기록과 규칙 준수, 수익 누수, 조건 비교 분석
-- Plan Lab은 과거 종료 거래를 선택해 사용자가 당시 계획을 직접 입력하고 실제 실행과 비교합니다. 회고 입력에 계획 Entry가 없으면 실제 Entry를 계획값으로 저장하지 않으며, 거래 전 서버에 저장된 계획만 사전 기록으로 검증합니다. 거래 목록은 가볍게 먼저 열리고 경로 재생·Optimizer는 사용자가 공식 분석을 요청할 때 실행됩니다.
+- Plan Lab은 과거 종료 거래를 선택해 사용자가 당시 계획을 직접 입력하고 실제 실행과 비교합니다. 회고 입력에 계획 Entry가 없으면 실제 Entry를 계획값으로 저장하지 않으며, 거래 전 서버에 저장된 계획만 사전 기록으로 검증합니다. `TP2`가 없으면 기존처럼 `TP1`에서 100% 청산하고, `TP2`가 있으면 `TP1 50% + TP2 잔여 50%` 고정 규칙으로 공식 Plan R·Plan PnL·Delta·Attribution·Optimizer를 계산합니다. 거래 목록은 가볍게 먼저 열리고 경로 재생·Optimizer는 사용자가 공식 분석을 요청할 때 실행됩니다.
 - macOS 앱과 Windows x64 압축 배포판
 - 사용자 API Key는 브라우저 저장소나 프론트엔드 코드에 저장하지 않음
 
@@ -72,7 +72,7 @@ SmartScreen을 끄거나 Windows 실시간 보호를 해제할 필요는 없습�
 - MFE/MAE, Weekly/Daily/4H Regime, 진입·청산 품질 분석
 - 투자금 순수익률 30% 또는 방향 반영 가격 수익률 3% 이상인 대성공 거래와, 큰 투자금 손실 또는 큰 가격 역행이 발생한 대실패 거래 분석
 - Risk Lab: 손절 사후 분석, Stop 최적화, 코인 가격 기준 N% 손절 기대값, SL/TP 조합 시뮬레이션
-- 계획 분석: 실제 Entry 기준 SL/TP 경로 재생, Actual/Plan Expectancy, Execution Delta, 행동별 손익 누수, Setup·방향·시장상황 비교, 70/30 시계열 검증
+- 계획 분석: 실제 Entry 기준 SL/TP 경로 재생, TP2 선택 시 고정 50/50 분할 청산, Actual/Plan Expectancy, Execution Delta, 행동별 손익 누수, Setup·방향·시장상황 비교, 70/30 시계열 검증
 - Trading Review는 새 분석 엔진이 아니라 기존 Quality Analysis·Behavior Analysis·Plan Lab의 공식 결과를 표시용으로만 조립하는 Executive Summary입니다. 강점은 공식 R 표본이 있는 시장상황끼리 평균 R로 비교하며, Plan Lab의 무거운 경로 재생·Optimizer는 매매분석 진입 시 자동 실행하지 않고 이미 같은 기간·방향으로 불러온 결과만 재사용합니다. 최소 순수익률 필터는 Plan Lab 미지원 범위로 명확히 표시합니다.
 - 현재 시장과 과거 거래의 유사도 비교
 - 매매분석 상단의 최소 순수익률 필터: 투입 증거금 대비 순수익률 절대값이 입력값 이하인 종료 거래를 통계에서 제외

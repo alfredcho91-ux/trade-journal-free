@@ -3,8 +3,10 @@ import type { ComponentProps } from 'react';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { JournalEntry, TradingPlan } from '../types';
+import type { JournalEntry, PlanEvaluation, TradingPlan } from '../types';
 import {
+  calculateTargetRiskReward,
+  calculateTargetRiskRewardFromDraft,
   nextMissingTrade,
   planEntryLabel,
   planStatusForEntry,
@@ -12,6 +14,7 @@ import {
   shouldLoadPlanLabAnalysis,
   type PlanDraft,
 } from '../features/planLab/pastTradePlan';
+import { PlanDetailsDrawer } from '../features/planLab/PlanTradeDetailDrawer';
 import { PlanForm } from './PlanLabPage';
 
 const draft: PlanDraft = {
@@ -24,6 +27,7 @@ const draft: PlanDraft = {
   entryMax: '',
   stopLoss: '98',
   takeProfit: '104',
+  takeProfit2: '',
   maxHoldHours: '',
   setup: 'pullback',
   entryNote: 'support held',
@@ -55,6 +59,7 @@ function plan(source: TradingPlan['source'], journalEntryId: number): TradingPla
     entry_max: null,
     stop_loss: 98,
     take_profit: 104,
+    take_profit_2: null,
     received_at: '2026-01-01T00:00:00Z',
     created_at: '2026-01-01T00:00:00Z',
   };
@@ -82,6 +87,28 @@ function plan(source: TradingPlan['source'], journalEntryId: number): TradingPla
   };
 }
 
+function splitEvaluation(overrides: Partial<PlanEvaluation> = {}): PlanEvaluation {
+  return {
+    plan_id: 1,
+    journal_id: 1,
+    side: 'Long',
+    plan_source: 'VERIFIED_PRETRADE',
+    evaluation_status: 'TP1_TP2',
+    plan_execution_mode: 'SPLIT_TP_50_50',
+    planned_result_r: 9.99,
+    planned_result_pnl: 199.8,
+    actual_r: 1.5,
+    execution_delta_r: -8.49,
+    r_basis: 'usdt',
+    plan_legs: [
+      { type: 'TP1', fraction: 0.5, exit_price: 104, price_r: 1, contribution_r: 0.5, status: 'FILLED' },
+      { type: 'TP2', fraction: 0.5, exit_price: 108, price_r: 3, contribution_r: 1.5, status: 'FILLED' },
+    ],
+    revisions: [],
+    ...overrides,
+  };
+}
+
 function renderPlanForm(overrides: Partial<ComponentProps<typeof PlanForm>> = {}) {
   return renderToStaticMarkup(<PlanForm
     draft={draft}
@@ -101,6 +128,31 @@ function renderPlanForm(overrides: Partial<ComponentProps<typeof PlanForm>> = {}
 }
 
 describe('Past Trade Plan Input reliability', () => {
+  it('calculates a live LONG target R:R for a TP1-only plan', () => {
+    const result = calculateTargetRiskReward({ direction: 'Long', entry: 100, stopLoss: 98, tp1: 104 });
+    expect(result).toMatchObject({ mode: 'TP1_ONLY', riskDistance: 2, riskPct: 2, tp1R: 2, tp2R: null, splitTargetR: null, valid: true });
+  });
+
+  it('calculates the same fixed 50/50 split for LONG and SHORT', () => {
+    const long = calculateTargetRiskReward({ direction: 'Long', entry: 100, stopLoss: 98, tp1: 102, tp2: 106 });
+    const short = calculateTargetRiskReward({ direction: 'Short', entry: 100, stopLoss: 102, tp1: 98, tp2: 94 });
+    expect(long).toMatchObject({ mode: 'SPLIT_TP_50_50', tp1R: 1, tp2R: 3, splitTargetR: 2, valid: true });
+    expect(short).toMatchObject({ mode: 'SPLIT_TP_50_50', tp1R: 1, tp2R: 3, splitTargetR: 2, valid: true });
+  });
+
+  it('uses retrospective actual entry only as a preview reference, never as a plan entry', () => {
+    const result = calculateTargetRiskRewardFromDraft(draft, 100);
+    expect(result).toMatchObject({ valid: true, tp1R: 2, mode: 'TP1_ONLY' });
+    expect(revisionPayload(draft, true)?.entry_price).toBeNull();
+  });
+
+  it('does not produce numeric R:R for missing or invalid price structures', () => {
+    expect(calculateTargetRiskReward({ direction: 'Long', entry: null, stopLoss: 98, tp1: 104 }).mode).toBe('INCOMPLETE');
+    expect(calculateTargetRiskReward({ direction: 'Long', entry: 100, stopLoss: 100, tp1: 104 }).mode).toBe('INVALID');
+    expect(calculateTargetRiskReward({ direction: 'Long', entry: 100, stopLoss: 98, tp1: 104, tp2: 103 }).validationError).toBe('LONG_TP2_ORDER');
+    expect(calculateTargetRiskRewardFromDraft({ ...draft, takeProfit2: 'not-a-number' }, 100).validationError).toBe('TP2_INVALID');
+  });
+
   it('keeps retrospective actual entry out of planned entry fields', () => {
     expect(revisionPayload(draft, true)).toMatchObject({
       entry_price: null,
@@ -111,6 +163,142 @@ describe('Past Trade Plan Input reliability', () => {
     });
     expect(planEntryLabel(plan('RETROSPECTIVE', 1).latest_revision)).toBe('-');
     expect(revisionPayload(draft, false)).toBeNull();
+  });
+
+  it('sends TP2 as the optional trigger for the official fixed split rule', () => {
+    expect(revisionPayload({ ...draft, entryPrice: '100', takeProfit2: '108' })).toMatchObject({
+      take_profit: 104,
+      take_profit_2: 108,
+    });
+    expect(revisionPayload({ ...draft, entryPrice: '100', takeProfit2: '' })).toMatchObject({
+      take_profit_2: null,
+    });
+    expect(revisionPayload({ ...draft, entryPrice: '100', takeProfit2: '0' })).toBeNull();
+  });
+
+  it('restores saved TP2 and keeps old TP1-only plans explicitly unset', () => {
+    const stored = plan('VERIFIED_PRETRADE', 1);
+    stored.latest_revision.take_profit_2 = 108;
+    stored.revisions[0].take_profit_2 = 108;
+    const savedHtml = renderToStaticMarkup(<PlanDetailsDrawer
+      plan={stored}
+      entry={trade(1, '2026-01-01T10:00:00Z')}
+      entries={[]}
+      analysisRequested={false}
+      analysisLoading={false}
+      isKo
+      onClose={() => undefined}
+      onRevise={() => undefined}
+      onLoadAnalysis={() => undefined}
+    />);
+    const legacyHtml = renderToStaticMarkup(<PlanDetailsDrawer
+      plan={plan('VERIFIED_PRETRADE', 1)}
+      entries={[]}
+      analysisRequested={false}
+      analysisLoading={false}
+      isKo
+      onClose={() => undefined}
+      onRevise={() => undefined}
+      onLoadAnalysis={() => undefined}
+    />);
+
+    expect(savedHtml).toContain('108');
+    expect(savedHtml).toContain('TP1 · 50%');
+    expect(savedHtml).toContain('TP2 · 잔여 50%');
+    expect(legacyHtml).toContain('미설정');
+    expect(legacyHtml).toContain('TP1 · 100%');
+    expect(legacyHtml).not.toContain('계획 실행 결과');
+    expect(savedHtml).toContain('Actual vs Plan');
+  });
+
+  it('renders official split legs and never recomputes total Plan R or Delta in the frontend', () => {
+    const stored = plan('VERIFIED_PRETRADE', 1);
+    stored.latest_revision.take_profit_2 = 108;
+    stored.revisions[0].take_profit_2 = 108;
+    const html = renderToStaticMarkup(<PlanDetailsDrawer
+      plan={stored}
+      entry={trade(1, '2026-01-01T10:00:00Z')}
+      evaluation={splitEvaluation()}
+      entries={[]}
+      analysisRequested
+      analysisLoading={false}
+      isKo
+      onClose={() => undefined}
+      onRevise={() => undefined}
+      onLoadAnalysis={() => undefined}
+    />);
+
+    expect(html).toContain('+9.99R');
+    expect(html).toContain('-8.49R');
+    expect(html).toContain('+199.80 USDT');
+    expect(html).toContain('1차 익절');
+    expect(html).toContain('2차 익절');
+    expect(html).toContain('해당 가격의 R');
+    expect(html).toContain('전체 결과 기여 R');
+    expect(html).toContain('TP1에서 50% 청산 후 남은 50%가 TP2에서 청산');
+  });
+
+  it('shows the official not-evaluable reason without inventing an exit order', () => {
+    const stored = plan('VERIFIED_PRETRADE', 1);
+    stored.latest_revision.take_profit_2 = 108;
+    stored.revisions[0].take_profit_2 = 108;
+    const html = renderToStaticMarkup(<PlanDetailsDrawer
+      plan={stored}
+      entry={trade(1, '2026-01-01T10:00:00Z')}
+      evaluation={splitEvaluation({
+        evaluation_status: 'NOT_EVALUABLE',
+        planned_result_r: null,
+        planned_result_pnl: null,
+        execution_delta_r: null,
+        plan_legs: [],
+        simulation_ambiguity_reason: 'TP1_SL_SAME_CANDLE',
+      })}
+      entries={[]}
+      analysisRequested
+      analysisLoading={false}
+      isKo
+      onClose={() => undefined}
+      onRevise={() => undefined}
+      onLoadAnalysis={() => undefined}
+    />);
+
+    expect(html).toContain('같은 완료봉에서 TP1과 손절가가 모두 닿아');
+    expect(html).toContain('평가 가능한 가격 경로가 없습니다');
+  });
+
+  it('explains TP1-to-stop and TP1-to-horizon from backend leg outcomes', () => {
+    const stored = plan('VERIFIED_PRETRADE', 1);
+    stored.latest_revision.take_profit_2 = 108;
+    stored.revisions[0].take_profit_2 = 108;
+    const renderOutcome = (evaluation: PlanEvaluation) => renderToStaticMarkup(<PlanDetailsDrawer
+      plan={stored}
+      entry={trade(1, '2026-01-01T10:00:00Z')}
+      evaluation={evaluation}
+      entries={[]}
+      analysisRequested
+      analysisLoading={false}
+      isKo
+      onClose={() => undefined}
+      onRevise={() => undefined}
+      onLoadAnalysis={() => undefined}
+    />);
+    const stopHtml = renderOutcome(splitEvaluation({
+      evaluation_status: 'TP1_SL',
+      plan_legs: [
+        { type: 'TP1', fraction: 0.5, exit_price: 104, price_r: 1, contribution_r: 0.5, status: 'FILLED' },
+        { type: 'SL', fraction: 0.5, exit_price: 98, price_r: -1, contribution_r: -0.5, status: 'FILLED' },
+      ],
+    }));
+    const horizonHtml = renderOutcome(splitEvaluation({
+      evaluation_status: 'TP1_HORIZON',
+      plan_legs: [
+        { type: 'TP1', fraction: 0.5, exit_price: 104, price_r: 1, contribution_r: 0.5, status: 'FILLED' },
+        { type: 'HORIZON', fraction: 0.5, exit_price: 101, price_r: 0.5, contribution_r: 0.25, status: 'FILLED' },
+      ],
+    }));
+
+    expect(stopHtml).toContain('남은 50%가 원래 계획 손절가에서 청산');
+    expect(horizonHtml).toContain('남은 50%는 TP2와 손절가에 도달하지 않아 관찰 종료 가격');
   });
 
   it('distinguishes missing, retrospective, and verified states after refresh', () => {
@@ -163,6 +351,10 @@ describe('Past Trade Plan Input reliability', () => {
   it('hides hindsight result fields before retrospective save', () => {
     const html = renderPlanForm({ saved: false });
     expect(html).toContain('실제 진입가');
+    expect(html).toContain('실제 청산가');
+    expect(html).toContain('TP2 · 잔여 50%');
+    expect(html).toContain('거래 분석');
+    expect(html).not.toContain('Setup');
     expect(html).not.toContain('실제 결과');
     expect(html).not.toContain('1.50R');
     expect(html).not.toContain('MFE');
