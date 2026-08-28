@@ -19,7 +19,12 @@ from backend.modules.exchanges.credentials import (
 )
 from backend.modules.exchanges.execution_repository import list_executions
 from backend.modules.exchanges.models import ExchangeCredentials, NormalizedTrade
-from backend.modules.exchanges.reconstruction import reconstruct_positions
+from backend.modules.exchanges.reconstruction import (
+    exchange_account_scope,
+    reconstruct_position_lifecycles,
+    reconstruct_positions,
+    restore_normalized_trades,
+)
 from backend.modules.exchanges.registry import SUPPORTED_EXCHANGES
 from backend.modules.exchanges.sync_service import sync_ccxt
 from backend.utils.error_handler import BusinessLogicError, DataLoadError
@@ -187,6 +192,8 @@ def _deepcoin_open_positions(credentials: ExchangeCredentials) -> List[Dict[str,
         times = [value for value in (_timestamp_iso(raw.get("cTime")), _timestamp_iso(raw.get("uTime"))) if value]
         positions.append({
             "position_id": str(raw.get("posId") or f"deepcoin:{symbol}:{side}"),
+            "lifecycle_id": str(raw.get("posId") or f"deepcoin:{symbol}:{side}"),
+            "lifecycle_available": True,
             "exchange": "deepcoin",
             "symbol": symbol,
             "direction": "Long" if side == "long" else "Short",
@@ -230,11 +237,59 @@ def _ccxt_open_positions(exchange_id: str, credentials: ExchangeCredentials) -> 
                 "opened_at": _timestamp_iso(raw.get("timestamp") or info.get("createdTime")),
                 "updated_at": _timestamp_iso(raw.get("timestamp") or info.get("updatedTime")),
             })
-        return output
+        return _attach_binance_lifecycle_ids(output, credentials) if exchange_id == "binance" else output
     finally:
         close = getattr(client, "close", None)
         if callable(close):
             close()
+
+
+def _attach_binance_lifecycle_ids(
+    live_positions: List[Dict[str, Any]], credentials: ExchangeCredentials,
+) -> List[Dict[str, Any]]:
+    """Attach only exact fill-ledger lifecycle identities to live Binance positions."""
+    if not live_positions:
+        return live_positions
+    account_scope = exchange_account_scope("binance", credentials.api_key)
+    symbols = sorted({str(position.get("symbol") or "") for position in live_positions})
+    rows = list_executions(
+        exchange=SUPPORTED_EXCHANGES["binance"]["name"],
+        symbols=[_display_symbol(symbol) for symbol in symbols],
+        account_scope=account_scope,
+    )
+    trades = restore_normalized_trades(rows, "SWAP", symbols)
+    _, open_lifecycles, _ = reconstruct_position_lifecycles(
+        "binance",
+        trades,
+        "SWAP",
+        account_scope=account_scope,
+        skip_uncertain_initial_lifecycle=True,
+    )
+    by_key: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+    for lifecycle in open_lifecycles:
+        if not lifecycle.get("identity_verified"):
+            continue
+        key = (_display_symbol(lifecycle.get("symbol")), str(lifecycle.get("direction") or ""))
+        by_key.setdefault(key, []).append(lifecycle)
+    for position in live_positions:
+        key = (_display_symbol(position.get("symbol")), str(position.get("direction") or ""))
+        candidates = by_key.get(key, [])
+        live_size = _finite(position.get("size"))
+        exact = [
+            candidate for candidate in candidates
+            if live_size is not None
+            and abs(float(candidate.get("size") or 0.0) - live_size) <= max(1e-12, live_size * 1e-9)
+        ]
+        if len(exact) == 1:
+            lifecycle_id = str(exact[0]["lifecycle_id"])
+            position["position_id"] = lifecycle_id
+            position["lifecycle_id"] = lifecycle_id
+            position["lifecycle_available"] = True
+            position["opened_at"] = _timestamp_iso(exact[0].get("entry_timestamp_ms"))
+        else:
+            position["lifecycle_id"] = None
+            position["lifecycle_available"] = False
+    return live_positions
 
 
 def exchange_open_positions_service() -> Dict[str, Any]:

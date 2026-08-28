@@ -124,6 +124,7 @@ JOURNAL_COLUMNS = [
     "notes",
     "source",
     "external_id",
+    "lifecycle_id",
     "exchange",
     "order_id",
     "fee",

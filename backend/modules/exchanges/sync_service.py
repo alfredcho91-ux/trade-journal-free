@@ -14,9 +14,18 @@ from backend.modules.exchanges.ccxt_adapter import (
     normalize_trades,
     requested_symbols,
 )
-from backend.modules.exchanges.execution_repository import add_executions_if_new, list_executions
-from backend.modules.exchanges.models import NormalizedTrade, SnapshotEvent
-from backend.modules.exchanges.reconstruction import reconstruct_positions, trade_sign
+from backend.modules.exchanges.execution_repository import (
+    add_executions_if_new,
+    adopt_legacy_account_scope,
+    list_executions,
+)
+from backend.modules.exchanges.models import SnapshotEvent
+from backend.modules.exchanges.reconstruction import (
+    exchange_account_scope,
+    reconstruct_positions,
+    restore_normalized_trades,
+    trade_sign,
+)
 from backend.modules.exchanges.registry import SUPPORTED_EXCHANGES
 from backend.modules.journal.repository import (
     add_entries_if_new_external_ids,
@@ -27,6 +36,7 @@ from backend.utils.error_handler import DataLoadError
 
 
 def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Sequence[str], client: Any) -> Dict[str, Any]:
+    account_scope = exchange_account_scope(exchange_id, str(getattr(client, "apiKey", "") or ""))
     funding_events: list[Dict[str, Any]] = []
     funding_coverage_start: Optional[int] = None
     funding_history_complete = True
@@ -64,17 +74,21 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
 
     trades, ignored = normalize_trades(exchange_id, client, fetch_result.trades)
     exchange_name = SUPPORTED_EXCHANGES[exchange_id]["name"]
+    adopt_legacy_account_scope(exchange_name, account_scope)
     execution_rows = [
-        _execution_row(exchange_id, exchange_name, trade, None, inst_type)
+        _execution_row(exchange_id, exchange_name, trade, None, inst_type, account_scope)
         for trade in trades
     ]
     imported_execution_ids = add_executions_if_new(execution_rows)
-    stored_trades = _stored_trades(list_executions(exchange=exchange_name), inst_type, requested)
+    stored_trades = restore_normalized_trades(
+        list_executions(exchange=exchange_name, account_scope=account_scope), inst_type, requested,
+    )
     ignored_position_ids: set[str] = set()
     positions, positions_ignored = reconstruct_positions(
         exchange_id,
         stored_trades,
         inst_type,
+        account_scope=account_scope,
         skip_uncertain_initial_lifecycle=inst_type == "SWAP",
         ignored_external_ids=ignored_position_ids,
     )
@@ -111,7 +125,9 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
     # snapshots a prerequisite for reconstruction on the first import.
     if trades:
         add_executions_if_new([
-            _execution_row(exchange_id, exchange_name, trade, snapshots.get(trade.external_id), inst_type)
+            _execution_row(
+                exchange_id, exchange_name, trade, snapshots.get(trade.external_id), inst_type, account_scope,
+            )
             for trade in trades
         ])
 
@@ -183,29 +199,6 @@ def sync_ccxt(exchange_id: str, inst_type: str, lookback_days: int, symbols: Seq
     }}
 
 
-def _stored_trades(rows: Sequence[Dict[str, Any]], inst_type: str, symbols: Sequence[str]) -> list[NormalizedTrade]:
-    """Restore normalized executions so repeated syncs use one local history ledger."""
-    restored: list[NormalizedTrade] = []
-    requested = {str(symbol).upper().replace("-", "/").split(":", 1)[0] for symbol in symbols}
-    for row in rows:
-        if row.get("inst_type") != inst_type or not row.get("actual_side") or str(row.get("symbol")).upper() not in requested:
-            continue
-        try:
-            timestamp_ms = int(datetime.fromisoformat(str(row["datetime"]).replace("Z", "+00:00")).timestamp() * 1000)
-            restored.append(NormalizedTrade(
-                external_id=str(row["external_id"]), timestamp_ms=timestamp_ms,
-                symbol=str(row["symbol"]), coin=str(row["symbol"]).split("/", 1)[0].upper(),
-                side=str(row["actual_side"]), amount=float(row["size"]), price=float(row["entry_price"]),
-                fee=float(row.get("fee") or 0.0), fee_currency=row.get("fee_currency"),
-                order_id=row.get("order_id"), position_side=row.get("position_side"),
-                contract_size=float(row.get("contract_size") or 1.0),
-                fee_complete=bool(row.get("fee_complete", True)),
-            ))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return sorted(restored, key=lambda trade: (trade.timestamp_ms, trade.external_id))
-
-
 def _iso(timestamp_ms: int) -> str:
     return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -216,6 +209,7 @@ def _execution_row(
     trade: NormalizedTrade,
     snapshot: Optional[Dict[str, Any]],
     inst_type: str,
+    account_scope: str,
 ) -> Dict[str, Any]:
     return {
         "external_id": trade.external_id,
@@ -237,6 +231,7 @@ def _execution_row(
         "contract_size": trade.contract_size,
         "inst_type": inst_type,
         "fee_complete": trade.fee_complete,
+        "account_scope": account_scope,
     }
 
 
@@ -285,6 +280,7 @@ def _position_row(
         "notes": notes,
         "source": f"{exchange_id}_position",
         "external_id": position["external_id"],
+        "lifecycle_id": position.get("lifecycle_id"),
         "exchange": exchange_name,
         "order_id": position["order_id"],
         "fee": position["fee"],

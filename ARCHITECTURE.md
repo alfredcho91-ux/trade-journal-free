@@ -2,7 +2,7 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 배포 버전: `v1.0.22`
+현재 배포 버전: `v1.0.23`
 
 ```text
 Browser / Desktop WebView
@@ -54,9 +54,9 @@ FastAPI
 
 - `backend/modules/exchanges/registry.py`: 지원 거래소와 기능 메타데이터
 - `backend/modules/exchanges/ccxt_adapter.py`: CCXT 클라이언트·페이지 조회·체결 정규화
-- `backend/modules/exchanges/reconstruction.py`: 분할 체결의 완료 포지션 재구성
+- `backend/modules/exchanges/reconstruction.py`: 동일 signed-fill stream으로 진행중·완료 포지션 lifecycle을 재구성. Binance lifecycle은 계정 범위·symbol·position side·최초 진입 fill에서 결정하며 추가 진입/부분 청산에도 유지
 - `backend/modules/exchanges/sync_service.py`: 스냅샷과 저장 오케스트레이션
-- `backend/modules/exchanges/execution_repository.py`: 복기용 원시 체결 경량 저장소
+- `backend/modules/exchanges/execution_repository.py`: 복기와 Binance lifecycle 재현용 account-scoped 원시 체결 경량 저장소
 - `backend/modules/exchanges/credentials.py`: environment·Keychain·암호화 DB 선택, legacy migration, 상태 해석
 - `backend/modules/exchanges/encrypted_store.py`: AES-256-GCM 암호문 SQLite adapter
 - `backend/modules/exchanges/keyring_store.py`: macOS Keychain/Windows Credential Manager adapter
@@ -93,14 +93,14 @@ FastAPI
 - `JournalPage`는 API 집계값을 표시하고, 개별 행의 표시용 수익률과 차트 좌표만 계산합니다.
 - `TradeAnalysisPage`의 최소 절대 순수익률 필터는 투입 증거금 대비 순수익률 절대값이 기준 이하인 종료 거래를 백엔드 품질 분석 표본과 프런트 상세 표본에서 함께 제외하며, 기본값 0%는 전체 거래입니다.
 - `behavior_analysis.py`는 기존 품질 분석의 진입 당시 확정봉 Regime과 사후 MFE/MAE를 재사용합니다. 계획 SL/TP·Setup·Mistake는 거래소 동기화 필드와 분리해 저장하며, 규칙 준수는 진입 전에 기록된 계획과 진입 당시 완료된 추세만 사용합니다.
-- Plan Lab의 `VERIFIED_PRETRADE`는 클라이언트 시각이 아니라 서버 수신 시각과 최초 실제 Entry를 엄격 비교합니다. `planInitial`은 첫 Revision, `planEffectiveAtEntry`는 Entry보다 먼저 수신된 마지막 Revision입니다. Entry 이후 입력은 과거 시각 metadata를 보내도 `RETROSPECTIVE`입니다.
+- Plan Lab의 `VERIFIED_PRETRADE`는 클라이언트 시각이 아니라 서버 수신 시각과 최초 실제 Entry를 엄격 비교합니다. `planInitial`은 첫 Revision, `planEffectiveAtEntry`는 Entry보다 먼저 수신된 마지막 Revision입니다. Entry 이후 입력은 과거 시각 metadata를 보내도 `RETROSPECTIVE`입니다. 별도 `IN_TRADE` 경로는 거래소 open-position API가 서버에서 다시 확인한 포지션에만 허용하며, 실제 Entry를 `revision.entry_price`에 복사하지 않습니다. 활성 `IN_TRADE` Plan은 종료 거래 분석에서 제외됩니다. Deepcoin은 stable posId, Binance는 검증된 flat 경계 뒤 최초 fill에서 만든 deterministic lifecycle ID가 종료 거래와 정확히 같을 때만 자동 연결합니다. 첫 경계가 불확실하면 저장을 제한하고 근사 매칭하지 않습니다.
 - 회고 Plan은 그 거래의 최신 Revision을 분석 대상으로 사용하되 source를 사전 기록으로 승격하지 않습니다. 사용자가 계획 Entry를 제공하지 않는 현재 Past Trade UX에서는 Revision의 Entry 필드를 `null`로 저장하고, 실제 Entry는 Execution-only 계산의 기준으로만 사용합니다. 따라서 original planned R:R과 Entry adherence는 평가하지 않습니다. 기존 DB link도 조회 시 서버 수신 시각으로 재검증합니다.
 - `trading_plan_revisions.take_profit`은 TP1, 선택 입력 `take_profit_2`는 TP2로 revision마다 보존합니다. TP2가 없으면 기존 단일 TP barrier와 TP1 100% 청산 결과를 그대로 유지합니다. TP2가 있으면 공식 simulation이 `TP1 50% + TP2 잔여 50%` 고정 leg를 생성하고, TP1 이후에도 원래 SL을 유지합니다. TP1 후 TP2/SL 미도달은 공식 Horizon 종가로 잔여 leg를 평가합니다.
 - 회고 입력의 Plan·첫 Revision·stable trade link는 하나의 SQLite transaction으로 생성합니다. 중복 link 또는 저장 중 실패가 발생하면 세 레코드를 모두 롤백하며, 의도적으로 미연결 Plan을 만드는 기존 사전 계획 경로는 그대로 유지합니다.
 - Plan Simulation은 기존 완료 5분봉 경로를 재사용하고 계획 Entry가 아닌 **실제 Entry**에 SL/TP를 적용합니다. 기본 관찰 구간은 실제 종료 후 경과시간 40시간이며 사용자 최대 보유시간이 있으면 이를 적용합니다. Split Plan에서 TP1/SL 또는 TP1 확정 후 TP2/SL이 같은 봉에 닿거나 경계 부분 봉이 barrier 순서에 영향을 주면 유리한 순서를 추정하지 않고 `NOT_EVALUABLE`로 제외합니다. TP1·TP2가 같은 완료봉에 닿고 SL 충돌이 없으면 순서대로 50%씩 체결합니다. Split Plan의 청산 후 별도 분석은 TP1 이전 상태를 복원할 수 없어 단일 TP로 대체하지 않고 명시적으로 평가 제외합니다.
 - 공식 Plan R은 각 leg의 가격 R에 50% 비중과 기존 fee proxy를 적용한 합계이며 denominator는 기존 Planned Risk USDT를 유지합니다. Plan PnL은 이 공식 Plan R과 Planned Risk의 곱으로 노출합니다. Execution Delta, Attribution, Optimizer와 70/30 Discovery/Validation은 별도 TP 계산 없이 같은 `planned_result_r`를 소비합니다. 응답의 `plan_legs`는 exit 가격·시각·비중·가격 R·가중 기여 R/손익을 제공하고 상세 UI는 이 backend 값을 표시만 합니다.
 - Plan Expectancy·Actual Expectancy·Execution Delta는 계획 위험 USDT를 신뢰할 수 있는 거래만 집계합니다. 가격 기준 R fallback은 별도 coverage로만 표시합니다.
-- Plan ↔ Trade link는 생성 후 불변입니다. 동일 거래 재요청은 idempotent하고 다른 거래로의 재연결은 거부합니다. 동기화 후 내부 journal ID 복구는 기존 external ID가 일치할 때만 수행합니다.
+- Plan ↔ Trade link는 생성 후 불변입니다. 동일 거래 재요청은 idempotent하고 다른 거래로의 재연결은 거부합니다. Deepcoin은 exchange position external ID, Binance는 journal의 별도 `lifecycle_id`가 정확히 일치할 때만 미연결 `IN_TRADE` Plan을 복구합니다. lifecycle 중복 후보는 연결하지 않습니다.
 - Setup·방향·시장상황 집계의 공식 `n`과 chart/drill-down `journal_ids`는 같은 USDT R 표본을 사용합니다. 전체 그룹 ID는 별도 `all_journal_ids`로만 보존합니다.
 - 대표 실행 행동은 거래당 하나만 배정해 Delta 합계의 중복을 막고, 부가 관찰 태그는 별도 집계합니다. Optimizer는 시간순 Discovery 70%와 Validation 30% 각각의 `n`·표본 신뢰도를 독립 계산합니다.
 - Setup은 현재 Revision의 문자열 스냅샷이며 stable setup ID, rename, delete API가 없습니다. 따라서 과거 문자열은 보존되지만 이름 변경 전후 자동 병합은 지원하지 않습니다.

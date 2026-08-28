@@ -14,6 +14,7 @@ COLUMNS = [
     "external_id", "datetime", "symbol", "direction", "size", "entry_price",
     "source", "exchange", "order_id", "notes", "fee", "fee_currency", "indicator_snapshot", "created_at",
     "actual_side", "position_side", "contract_size", "inst_type", "fee_complete",
+    "account_scope",
 ]
 
 
@@ -48,7 +49,8 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
             position_side TEXT,
             contract_size REAL,
             inst_type TEXT,
-            fee_complete INTEGER
+            fee_complete INTEGER,
+            account_scope TEXT
         )
     """)
     existing_columns = {
@@ -58,6 +60,7 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
     for column, definition in (
         ("notes", "TEXT"), ("actual_side", "TEXT"), ("position_side", "TEXT"),
         ("contract_size", "REAL"), ("inst_type", "TEXT"), ("fee_complete", "INTEGER"),
+        ("account_scope", "TEXT"),
     ):
         if column not in existing_columns:
             connection.execute(f"ALTER TABLE {TABLE_NAME} ADD COLUMN {column} {definition}")
@@ -80,7 +83,7 @@ def _migrate_legacy_rows(connection: sqlite3.Connection) -> None:
         INSERT OR IGNORE INTO {TABLE_NAME} ({", ".join(COLUMNS)})
         SELECT external_id, datetime, symbol, direction, size, entry_price,
                source, exchange, order_id, notes, fee, fee_currency, indicator_snapshot, created_at,
-               NULL, NULL, NULL, NULL, 1
+               NULL, NULL, NULL, NULL, 1, NULL
         FROM journal_entries
         WHERE source IN ({placeholders}) AND external_id IS NOT NULL
     """, sources)
@@ -101,11 +104,13 @@ def add_executions_if_new(rows: Iterable[Dict[str, Any]], *, db_path: Optional[P
         )
         for key in sorted(existing):
             snapshot = payloads[key].get("indicator_snapshot")
-            if snapshot is not None:
-                connection.execute(
-                    f"UPDATE {TABLE_NAME} SET indicator_snapshot = COALESCE(indicator_snapshot, ?) WHERE external_id = ?",
-                    (snapshot, key),
-                )
+            connection.execute(
+                f"""UPDATE {TABLE_NAME}
+                SET indicator_snapshot = COALESCE(indicator_snapshot, ?),
+                    account_scope = COALESCE(account_scope, ?)
+                WHERE external_id = ?""",
+                (snapshot, payloads[key].get("account_scope"), key),
+            )
         connection.commit()
         return set(payloads) - existing
 
@@ -114,15 +119,22 @@ def list_executions(
     *,
     exchange: Optional[str] = None,
     symbol: Optional[str] = None,
+    symbols: Optional[Iterable[str]] = None,
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
+    account_scope: Optional[str] = None,
     db_path: Optional[Path] = None,
 ) -> List[Dict[str, Any]]:
     conditions, values = [], []
-    for column, value in (("exchange", exchange), ("symbol", symbol)):
+    for column, value in (("exchange", exchange), ("symbol", symbol), ("account_scope", account_scope)):
         if value:
             conditions.append(f"{column} = ?")
             values.append(value)
+    normalized_symbols = sorted({str(value) for value in (symbols or []) if value})
+    if normalized_symbols:
+        placeholders = ", ".join("?" for _ in normalized_symbols)
+        conditions.append(f"symbol IN ({placeholders})")
+        values.extend(normalized_symbols)
     if start_time:
         conditions.append("datetime >= ?")
         values.append(start_time)
@@ -137,6 +149,36 @@ def list_executions(
             values,
         ).fetchall()
     return [_row_to_dict(row) for row in rows]
+
+
+def adopt_legacy_account_scope(
+    exchange: str,
+    account_scope: str,
+    *,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Assign legacy unscoped executions only when the exchange has no conflicting account scope."""
+    if not exchange or not account_scope:
+        return 0
+    with _connect(db_path) as connection:
+        _ensure_schema(connection)
+        existing_scopes = {
+            str(row["account_scope"])
+            for row in connection.execute(
+                f"""SELECT DISTINCT account_scope FROM {TABLE_NAME}
+                WHERE exchange = ? AND account_scope IS NOT NULL AND account_scope != ''""",
+                (exchange,),
+            ).fetchall()
+        }
+        if existing_scopes and existing_scopes != {account_scope}:
+            return 0
+        cursor = connection.execute(
+            f"""UPDATE {TABLE_NAME} SET account_scope = ?
+            WHERE exchange = ? AND (account_scope IS NULL OR account_scope = '')""",
+            (account_scope, exchange),
+        )
+        connection.commit()
+        return int(cursor.rowcount)
 
 
 def _existing_ids(connection: sqlite3.Connection, external_ids: Iterable[str]) -> Set[str]:
@@ -172,4 +214,4 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return result
 
 
-__all__ = ["add_executions_if_new", "list_executions"]
+__all__ = ["add_executions_if_new", "adopt_legacy_account_scope", "list_executions"]

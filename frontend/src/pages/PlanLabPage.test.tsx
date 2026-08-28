@@ -3,7 +3,7 @@ import type { ComponentProps } from 'react';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { JournalEntry, PlanEvaluation, PlanLabData, TradingPlan } from '../types';
+import type { ExchangeOpenPosition, JournalEntry, PlanEvaluation, PlanLabData, TradingPlan } from '../types';
 import {
   calculateTargetRiskReward,
   calculateTargetRiskRewardFromDraft,
@@ -153,6 +153,20 @@ describe('Past Trade Plan Input reliability', () => {
     expect(html).toContain('목표 손익비');
     expect(html).toContain('실제 진입가를 기준으로 현재 입력한 SL/TP 가격 구조');
     expect(html).toContain('공식 계획 결과(Plan R)는 실제 가격 경로로 별도 계산');
+  });
+
+  it('uses a verified open position only as an in-trade R:R reference', () => {
+    const openPosition: ExchangeOpenPosition = {
+      exchange: 'deepcoin', position_id: 'live-1', symbol: 'BTC/USDT', direction: 'Long',
+      size: 1, average_price: 100, last_price: 101, unrealized_pnl: 1, opened_at: '2026-01-01T10:00:00Z',
+    };
+    const html = renderPlanForm({ trade: undefined, openPosition });
+
+    expect(revisionPayload(draft, true)).toMatchObject({ entry_price: null, entry_min: null, entry_max: null });
+    expect(html).toContain('진행중 거래 계획 입력');
+    expect(html).toContain('실제 진입 후 기록하는 계획입니다');
+    expect(html).toContain('실제 진입가는 목표 손익비 기준으로만 사용');
+    expect(html).not.toContain('Plan Entry');
   });
 
   it('keeps unsupported split post-exit coverage separate from the official analysis n', () => {
@@ -375,6 +389,22 @@ describe('Past Trade Plan Input reliability', () => {
     const failed = renderPlanForm({ saved: false, error: '저장 실패' });
     expect(failed).toContain('저장 실패');
     expect(failed).not.toContain('회고 계획이 저장되었습니다');
+  });
+
+  it('shows the server lifecycle race rejection instead of an in-trade success state', () => {
+    const message = 'The position is no longer open. Synchronize closed trades, then record it as retrospective.';
+    const html = renderPlanForm({
+      trade: undefined,
+      openPosition: {
+        exchange: 'deepcoin', position_id: 'live-1', symbol: 'BTC/USDT', direction: 'Long',
+        size: 1, average_price: 100, last_price: 101, unrealized_pnl: 1,
+      },
+      saved: false,
+      error: message,
+    });
+
+    expect(html).toContain(message);
+    expect(html).not.toContain('회고 계획이 저장되었습니다');
   });
 
   it('hides hindsight result fields before retrospective save', () => {

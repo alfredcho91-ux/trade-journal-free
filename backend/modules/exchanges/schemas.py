@@ -109,6 +109,8 @@ class ExchangeOpenPosition(BaseModel):
     leverage: Optional[float] = None
     opened_at: Optional[str] = None
     updated_at: Optional[str] = None
+    lifecycle_id: Optional[str] = None
+    lifecycle_available: bool = True
 
 
 class ExchangeOpenPositionsData(BaseModel):

@@ -2,7 +2,7 @@
 
 여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `Risk Lab`, `계획 분석`, `홀딩 / 재진입`, `거래 탐색`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
 
-현재 배포 버전: `v1.0.22`
+현재 배포 버전: `v1.0.23`
 
 ## 무료 배포판 범위
 
@@ -13,7 +13,7 @@
 - 승패·진입·청산 품질과 대성공·대실패 거래 분석, 별도 Risk Lab의 손절·SL/TP 기대값 분석
 - 매매분석 상단 Trading Review: 기존 행동 분석의 수익 누수, 품질 분석의 반복 강점, 이미 계산된 Plan Lab 실행 요약을 한 번에 보고 근거 거래로 이동
 - 거래별 계획 SL/TP·Setup·Mistake 기록과 규칙 준수, 수익 누수, 조건 비교 분석
-- Plan Lab은 과거 종료 거래를 선택해 사용자가 당시 계획을 직접 입력하고 실제 실행과 비교합니다. 회고 입력에 계획 Entry가 없으면 실제 Entry를 계획값으로 저장하지 않으며, 거래 전 서버에 저장된 계획만 사전 기록으로 검증합니다. `TP2`가 없으면 기존처럼 `TP1`에서 100% 청산하고, `TP2`가 있으면 `TP1 50% + TP2 잔여 50%` 고정 규칙으로 공식 Plan R·Plan PnL·Delta·Attribution·Optimizer를 계산합니다. 거래 목록은 가볍게 먼저 열리고 경로 재생·Optimizer는 사용자가 공식 분석을 요청할 때 실행됩니다.
+- Plan Lab은 상단에서 거래소가 확인한 실제 진행중 포지션을 먼저 보여 주고, 종료 거래에는 당시 계획을 회고 입력해 실제 실행과 비교합니다. 진행중 계획은 서버가 포지션이 아직 열려 있는지 다시 확인한 경우에만 `IN_TRADE`로 저장되며, 실제 Entry는 목표 손익비 미리보기 기준일 뿐 사용자가 계획한 진입가로 저장되지 않습니다. 회고 입력도 계획 Entry가 없으면 실제 Entry를 계획값으로 저장하지 않으며, 거래 전 서버에 저장된 계획만 사전 기록으로 검증합니다. `TP2`가 없으면 기존처럼 `TP1`에서 100% 청산하고, `TP2`가 있으면 `TP1 50% + TP2 잔여 50%` 고정 규칙으로 공식 Plan R·Plan PnL·Delta·Attribution·Optimizer를 계산합니다. 거래 목록은 가볍게 먼저 열리고 경로 재생·Optimizer는 사용자가 공식 분석을 요청할 때 실행됩니다.
 - macOS 앱과 Windows x64 압축 배포판
 - 사용자 API Key는 브라우저 저장소나 프론트엔드 코드에 저장하지 않음
 
@@ -153,7 +153,7 @@ wrangler secret put DEMO_PASSWORD
 ## 데이터 기준
 
 - 거래 원본은 선택한 거래소의 읽기 전용 API를 사용합니다.
-- Deepcoin은 종료 포지션 API를 사용하고, Binance는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다. 동기화는 timestamp 경계를 겹쳐 재조회하고 거래 ID로 중복 제거합니다. 조회 기간보다 이전에 열린 포지션은 충분한 기존 체결 원장이 없으면 복원이 불완전할 수 있으므로 경고를 확인해야 합니다.
+- Deepcoin은 종료 포지션 API를 사용하고, Binance는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다. Binance의 진행중·종료 거래는 계정 범위와 최초 진입 fill에서 만든 deterministic lifecycle ID를 공유합니다. 추가 진입과 부분 청산은 같은 lifecycle을 유지하고, 전량 청산 뒤 재진입은 새 lifecycle을 시작합니다. 동기화는 timestamp 경계를 겹쳐 재조회하고 거래 ID로 중복 제거합니다. 조회 기간보다 이전에 열린 포지션은 충분한 기존 체결 원장이 없으면 복원이 불완전할 수 있으므로 경고를 확인해야 합니다.
 - 종료 포지션은 저널 테이블에, 차트 복기용 개별 체결은 경량 `exchange_executions` 테이블에 분리 저장합니다. 지표 스냅샷은 최초 진입과 종료 시점에만 계산합니다.
 - CCXT 커넥터는 선택 기간 이전에 열린 포지션, 거래소가 제공하지 않는 과거 레버리지·펀딩을 완전히 복원하지 못할 수 있으며 UI 경고로 표시합니다.
 - 모든 저널 분석 OHLCV는 Binance USDT-M Futures 공개 캔들을 공통으로 사용합니다. 거래소 API는 체결·포지션 동기화에만 사용하며, 리포트와 분석 화면에는 `Binance USDT-M Futures` 출처를 표시합니다.
@@ -161,8 +161,9 @@ wrangler secret put DEMO_PASSWORD
 - 진입 분석에는 진입 전에 완료된 봉만 사용합니다.
 - 종료 이후 봉은 추가 홀딩·청산 품질·손절 사후 분석에만 사용합니다.
 - `VERIFIED_PRETRADE`는 Revision의 서버 수신 시각이 최초 실제 Entry보다 **엄격히 빠른 경우**에만 부여합니다. 클라이언트가 보낸 과거 시각은 판정에 사용하지 않으며, Entry 이후 입력은 `RETROSPECTIVE`로 남습니다. 사전 Revision이 여러 개면 Entry 직전 마지막 서버 수신 Revision을 사용합니다.
-- Plan과 거래의 연결은 한 번 생성되면 다른 거래로 옮길 수 없습니다. 동일 거래에 대한 재요청만 idempotent하게 허용하며, 동기화 시 내부 ID가 바뀌는 경우에는 저장된 거래소 external ID로만 복구합니다.
+- Plan과 거래의 연결은 한 번 생성되면 다른 거래로 옮길 수 없습니다. 동일 거래에 대한 재요청만 idempotent하게 허용합니다. Deepcoin은 안정적인 거래소 position ID, Binance는 동일 fill stream에서 재현한 lifecycle ID가 정확히 일치할 때만 진행중 Plan을 종료 거래에 연결합니다.
 - 회고 입력 Plan은 당시 기억을 구조화하는 사후 분석 자료입니다. 계획 Entry를 입력받지 않으며 DB에는 `null`로 보존합니다. Execution-only 분석에서만 연결 거래의 실제 Entry에 계획 SL/TP를 적용하고 실제 종료 뒤 최대 40시간까지 경로를 재생합니다. Plan·Revision·거래 Link는 한 트랜잭션으로 저장되어 실패 시 함께 롤백됩니다.
+- 진행중 포지션은 Plan Lab의 종료 거래 분석·Coverage·Optimizer·근거 거래에 포함되지 않습니다. `IN_TRADE` 계획은 서버 수신 시각과 실제 open-position lifecycle을 함께 보존합니다. Deepcoin은 동일 position ID, Binance는 동일 deterministic lifecycle ID가 종료 거래에 동기화됐을 때만 자동 연결합니다. Binance 로컬 체결 원장의 첫 포지션처럼 직전 flat 경계를 검증할 수 없으면 화면 표시는 유지하되 Plan 저장을 제한합니다. 심볼·방향·시각·가격 근사 매칭은 사용하지 않습니다.
 - Entry 또는 분석 Horizon이 5분봉 내부에 있으면 해당 경계 봉을 버리지 않습니다. 경계 봉의 고가·저가가 SL/TP 판정에 영향을 줄 수 있지만 더 낮은 시간 데이터로 순서를 확인할 수 없는 경우 공식 결과는 `NOT_EVALUABLE`로 제외합니다.
 - Trading Style Optimizer는 거래를 시간순 70/30으로 나누고 Discovery와 Validation의 `n`과 표본 신뢰도를 각각 계산합니다. Validation 표본이 부족하면 같은 방향이 관찰돼도 검증 완료로 표현하지 않습니다.
 - Setup은 현재 안정 ID가 아닌 Revision별 문자열 스냅샷입니다. 이름을 바꾼 새 Revision은 과거 Revision 문자열을 훼손하지 않지만, 이름 변경 전후를 자동으로 같은 Setup으로 합치지는 않습니다.

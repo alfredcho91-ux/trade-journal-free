@@ -26,6 +26,7 @@ OPTIONAL_SCHEMA_COLUMNS = {
     "indicators": "TEXT",
     "source": "TEXT",
     "external_id": "TEXT",
+    "lifecycle_id": "TEXT",
     "exchange": "TEXT",
     "order_id": "TEXT",
     "fee": "REAL",
@@ -65,6 +66,7 @@ EXCHANGE_REFRESH_COLUMNS = [
     "leverage",
     "invested_amount",
     "pnl_calculation_version",
+    "lifecycle_id",
 ]
 SCHEMA_LOCK = threading.Lock()
 INITIALIZED_DATABASES: Set[str] = set()
@@ -162,6 +164,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             notes TEXT,
             source TEXT,
             external_id TEXT,
+            lifecycle_id TEXT,
             exchange TEXT,
             order_id TEXT,
             fee REAL,
@@ -204,6 +207,13 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS {TABLE_NAME}_external_id_unique
             ON {TABLE_NAME} (external_id)
             WHERE external_id IS NOT NULL
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE INDEX IF NOT EXISTS {TABLE_NAME}_lifecycle_id_lookup
+            ON {TABLE_NAME} (lifecycle_id)
+            WHERE lifecycle_id IS NOT NULL
             """
         )
         conn.commit()

@@ -14,7 +14,7 @@ from backend.modules.journal.trade_selection import timestamp_ms
 PLAN_TABLE = "trading_plans"
 REVISION_TABLE = "trading_plan_revisions"
 LINK_TABLE = "trading_plan_links"
-PLAN_SOURCES = {"UNLINKED", "RETROSPECTIVE", "VERIFIED_PRETRADE"}
+PLAN_SOURCES = {"UNLINKED", "RETROSPECTIVE", "VERIFIED_PRETRADE", "IN_TRADE"}
 
 
 def utc_now() -> str:
@@ -61,6 +61,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             side TEXT NOT NULL CHECK(side IN ('Long', 'Short')),
             status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'linked', 'cancelled')),
             source TEXT NOT NULL DEFAULT 'UNLINKED',
+            live_position_id TEXT,
+            live_entry_at TEXT,
             client_created_at TEXT,
             received_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -105,6 +107,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     plan_columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({PLAN_TABLE})")}
     if "source" not in plan_columns:
         conn.execute(f"ALTER TABLE {PLAN_TABLE} ADD COLUMN source TEXT NOT NULL DEFAULT 'UNLINKED'")
+    if "live_position_id" not in plan_columns:
+        conn.execute(f"ALTER TABLE {PLAN_TABLE} ADD COLUMN live_position_id TEXT")
+    if "live_entry_at" not in plan_columns:
+        conn.execute(f"ALTER TABLE {PLAN_TABLE} ADD COLUMN live_entry_at TEXT")
     revision_columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({REVISION_TABLE})")}
     if "max_hold_hours" not in revision_columns:
         conn.execute(f"ALTER TABLE {REVISION_TABLE} ADD COLUMN max_hold_hours REAL")
@@ -139,14 +145,17 @@ def _insert_plan_with_revision(
     *,
     status: str = "active",
     source: str = "UNLINKED",
+    live_position_id: Optional[str] = None,
+    live_entry_at: Optional[str] = None,
 ) -> int:
     cursor = conn.execute(
         f"""INSERT INTO {PLAN_TABLE}
-        (exchange, symbol, symbol_key, side, status, source, client_created_at, received_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (exchange, symbol, symbol_key, side, status, source, live_position_id, live_entry_at, client_created_at, received_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             str(payload["exchange"]).strip().lower(), str(payload["symbol"]).strip().upper(),
             normalize_symbol(payload["symbol"]), payload["side"], status, source,
+            live_position_id, live_entry_at,
             payload.get("client_created_at"), server_time, server_time, server_time,
         ),
     )
@@ -166,6 +175,96 @@ def create_plan(payload: Dict[str, Any], *, db_path: Optional[Path] = None) -> D
     server_time = utc_now()
     with _connect(db_path) as conn:
         plan_id = _insert_plan_with_revision(conn, payload, server_time)
+        conn.commit()
+    return get_plan(plan_id, db_path=db_path)
+
+
+def _live_position_matches(payload: Dict[str, Any], position: Dict[str, Any]) -> bool:
+    return (
+        str(position.get("exchange") or "").lower() == str(payload.get("exchange") or "").lower()
+        and str(position.get("position_id") or "") == str(payload.get("position_id") or "")
+        and normalize_symbol(position.get("symbol")) == normalize_symbol(payload.get("symbol"))
+        and position.get("direction") == payload.get("side")
+    )
+
+
+def create_in_trade_plan(
+    payload: Dict[str, Any],
+    position: Dict[str, Any],
+    *,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Persist an entry-after plan without ever treating actual entry as planned entry."""
+    if not _live_position_matches(payload, position):
+        raise ValueError("Confirmed live position does not match the plan request")
+    entry_price = position.get("average_price")
+    if entry_price is None:
+        raise ValueError("Live position entry price is unavailable")
+    _validate_split_target_order(payload["side"], payload["revision"], entry_override=float(entry_price))
+    server_time = utc_now()
+    exchange = str(payload["exchange"]).strip().lower()
+    position_id = str(payload["position_id"]).strip()
+    plan_id: int
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            f"""SELECT id FROM {PLAN_TABLE}
+            WHERE exchange=? AND live_position_id=? AND source='IN_TRADE' AND status='active'""",
+            (exchange, position_id),
+        ).fetchone()
+        if existing is not None:
+            plan_id = int(existing["id"])
+            conn.commit()
+        else:
+            plan_id = _insert_plan_with_revision(
+                conn,
+                payload,
+                server_time,
+                source="IN_TRADE",
+                live_position_id=position_id,
+                live_entry_at=position.get("opened_at"),
+            )
+            conn.commit()
+    return get_plan(plan_id, db_path=db_path)
+
+
+def add_in_trade_revision(
+    plan_id: int,
+    revision: Dict[str, Any],
+    position: Dict[str, Any],
+    *,
+    db_path: Optional[Path] = None,
+) -> Optional[Dict[str, Any]]:
+    """Append an immutable in-trade revision only while the server still sees it open."""
+    server_time = utc_now()
+    with _connect(db_path) as conn:
+        plan = conn.execute(
+            f"SELECT id, exchange, symbol, symbol_key, side, source, status, live_position_id FROM {PLAN_TABLE} WHERE id=?",
+            (plan_id,),
+        ).fetchone()
+        if plan is None:
+            return None
+        expected = {
+            "exchange": plan["exchange"], "symbol": plan["symbol"],
+            "side": plan["side"], "position_id": plan["live_position_id"],
+        }
+        if plan["source"] != "IN_TRADE" or plan["status"] != "active" or not _live_position_matches(expected, position):
+            raise ValueError("The position is no longer open for an in-trade revision")
+        entry_price = position.get("average_price")
+        if entry_price is None:
+            raise ValueError("Live position entry price is unavailable")
+        _validate_split_target_order(str(plan["side"]), revision, entry_override=float(entry_price))
+        version = int(conn.execute(
+            f"SELECT COALESCE(MAX(version), 0) + 1 FROM {REVISION_TABLE} WHERE plan_id=?", (plan_id,),
+        ).fetchone()[0])
+        conn.execute(
+            f"""INSERT INTO {REVISION_TABLE}
+            (plan_id, version, entry_price, entry_min, entry_max, stop_loss, take_profit, take_profit_2,
+             setup, entry_note, exit_note, memo, max_hold_hours, client_created_at, received_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (plan_id, version, *_revision_payload(revision, server_time)),
+        )
+        conn.execute(f"UPDATE {PLAN_TABLE} SET updated_at=? WHERE id=?", (server_time, plan_id))
         conn.commit()
     return get_plan(plan_id, db_path=db_path)
 
@@ -286,7 +385,7 @@ def link_plan(plan_id: int, journal_entry_id: int, *, db_path: Optional[Path] = 
         received_ms is not None and entry_ms is not None and received_ms < entry_ms
         for received_ms in (timestamp_ms(item.get("received_at")) for item in plan.get("revisions") or [])
     )
-    plan_source = "VERIFIED_PRETRADE" if verified_revision else "RETROSPECTIVE"
+    plan_source = "IN_TRADE" if plan.get("source") == "IN_TRADE" else ("VERIFIED_PRETRADE" if verified_revision else "RETROSPECTIVE")
     server_time = utc_now()
     with _connect(db_path) as conn:
         existing = conn.execute(
@@ -311,14 +410,66 @@ def link_plan(plan_id: int, journal_entry_id: int, *, db_path: Optional[Path] = 
     return get_plan(plan_id, db_path=db_path)
 
 
+def _closed_entry_for_live_plan(
+    plan: Dict[str, Any],
+    by_external: Dict[str, Dict[str, Any]],
+    by_lifecycle: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Only reconnect when an exchange supplies the same stable lifecycle identity."""
+    exchange = str(plan.get("exchange") or "").lower()
+    position_id = str(plan.get("live_position_id") or "").strip()
+    if not position_id:
+        return None
+    if exchange == "deepcoin":
+        return by_external.get(f"deepcoin:position:{position_id}")
+    if exchange == "binance":
+        return by_lifecycle.get(position_id)
+    return None
+
+
 def reconcile_links(*, db_path: Optional[Path] = None) -> None:
     """Repair stable links and reclassify their source from server timestamps."""
     entries = journal_repository.list_entries(db_path=db_path)
     by_id = {int(entry["id"]): entry for entry in entries}
     by_external = {str(entry.get("external_id")): entry for entry in entries if entry.get("external_id")}
+    lifecycle_candidates: Dict[str, List[Dict[str, Any]]] = {}
+    for entry in entries:
+        lifecycle_id = str(entry.get("lifecycle_id") or "").strip()
+        if lifecycle_id:
+            lifecycle_candidates.setdefault(lifecycle_id, []).append(entry)
+    by_lifecycle = {
+        lifecycle_id: candidates[0]
+        for lifecycle_id, candidates in lifecycle_candidates.items()
+        if len(candidates) == 1
+    }
     with _connect(db_path) as conn:
+        live_plans = conn.execute(
+            f"""SELECT plan.* FROM {PLAN_TABLE} plan
+            LEFT JOIN {LINK_TABLE} link ON link.plan_id=plan.id
+            WHERE plan.source='IN_TRADE' AND plan.status='active' AND link.plan_id IS NULL"""
+        ).fetchall()
+        for live_plan in live_plans:
+            plan = _row_dict(live_plan)
+            entry = _closed_entry_for_live_plan(plan, by_external, by_lifecycle)
+            if entry is None:
+                continue
+            entry_id = int(entry["id"])
+            external_id = str(entry.get("external_id") or "").strip() or None
+            try:
+                _assert_trade_link_available(conn, entry_id, external_id, excluding_plan_id=int(plan["id"]))
+            except ValueError:
+                continue
+            _insert_link_row(
+                conn, int(plan["id"]), entry_id, external_id,
+                "LINKED" if external_id else "AMBIGUOUS_LINK", utc_now(),
+            )
+            conn.execute(
+                f"UPDATE {PLAN_TABLE} SET status='linked', updated_at=? WHERE id=?",
+                (utc_now(), int(plan["id"])),
+            )
         rows = conn.execute(
-            f"SELECT id, plan_id, journal_entry_id, journal_external_id FROM {LINK_TABLE}"
+            f"""SELECT link.id, link.plan_id, link.journal_entry_id, link.journal_external_id,
+            plan.source FROM {LINK_TABLE} link JOIN {PLAN_TABLE} plan ON plan.id=link.plan_id"""
         ).fetchall()
         for row in rows:
             external_id = row["journal_external_id"]
@@ -332,10 +483,11 @@ def reconcile_links(*, db_path: Optional[Path] = None) -> None:
 
             linked_entry = external_entry or (by_id.get(int(current)) if current is not None else None)
             if linked_entry is None:
-                conn.execute(
-                    f"UPDATE {PLAN_TABLE} SET source='UNLINKED' WHERE id=?",
-                    (row["plan_id"],),
-                )
+                if row["source"] != "IN_TRADE":
+                    conn.execute(
+                        f"UPDATE {PLAN_TABLE} SET source='UNLINKED' WHERE id=?",
+                        (row["plan_id"],),
+                    )
                 continue
             entry_ms = timestamp_ms(linked_entry.get("entry_datetime"))
             received_times = conn.execute(
@@ -347,7 +499,7 @@ def reconcile_links(*, db_path: Optional[Path] = None) -> None:
                 and received_ms < entry_ms
                 for revision in received_times
             )
-            source = "VERIFIED_PRETRADE" if verified else "RETROSPECTIVE"
+            source = "IN_TRADE" if row["source"] == "IN_TRADE" else ("VERIFIED_PRETRADE" if verified else "RETROSPECTIVE")
             conn.execute(
                 f"UPDATE {PLAN_TABLE} SET source=? WHERE id=?",
                 (source, row["plan_id"]),

@@ -604,6 +604,8 @@ export interface DeepcoinOpenPosition {
 
 export interface ExchangeOpenPosition extends DeepcoinOpenPosition {
   exchange: ExchangeId;
+  lifecycle_id?: string | null;
+  lifecycle_available?: boolean;
 }
 
 export interface ExchangeOpenPositionsData {
@@ -656,6 +658,7 @@ export interface JournalEntry {
   notes?: string;
   source?: string;
   external_id?: string;
+  lifecycle_id?: string;
   exchange?: string;
   order_id?: string;
   fee?: number;

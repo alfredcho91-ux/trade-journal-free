@@ -1,6 +1,6 @@
 export type PlanSide = 'Long' | 'Short';
 export type PlanStatus = 'active' | 'linked' | 'cancelled';
-export type PlanSource = 'UNLINKED' | 'RETROSPECTIVE' | 'VERIFIED_PRETRADE';
+export type PlanSource = 'UNLINKED' | 'RETROSPECTIVE' | 'VERIFIED_PRETRADE' | 'IN_TRADE';
 export type PlanRevisionPhase = 'PRE_TRADE' | 'POST_ENTRY_EDIT' | 'POST_TRADE_INPUT' | 'NOT_LINKED';
 
 export interface PlanRevisionInput {
@@ -45,6 +45,8 @@ export interface TradingPlan {
   side: PlanSide;
   status: PlanStatus;
   source: PlanSource;
+  live_position_id?: string | null;
+  live_entry_at?: string | null;
   client_created_at?: string | null;
   received_at: string;
   created_at: string;

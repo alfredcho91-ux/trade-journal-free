@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from backend.modules.exchanges.models import NormalizedTrade, PositionState
@@ -16,19 +17,32 @@ def trade_sign(trade: NormalizedTrade) -> float:
     return trade.amount if trade.side == "buy" else -trade.amount
 
 
-def reconstruct_positions(
+def exchange_account_scope(exchange_id: str, api_key: str) -> str:
+    """Return a non-secret local account namespace for deterministic lifecycle IDs."""
+    return hashlib.sha256(f"{exchange_id}|{api_key}".encode("utf-8")).hexdigest()[:16]
+
+
+def _execution_order_key(trade: NormalizedTrade) -> Tuple[int, int, Any, str]:
+    identifier = str(trade.external_id).rsplit(":", 1)[-1]
+    if identifier.isdigit():
+        return trade.timestamp_ms, 0, int(identifier), trade.external_id
+    return trade.timestamp_ms, 1, identifier, trade.external_id
+
+
+def reconstruct_position_lifecycles(
     exchange_id: str,
     trades: Sequence[NormalizedTrade],
     inst_type: str,
     *,
+    account_scope: str = "local",
     skip_uncertain_initial_lifecycle: bool = False,
     ignored_external_ids: Optional[Set[str]] = None,
-) -> Tuple[List[Dict[str, Any]], int]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], int]:
     states: Dict[Tuple[str, str], PositionState] = {}
     uncertain_keys: set[Tuple[str, str]] = set()
     positions: List[Dict[str, Any]] = []
     ignored_closes = 0
-    for trade in trades:
+    for trade in sorted(trades, key=_execution_order_key):
         key = (trade.symbol, trade.position_side or "NET")
         if key not in states:
             states[key] = PositionState()
@@ -84,6 +98,7 @@ def reconstruct_positions(
         lifecycle_entry_price = state.weighted_entry_total / state.entry_amount_total
         notional = lifecycle_entry_price * state.closed_amount * trade.contract_size
         external_id = _position_external_id(exchange_id, key, state, trade)
+        lifecycle_id = _position_lifecycle_id(exchange_id, account_scope, key, state)
         if key in uncertain_keys:
             # The local ledger may start with a close from a position opened
             # before the selected sync window. The first complete lifecycle is
@@ -95,6 +110,7 @@ def reconstruct_positions(
         else:
             positions.append({
                 "external_id": external_id,
+                "lifecycle_id": lifecycle_id,
                 "entry_external_id": state.entry_external_id,
                 "timestamp_ms": state.last_close_timestamp_ms,
                 "entry_timestamp_ms": state.entry_timestamp_ms,
@@ -123,7 +139,68 @@ def reconstruct_positions(
         state.last_close_timestamp_ms = 0
         state.last_order_id = state.fee_currency = None
         state.fee_complete = trade.fee_complete if flip > 1e-12 else True
-    return positions, ignored_closes
+    open_positions = []
+    for key, state in states.items():
+        if abs(state.signed_amount) <= 1e-12 or not state.entry_external_id:
+            continue
+        direction = "Long" if state.signed_amount > 0 else "Short"
+        open_positions.append({
+            "lifecycle_id": _position_lifecycle_id(exchange_id, account_scope, key, state),
+            "symbol": key[0],
+            "position_side": key[1],
+            "direction": direction,
+            "size": abs(state.signed_amount),
+            "average_price": state.average_price,
+            "entry_timestamp_ms": state.entry_timestamp_ms,
+            "entry_external_id": state.entry_external_id,
+            "identity_verified": key not in uncertain_keys,
+        })
+    return positions, open_positions, ignored_closes
+
+
+def reconstruct_positions(
+    exchange_id: str,
+    trades: Sequence[NormalizedTrade],
+    inst_type: str,
+    *,
+    account_scope: str = "local",
+    skip_uncertain_initial_lifecycle: bool = False,
+    ignored_external_ids: Optional[Set[str]] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    positions, _, ignored = reconstruct_position_lifecycles(
+        exchange_id,
+        trades,
+        inst_type,
+        account_scope=account_scope,
+        skip_uncertain_initial_lifecycle=skip_uncertain_initial_lifecycle,
+        ignored_external_ids=ignored_external_ids,
+    )
+    return positions, ignored
+
+
+def restore_normalized_trades(
+    rows: Sequence[Dict[str, Any]], inst_type: str, symbols: Sequence[str],
+) -> List[NormalizedTrade]:
+    """Restore the persisted fill ledger for sync and live lifecycle reconstruction."""
+    restored: List[NormalizedTrade] = []
+    requested = {str(symbol).upper().replace("-", "/").split(":", 1)[0] for symbol in symbols}
+    for row in rows:
+        if row.get("inst_type") != inst_type or not row.get("actual_side") or str(row.get("symbol")).upper() not in requested:
+            continue
+        try:
+            timestamp_ms = int(datetime.fromisoformat(str(row["datetime"]).replace("Z", "+00:00")).timestamp() * 1000)
+            restored.append(NormalizedTrade(
+                external_id=str(row["external_id"]), timestamp_ms=timestamp_ms,
+                symbol=str(row["symbol"]), coin=str(row["symbol"]).split("/", 1)[0].upper(),
+                side=str(row["actual_side"]), amount=float(row["size"]), price=float(row["entry_price"]),
+                fee=float(row.get("fee") or 0.0), fee_currency=row.get("fee_currency"),
+                order_id=row.get("order_id"), position_side=row.get("position_side"),
+                contract_size=float(row.get("contract_size") or 1.0),
+                fee_complete=bool(row.get("fee_complete", True)),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sorted(restored, key=_execution_order_key)
 
 
 def _position_external_id(
@@ -138,4 +215,23 @@ def _position_external_id(
     return f"{exchange_id}:position:{digest}"
 
 
-__all__ = ["reconstruct_positions", "trade_sign"]
+def _position_lifecycle_id(
+    exchange_id: str,
+    account_scope: str,
+    key: Tuple[str, str],
+    state: PositionState,
+) -> str:
+    direction = "LONG" if state.signed_amount > 0 else "SHORT"
+    digest = hashlib.sha256(
+        f"{exchange_id}|{account_scope}|{key[0]}|{key[1]}|{direction}|{state.entry_external_id}".encode("utf-8")
+    ).hexdigest()
+    return f"{exchange_id}:lifecycle:{digest}"
+
+
+__all__ = [
+    "reconstruct_position_lifecycles",
+    "reconstruct_positions",
+    "restore_normalized_trades",
+    "exchange_account_scope",
+    "trade_sign",
+]

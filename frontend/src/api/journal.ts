@@ -70,12 +70,34 @@ export async function createRetrospectivePlan(
   }
 }
 
+export async function createInTradePlan(payload: {
+  exchange: string;
+  position_id: string;
+  revision: PlanRevisionInput;
+}): Promise<TradingPlan> {
+  try {
+    const res = await api.post<ApiResponse<TradingPlan>>('/plans/in-trade', payload);
+    return unwrapApiResponse(res, 'Failed to create the in-trade plan.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to create the in-trade plan.');
+  }
+}
+
 export async function addPlanRevision(planId: number, payload: PlanRevisionInput): Promise<TradingPlan> {
   try {
     const res = await api.post<ApiResponse<TradingPlan>>(`/plans/${planId}/revisions`, payload);
     return unwrapApiResponse(res, 'Failed to revise the plan.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to revise the plan.');
+  }
+}
+
+export async function addInTradePlanRevision(planId: number, payload: PlanRevisionInput): Promise<TradingPlan> {
+  try {
+    const res = await api.post<ApiResponse<TradingPlan>>(`/plans/${planId}/in-trade-revisions`, payload);
+    return unwrapApiResponse(res, 'Failed to revise the in-trade plan.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to revise the in-trade plan.');
   }
 }
 

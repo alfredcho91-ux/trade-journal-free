@@ -36,6 +36,7 @@ class JournalEntry(BaseModel):
     notes: Optional[str] = None
     source: Optional[str] = None
     external_id: Optional[str] = None
+    lifecycle_id: Optional[str] = None
     exchange: Optional[str] = None
     order_id: Optional[str] = None
     fee: Optional[float] = None
