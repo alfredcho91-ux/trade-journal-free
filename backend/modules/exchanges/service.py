@@ -189,11 +189,12 @@ def _deepcoin_open_positions(credentials: ExchangeCredentials) -> List[Dict[str,
         symbol = _display_symbol(raw.get("instId"))
         if side not in {"long", "short"} or size is None or size <= 0 or "/" not in symbol:
             continue
+        stable_position_id = str(raw.get("posId") or "").strip()
         times = [value for value in (_timestamp_iso(raw.get("cTime")), _timestamp_iso(raw.get("uTime"))) if value]
         positions.append({
-            "position_id": str(raw.get("posId") or f"deepcoin:{symbol}:{side}"),
-            "lifecycle_id": str(raw.get("posId") or f"deepcoin:{symbol}:{side}"),
-            "lifecycle_available": True,
+            "position_id": stable_position_id or f"deepcoin:{symbol}:{side}",
+            "lifecycle_id": stable_position_id or None,
+            "lifecycle_available": bool(stable_position_id),
             "exchange": "deepcoin",
             "symbol": symbol,
             "direction": "Long" if side == "long" else "Short",

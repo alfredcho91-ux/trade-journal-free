@@ -497,12 +497,15 @@ export default function PlanLabPage() {
   };
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const revision = revisionPayload(draft, Boolean(historicalTradeId));
+      const revision = revisionPayload(
+        draft,
+        Boolean(historicalTradeId) || revisionTarget?.source === 'RETROSPECTIVE',
+      );
       if (!revision) throw new Error(historicalTradeId
         ? (isKo ? 'Stop과 TP 값을 확인하세요.' : 'Check Stop and TP.')
         : (isKo ? '계획 Entry, Stop, TP 값을 확인하세요.' : 'Check Plan Entry, Stop and TP.'));
-      if (historicalTradeId) return createRetrospectivePlan(historicalTradeId, revision);
       if (revisionTarget) return addPlanRevision(revisionTarget.id, revision);
+      if (historicalTradeId) return createRetrospectivePlan(historicalTradeId, revision);
       return createPlan({ exchange: draft.exchange, symbol: draft.symbol, side: draft.side, revision });
     },
     onSuccess: async () => {
@@ -583,10 +586,10 @@ export default function PlanLabPage() {
     setOpenPositionTarget(null); setInTradeRevisionTarget(undefined);
   };
   const openInTradePlan = (position: ExchangeOpenPosition) => {
-    if (position.exchange === 'binance' && position.lifecycle_available === false) {
+    if (position.lifecycle_available === false) {
       setSyncMessage(isKo
-        ? 'Binance 체결 내역을 먼저 동기화해야 이 진행중 거래의 계획을 안전하게 연결할 수 있습니다.'
-        : 'Synchronize Binance fills before saving a plan for this open position.');
+        ? `${position.exchange.toUpperCase()} 거래 식별자를 확인할 수 없어 계획을 안전하게 저장할 수 없습니다. 거래소를 다시 동기화하세요.`
+        : `The ${position.exchange.toUpperCase()} lifecycle identity is unavailable. Synchronize the exchange before saving this plan.`);
       return;
     }
     const plan = openPlanByPositionKey.get(positionKey(position));
@@ -677,6 +680,6 @@ export default function PlanLabPage() {
     {evidence && <EvidenceDrawer title={evidence.title} evaluations={evidenceEvaluations} entries={entries} isKo={isKo} onClose={() => setEvidence(null)} onSelect={(evaluation) => { setEvidence(null); setSelectedEvaluation(evaluation); }} />}
     {selectedEvaluation && <EvaluationModal evaluation={selectedEvaluation} entry={entries.find((entry) => entry.id === selectedEvaluation.journal_id)} entries={entries} isKo={isKo} onClose={() => setSelectedEvaluation(null)} />}
     </>}
-    {viewPlan && <LargePlanDetailsDrawer plan={viewPlan} entry={entries.find((entry) => entry.id === viewPlan.link?.journal_entry_id)} evaluation={evaluations.find((item) => item.journal_id === viewPlan.link?.journal_entry_id)} entries={entries} analysisRequested={analysisRequested} analysisLoading={analysisQuery.isLoading} isKo={isKo} onClose={() => setViewPlan(null)} onLoadAnalysis={requestAnalysis} onRevise={() => { setViewPlan(null); setRevisionTarget(viewPlan); setDraft(draftFromPlan(viewPlan)); setHistoricalTradeId(null); setSavedTradeId(null); }} />}
+    {viewPlan && <LargePlanDetailsDrawer plan={viewPlan} entry={entries.find((entry) => entry.id === viewPlan.link?.journal_entry_id)} evaluation={evaluations.find((item) => item.journal_id === viewPlan.link?.journal_entry_id)} entries={entries} analysisRequested={analysisRequested} analysisLoading={analysisQuery.isLoading} isKo={isKo} onClose={() => setViewPlan(null)} onLoadAnalysis={requestAnalysis} onRevise={viewPlan.source === 'IN_TRADE' ? undefined : () => { setViewPlan(null); setRevisionTarget(viewPlan); setDraft(draftFromPlan(viewPlan)); setHistoricalTradeId(viewPlan.source === 'RETROSPECTIVE' ? (viewPlan.link?.journal_entry_id ?? null) : null); setSavedTradeId(null); }} />}
   </div>;
 }

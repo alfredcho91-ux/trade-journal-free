@@ -146,6 +146,38 @@ def test_in_trade_plan_reuses_same_open_position_and_requires_a_match(tmp_path):
         repository.create_in_trade_plan({**payload, "position_id": "other"}, position, db_path=db_path)
 
 
+def test_generic_revision_cannot_bypass_in_trade_or_retrospective_entry_rules(tmp_path):
+    db_path = tmp_path / "journal.db"
+    position = _live_position()
+    payload = {
+        "exchange": "deepcoin", "position_id": position["position_id"],
+        "symbol": position["symbol"], "side": position["direction"], "revision": _revision(None),
+    }
+    in_trade = repository.create_in_trade_plan(payload, position, db_path=db_path)
+
+    with pytest.raises(ValueError, match="IN_TRADE revisions cannot use"):
+        repository.add_revision(in_trade["id"], _revision(101.0), db_path=db_path)
+
+    stored_in_trade = repository.get_plan(in_trade["id"], db_path=db_path)
+    assert len(stored_in_trade["revisions"]) == 1
+    assert stored_in_trade["latest_revision"]["entry_price"] is None
+
+    entry = _closed_entry(db_path, external_id="binance:position:revision-guard")
+    retrospective = repository.create_retrospective_plan(
+        _retrospective_payload(), entry["id"], db_path=db_path,
+    )
+    with pytest.raises(ValueError, match="must keep planned entry empty"):
+        repository.add_revision(retrospective["id"], _revision(101.0), db_path=db_path)
+
+    revised_retrospective = repository.add_revision(
+        retrospective["id"], {**_revision(None), "take_profit": 105.0}, db_path=db_path,
+    )
+
+    assert len(revised_retrospective["revisions"]) == 2
+    assert revised_retrospective["latest_revision"]["entry_price"] is None
+    assert revised_retrospective["latest_revision"]["take_profit"] == 105.0
+
+
 def test_deepcoin_in_trade_plan_links_after_a_stable_closed_position_sync(tmp_path):
     db_path = tmp_path / "journal.db"
     position = _live_position("stable-live")

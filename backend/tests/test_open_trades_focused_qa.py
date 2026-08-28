@@ -119,6 +119,39 @@ def test_scale_in_keeps_one_live_identity_and_refreshes_size_and_average(monkeyp
     assert (after[0]["size"], after[0]["average_price"]) == (2.0, 105.0)
 
 
+def test_deepcoin_missing_posid_is_visible_but_rejected_for_plan_save(monkeypatch):
+    credentials = exchange_service._Credentials("key", "secret", "passphrase")
+
+    class Client:
+        def __init__(self, _credentials):
+            pass
+
+        def get_open_positions(self):
+            return [{
+                "instId": "BTC-USDT-SWAP", "posSide": "long", "pos": "1",
+                "avgPx": "100", "lastPx": "101", "cTime": "1767261600000",
+            }]
+
+    monkeypatch.setattr(exchange_service, "DeepcoinClient", Client)
+    positions = exchange_service._deepcoin_open_positions(credentials)
+
+    assert len(positions) == 1
+    assert positions[0]["position_id"] == "deepcoin:BTC/USDT:long"
+    assert positions[0]["lifecycle_id"] is None
+    assert positions[0]["lifecycle_available"] is False
+
+    monkeypatch.setattr(
+        plan_router,
+        "exchange_open_positions_service",
+        lambda: {"success": True, "data": {"positions": positions, "unavailable_exchanges": []}},
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        plan_router._confirmed_open_position("deepcoin", positions[0]["position_id"])
+
+    assert exc_info.value.status_code == 409
+    assert "lifecycle identity is unavailable" in str(exc_info.value.detail)
+
+
 def test_partial_close_does_not_publish_closed_trade_until_remaining_size_is_zero():
     entry = _trade("entry", 1_000, "buy", 2.0, 100.0)
     partial = _trade("partial", 2_000, "sell", 1.25, 110.0)

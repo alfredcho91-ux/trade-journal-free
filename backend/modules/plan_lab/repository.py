@@ -272,9 +272,23 @@ def add_in_trade_revision(
 def add_revision(plan_id: int, revision: Dict[str, Any], *, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     server_time = utc_now()
     with _connect(db_path) as conn:
-        plan = conn.execute(f"SELECT id, side FROM {PLAN_TABLE} WHERE id = ?", (plan_id,)).fetchone()
+        plan = conn.execute(
+            f"SELECT id, side, source FROM {PLAN_TABLE} WHERE id = ?", (plan_id,),
+        ).fetchone()
         if plan is None:
             return None
+        if plan["source"] == "IN_TRADE":
+            raise ValueError(
+                "IN_TRADE revisions cannot use the planned-entry revision endpoint"
+            )
+        has_planned_entry = any(
+            revision.get(field) is not None
+            for field in ("entry_price", "entry_min", "entry_max")
+        )
+        if plan["source"] == "RETROSPECTIVE" and has_planned_entry:
+            raise ValueError("RETROSPECTIVE revisions must keep planned entry empty")
+        if plan["source"] != "RETROSPECTIVE" and not has_planned_entry:
+            raise ValueError("Plan entry is required for a pre-trade revision")
         _validate_split_target_order(str(plan["side"]), revision)
         version = int(conn.execute(
             f"SELECT COALESCE(MAX(version), 0) + 1 FROM {REVISION_TABLE} WHERE plan_id = ?", (plan_id,),

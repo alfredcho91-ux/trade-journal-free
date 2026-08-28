@@ -29,10 +29,14 @@ def _confirmed_open_position(exchange: str, position_id: str):
             str(position.get("exchange") or "").lower() == exchange.lower()
             and str(position.get("position_id") or "") == position_id
         ):
-            if exchange.lower() == "binance" and not bool(position.get("lifecycle_available")):
+            if position.get("lifecycle_available") is False:
+                exchange_name = exchange.capitalize()
                 raise HTTPException(
                     status_code=409,
-                    detail="Binance lifecycle identity is unavailable. Synchronize fills before saving an in-trade plan.",
+                    detail=(
+                        f"{exchange_name} lifecycle identity is unavailable. "
+                        "Synchronize fills or exchange history before saving an in-trade plan."
+                    ),
                 )
             return position
     raise HTTPException(

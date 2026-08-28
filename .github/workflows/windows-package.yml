@@ -13,20 +13,20 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.9"
           architecture: x64
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version-file: ".nvmrc"
           architecture: x64
 
       - name: Verify release version declarations
@@ -54,32 +54,31 @@ jobs:
         run: ./packaging/build_windows_app.ps1
 
       - name: Upload Windows ZIP
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Trade-Journal-Windows-x64
           path: Windows/Trade-Journal-Windows.zip
           if-no-files-found: error
           retention-days: 30
 
-      - name: Select next patch release
+      - name: Select source release
         id: release
         shell: pwsh
         run: |
-          $tags = git tag --list 'v*' | ForEach-Object {
-            if ($_ -match '^v(\d+)\.(\d+)\.(\d+)$') {
-              [PSCustomObject]@{ Major = [int]$Matches[1]; Minor = [int]$Matches[2]; Patch = [int]$Matches[3] }
-            }
-          } | Sort-Object Major, Minor, Patch
-          $latest = $tags | Select-Object -Last 1
-          if ($null -eq $latest) {
-            $version = 'v1.0.0'
-          } else {
-            $version = "v$($latest.Major).$($latest.Minor).$($latest.Patch + 1)"
-          }
+          $package = Get-Content frontend/package.json -Raw | ConvertFrom-Json
+          $version = "v$($package.version)"
+          $existing = git tag --list $version
+          $publish = [string]::IsNullOrWhiteSpace($existing)
           "version=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "Creating release $version for $env:GITHUB_SHA"
+          "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if ($publish) {
+            Write-Host "Creating source-aligned release $version for $env:GITHUB_SHA"
+          } else {
+            Write-Host "Release $version already exists; Windows artifact remains available from this workflow run."
+          }
 
       - name: Publish GitHub Release
+        if: steps.release.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.version }}

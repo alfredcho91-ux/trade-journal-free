@@ -88,7 +88,7 @@ class InTradePlanRevisionCreate(RetrospectivePlanRevisionInput):
     pass
 
 
-class PlanRevisionCreate(PlanRevisionInput):
+class PlanRevisionCreate(PlanRevisionFields):
     pass
 
 
