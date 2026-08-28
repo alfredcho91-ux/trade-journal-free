@@ -2,7 +2,7 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 배포 버전: `v1.0.23`
+현재 배포 버전: `v1.0.24`
 
 ```text
 Browser / Desktop WebView
