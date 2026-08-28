@@ -121,4 +121,6 @@ FastAPI
 
 - OHLCV는 모든 저널 분석에서 Binance USDT-M Futures 공개 시장 데이터를 사용합니다. 거래소별 API는 체결·포지션 동기화에만 사용하며, 리포트·분석 응답에 `Binance USDT-M Futures` 출처를 표시합니다.
 - MFE/MAE, Stop, SL/TP, VPVR, VWAP, 거래 리포트는 같은 시장 데이터 선택 경로를 공유합니다.
+- `backend/utils/data_service.py`는 Binance USDT-M 원본의 `volume`(기초자산 수량)을 canonical OHLCV 거래량으로 정규화하고, `quote_volume`·taker-buy volume 필드도 보존합니다. canonical volume이 누락된 원본 봉은 `0`으로 대체하지 않고 unavailable로 제외합니다. 저널 프레임은 이 거래량 의미를 `volume_metadata` attrs로 보존합니다.
+- 진입 snapshot과 Regime은 `close_time < entry_time`인 완료봉만 사용하므로, 진입이 진행 중인 봉의 최종 full volume은 entry-time feature로 사용할 수 없습니다. `backend/modules/deepcoin/snapshot.py`의 canonical Entry RVOL20도 같은 완료봉 경계를 사용하며, 마지막 완료봉 거래량을 그 이전 20개 완료봉 평균으로 나눕니다. reference 봉은 baseline에 포함하지 않고, 거래량 누락·20봉 부족·0 평균은 unavailable(`null`)로 유지합니다. RVOL20은 현재 시장 맥락 표시용이며 Quality·Attribution·Optimizer의 공식 feature가 아닙니다.
 - 진행중 포지션은 raw fill에 `exit_price` 또는 `realized_pnl`이 비어 있는지로 판단하지 않습니다. `/api/exchanges/open-positions`가 Deepcoin native API와 Binance의 CCXT 현재 포지션 API를 조회한 non-zero SWAP 포지션만 반환하며, UI는 그 결과만 표시합니다.

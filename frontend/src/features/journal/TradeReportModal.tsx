@@ -24,6 +24,7 @@ import {
 import TradeExitReview from '../tradeAnalysis/TradeExitReviewPanel';
 import {
   flattenSnapshotMetrics,
+  formatRvol20,
   formatSnapshotNumber,
   humanizeIndicatorKey,
   KNOWN_SNAPSHOT_INDICATOR_KEYS,
@@ -346,6 +347,15 @@ export default function TradeReportModal({
 
   const knownDefinitions: SnapshotIndicatorDefinition[] = [
     {
+      id: 'rvol20',
+      label: 'RVOL20',
+      description: isKo
+        ? '진입 직전 완료봉의 거래량을 그 이전 20개 완료봉 평균 거래량과 비교한 값입니다.'
+        : 'Volume of the last completed candle before entry, divided by the average volume of the previous 20 completed candles.',
+      group: isKo ? '가격·거래량' : 'Price · Volume',
+      hasData: () => reviewMoment === 'entry',
+    },
+    {
       id: 'rsi',
       label: 'RSI',
       group: isKo ? '모멘텀' : 'Momentum',
@@ -425,6 +435,13 @@ export default function TradeReportModal({
     snapshot: TradeIndicatorTimeframeSnapshot,
     indicatorId: string,
   ): Array<{ label: string; value: string }> => {
+    if (indicatorId === 'rvol20') {
+      return [{
+        label: 'RVOL20',
+        value: formatRvol20(snapshot.rvol20),
+      }];
+    }
+
     if (indicatorId === 'rsi') {
       return [{ label: 'RSI', value: formatSnapshotNumber(snapshot.rsi) }];
     }
@@ -617,7 +634,7 @@ export default function TradeReportModal({
               </div>
               {reviewMoment === 'entry' && reasons.length > 0 && <div className="mt-3"><div className="mb-1.5 text-[10px] text-dark-500">{isKo ? '기록된 진입 근거' : 'Saved entry rationale'}</div><div className="flex flex-wrap gap-1.5">{reasons.map((reason, index) => <span key={`${reason}-${index}`} className="border border-dark-600 bg-dark-800 px-2 py-1 text-[10px] text-dark-200">{index + 1}. {reason}</span>)}</div></div>}
               {activeSnapshot && intervals.length > 0 && availableIndicators.length > 0 ? <>
-                <div className="mt-3 flex flex-wrap gap-1.5">{availableIndicators.map((definition) => { const isSelected = selectedIndicator?.id === definition.id; return <button key={definition.id} type="button" onClick={() => setSelectedIndicatorId(definition.id)} className={`border px-2 py-1 text-[10px] font-medium transition-colors ${isSelected ? 'border-primary-500/60 bg-primary-500/15 text-primary-200' : 'border-dark-700 bg-dark-900/35 text-dark-300 hover:border-dark-600 hover:text-white'}`}>{definition.label}</button>; })}</div>
+                <div className="mt-3 flex flex-wrap gap-1.5">{availableIndicators.map((definition) => { const isSelected = selectedIndicator?.id === definition.id; return <button key={definition.id} type="button" title={definition.description} onClick={() => setSelectedIndicatorId(definition.id)} className={`border px-2 py-1 text-[10px] font-medium transition-colors ${isSelected ? 'border-primary-500/60 bg-primary-500/15 text-primary-200' : 'border-dark-700 bg-dark-900/35 text-dark-300 hover:border-dark-600 hover:text-white'}`}>{definition.label}</button>; })}</div>
                 <div className="mt-3 overflow-x-auto border border-dark-700"><table className="w-full min-w-[480px] text-xs"><thead className="bg-dark-900/70"><tr className="border-b border-dark-700"><th className="w-32 px-2 py-2 text-left text-[10px] font-semibold text-dark-500">{selectedIndicator?.label || (isKo ? '지표' : 'Indicator')}</th>{intervals.map((interval) => <th key={interval} className="px-2 py-2 text-center text-[10px] font-semibold text-white">{isAnchoredVwapView ? ({ day: isKo ? '일간' : 'Daily', week: isKo ? '주간' : 'Weekly', month: isKo ? '월간' : 'Monthly' }[interval] || interval) : interval.toUpperCase()}</th>)}</tr></thead><tbody>{metricLabels.map((metricLabel) => <tr key={metricLabel} className="border-b border-dark-800 last:border-b-0"><td className="px-2 py-2 text-[10px] text-dark-400">{metricLabel}</td>{intervals.map((interval) => <td key={`${metricLabel}-${interval}`} className="px-2 py-2 text-center font-mono text-[11px] text-dark-100">{valueFor(interval, metricLabel)}</td>)}</tr>)}</tbody></table></div>
               </> : <div className="mt-3 text-xs text-dark-500">{isKo ? '이 거래의 지표 스냅샷이 없습니다.' : 'This trade has no indicator snapshot.'}</div>}
             </CompactSection>

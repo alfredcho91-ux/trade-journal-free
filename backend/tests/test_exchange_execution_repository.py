@@ -31,6 +31,38 @@ def test_execution_repository_is_idempotent_and_preserves_snapshot(tmp_path):
     assert records[0]["indicator_snapshot"] == {"reference": "entry"}
 
 
+def test_execution_repository_refreshes_v3_snapshot_to_canonical_v4_without_duplicates(tmp_path):
+    db_path = tmp_path / "journal.db"
+    base = {
+        "external_id": "binance:fill:rvol-refresh",
+        "datetime": "2026-08-01T00:00:00Z",
+        "symbol": "BTC/USDT",
+        "direction": "Long",
+        "size": 1,
+        "entry_price": 100,
+        "source": "binance_fill",
+        "exchange": "Binance",
+        "notes": "Binance SWAP fill: buy",
+    }
+    old = {**base, "indicator_snapshot": {"version": 3, "timeframes": {"4h": {"status": "complete"}}}}
+    refreshed = {
+        **base,
+        "indicator_snapshot": {
+            "version": 4,
+            "timeframes": {"4h": {"status": "complete", "rvol20": 1.82}},
+        },
+    }
+
+    assert add_executions_if_new([old], db_path=db_path) == {"binance:fill:rvol-refresh"}
+    for _ in range(10):
+        assert add_executions_if_new([refreshed], db_path=db_path) == set()
+
+    records = list_executions(exchange="Binance", symbol="BTC/USDT", db_path=db_path)
+    assert len(records) == 1
+    assert records[0]["indicator_snapshot"]["version"] == 4
+    assert records[0]["indicator_snapshot"]["timeframes"]["4h"]["rvol20"] == 1.82
+
+
 @pytest.mark.parametrize("ledger_size", [4_999, 5_000, 5_001])
 def test_execution_repository_returns_the_complete_ledger(tmp_path, ledger_size):
     db_path = tmp_path / "journal.db"

@@ -124,6 +124,66 @@ def test_stale_closed_position_snapshot_refresh_uses_only_entry_time(monkeypatch
     assert events[0].event_type == "position_entry"
 
 
+def test_snapshot_version_before_rvol20_is_refreshed():
+    assert deepcoin_service._snapshot_needs_refresh({
+        "version": 3,
+        "timeframes": {interval: {"status": "complete"} for interval in ("1h", "2h", "4h", "1d")},
+    }) is True
+    assert deepcoin_service._snapshot_needs_refresh({
+        "version": 4,
+        "timeframes": {interval: {"status": "complete", "rvol20": None} for interval in ("1h", "2h", "4h", "1d")},
+    }) is False
+
+
+def test_stale_v3_position_snapshot_refreshes_once_to_v4_and_stays_idempotent(
+    isolated_journal_store,
+    monkeypatch,
+):
+    credentials = DeepcoinCredentials("key", "secret", "passphrase")
+    entry_time = datetime.now(timezone.utc) - timedelta(days=1)
+    external_id = "deepcoin:position:rvol-v4-refresh"
+    journal_repository.add_entries_if_new_external_ids([{
+        "datetime": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "entry_datetime": entry_time.isoformat().replace("+00:00", "Z"),
+        "symbol": "BTC/USDT",
+        "direction": "Long",
+        "source": "deepcoin_position",
+        "external_id": external_id,
+        "exchange": "Deepcoin",
+        "indicator_snapshot": {
+            "version": 3,
+            "timeframes": {interval: {"status": "complete"} for interval in ("1h", "2h", "4h", "1d")},
+        },
+    }])
+    refreshed = {
+        "version": 4,
+        "event_type": "position_entry",
+        "timeframes": {
+            interval: {"status": "complete", "rvol20": 1.82}
+            for interval in ("1h", "2h", "4h", "1d")
+        },
+    }
+    build_calls = 0
+
+    def build(events):
+        nonlocal build_calls
+        build_calls += 1
+        return {event.external_id: refreshed for event in events}
+
+    monkeypatch.setattr(deepcoin_service, "get_deepcoin_credentials", lambda: credentials)
+    monkeypatch.setattr(deepcoin_service.DeepcoinClient, "get_fills", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(deepcoin_service.DeepcoinClient, "get_positions_history", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(deepcoin_service, "_build_indicator_snapshots", build)
+
+    for _ in range(10):
+        deepcoin_service.sync_deepcoin_fills_service("SWAP", 7)
+
+    stored = get_journal_service()["data"]
+    assert len(stored) == 1
+    assert stored[0]["indicator_snapshot"] == refreshed
+    assert build_calls == 1
+
+
 def test_entry_snapshot_records_entry_time_not_close_time(monkeypatch):
     event = deepcoin_service._PreparedFill(
         raw={},

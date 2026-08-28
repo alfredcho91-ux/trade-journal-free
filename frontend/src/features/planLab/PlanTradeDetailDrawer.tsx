@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 
+import { getExchangeExecutions } from '../../api/client';
 import TradeReportModal from '../journal/TradeReportModal';
+import { entryRvol20, formatRvol20 } from '../journal/tradeReportSnapshot';
 import type { JournalEntry, PlanEvaluation, TradingPlan } from '../../types';
 
 function signed(value: number | null | undefined, digits = 2, suffix = ''): string {
@@ -114,6 +117,22 @@ export function TradeAnalysisSummary({ entry, evaluation, entries, isKo, onClose
   onClose?: () => void;
 }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const isGenericExchange = Boolean(entry?.exchange && entry.exchange !== 'Deepcoin');
+  const executionQuery = useQuery({
+    queryKey: ['exchange-executions', entry?.exchange, entry?.symbol, entry?.entry_datetime, entry?.datetime],
+    queryFn: () => getExchangeExecutions({
+      exchange: entry?.exchange,
+      symbol: entry?.symbol,
+      start_time: entry?.entry_datetime,
+      end_time: entry?.datetime,
+    }),
+    enabled: isGenericExchange && Boolean(entry?.symbol && entry?.datetime),
+    staleTime: 5 * 60_000,
+  });
+  const reviewEntries = useMemo(
+    () => [...entries, ...(executionQuery.data || [])],
+    [entries, executionQuery.data],
+  );
   const actualTone = (entry?.r_multiple ?? entry?.pnl_pct ?? entry?.realized_pnl ?? 0) >= 0 ? 'text-bull' : 'text-bear';
   return <>
     {!entry ? <p className="py-8 text-center text-xs text-dark-500">{isKo ? '연결된 실제 거래를 찾을 수 없습니다.' : 'The linked actual trade is unavailable.'}</p> : <>
@@ -126,6 +145,11 @@ export function TradeAnalysisSummary({ entry, evaluation, entries, isKo, onClose
       <div className="mt-4 grid grid-cols-2 gap-3">
         <Metric label={isKo ? '진입 후 최대 유리 움직임' : 'Maximum favorable move'} value={signed(evaluation?.mfe_r, 2, 'R')} tone="text-bull" />
         <Metric label={isKo ? '진입 후 최대 불리 움직임' : 'Maximum adverse move'} value="-" />
+      </div>
+      <div className="mt-3 border border-dark-800 bg-dark-950/45 px-3 py-2">
+        <div className="text-[10px] text-dark-500">{isKo ? '진입 당시 RVOL20 · 4H' : 'Entry RVOL20 · 4H'}</div>
+        <div className="mt-1 font-mono text-sm font-semibold text-dark-100">{formatRvol20(entryRvol20(entry, reviewEntries))}</div>
+        <p className="mt-1 text-[10px] leading-4 text-dark-500">{isKo ? '진입 직전 완료봉 거래량 ÷ 그 이전 20개 완료봉 평균' : 'Last completed candle volume ÷ average of the prior 20 completed candles'}</p>
       </div>
       <p className="mt-4 text-[11px] leading-5 text-dark-500">{isKo ? '현재 연결된 거래와 기존 분석 결과만 표시합니다. 새 분석이나 추가 시장 데이터 요청은 실행하지 않습니다.' : 'Uses the linked trade and existing analysis only. No new analysis or market-data request is started.'}</p>
       <div className="mt-4 flex flex-wrap gap-2">

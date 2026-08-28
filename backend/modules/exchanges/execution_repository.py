@@ -106,7 +106,7 @@ def add_executions_if_new(rows: Iterable[Dict[str, Any]], *, db_path: Optional[P
             snapshot = payloads[key].get("indicator_snapshot")
             connection.execute(
                 f"""UPDATE {TABLE_NAME}
-                SET indicator_snapshot = COALESCE(indicator_snapshot, ?),
+                SET indicator_snapshot = COALESCE(?, indicator_snapshot),
                     account_scope = COALESCE(account_scope, ?)
                 WHERE external_id = ?""",
                 (snapshot, payloads[key].get("account_scope"), key),

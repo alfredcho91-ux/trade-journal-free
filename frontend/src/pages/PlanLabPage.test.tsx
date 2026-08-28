@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComponentProps } from 'react';
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ExchangeOpenPosition, JournalEntry, PlanEvaluation, PlanLabData, TradingPlan } from '../types';
@@ -14,7 +14,8 @@ import {
   shouldLoadPlanLabAnalysis,
   type PlanDraft,
 } from '../features/planLab/pastTradePlan';
-import { PlanDetailsDrawer } from '../features/planLab/PlanTradeDetailDrawer';
+import { PlanDetailsDrawer, TradeAnalysisSummary } from '../features/planLab/PlanTradeDetailDrawer';
+import { entryRvol20 } from '../features/journal/tradeReportSnapshot';
 import { planCoverageItems } from '../features/planLab/planCoverage';
 import { PlanForm } from './PlanLabPage';
 
@@ -129,6 +130,39 @@ function renderPlanForm(overrides: Partial<ComponentProps<typeof PlanForm>> = {}
 }
 
 describe('Past Trade Plan Input reliability', () => {
+  it('uses the same canonical entry RVOL20 snapshot in Plan Lab and ignores the exit snapshot', () => {
+    const position: JournalEntry = {
+      ...trade(1, '2026-01-01T10:00:00Z'),
+      source: 'deepcoin_position',
+      exchange: 'Deepcoin',
+      indicator_snapshot: { event_type: 'position_close', timeframes: { '4h': { status: 'complete', rvol20: 9.99 } } },
+    };
+    const entryFill: JournalEntry = {
+      id: 2,
+      datetime: '2026-01-01T10:00:00Z',
+      symbol: 'BTC/USDT',
+      direction: 'Long',
+      size: 1,
+      source: 'deepcoin',
+      exchange: 'Deepcoin',
+      notes: 'Deepcoin SWAP fill: buy',
+      indicator_snapshot: { event_type: 'fill', timeframes: { '4h': { status: 'complete', rvol20: 1.82 } } },
+    };
+
+    expect(entryRvol20(position, [position, entryFill])).toBe(1.82);
+    expect(entryRvol20(position, [position])).toBeNull();
+    expect(entryRvol20({
+      ...position,
+      indicator_snapshot: { event_type: 'position_entry', timeframes: { '4h': { status: 'complete', rvol20: 1.5 } } },
+    }, [])).toBe(1.5);
+    const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+      <TradeAnalysisSummary entry={position} entries={[position, entryFill]} isKo />
+    </QueryClientProvider>);
+    expect(html).toContain('1.82x');
+    expect(html).not.toContain('9.99x');
+    expect(html).toContain('진입 직전 완료봉 거래량 ÷ 그 이전 20개 완료봉 평균');
+  });
+
   it('calculates a live LONG target R:R for a TP1-only plan', () => {
     const result = calculateTargetRiskReward({ direction: 'Long', entry: 100, stopLoss: 98, tp1: 104 });
     expect(result).toMatchObject({ mode: 'TP1_ONLY', riskDistance: 2, riskPct: 2, tp1R: 2, tp2R: null, splitTargetR: null, valid: true });

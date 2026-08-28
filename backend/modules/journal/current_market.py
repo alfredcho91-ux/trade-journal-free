@@ -11,6 +11,7 @@ import pandas as pd
 from backend.config.settings import PROJECT_ROOT
 from backend.modules.deepcoin.snapshot import (
     SNAPSHOT_INTERVALS,
+    SNAPSHOT_VERSION,
     anchored_vwap_snapshots_for_event,
     indicator_snapshot_for_event,
 )
@@ -57,7 +58,7 @@ def _timestamp_to_iso(timestamp_ms: int) -> str:
 
 def _current_hour_key(coin: str, as_of_ms: int) -> str:
     hour = pd.Timestamp(as_of_ms, unit="ms", tz="UTC").floor("h").isoformat()
-    return f"v3:{coin}:{hour}"
+    return f"v4:{coin}:{hour}"
 
 
 def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
@@ -133,7 +134,7 @@ def build_current_market_snapshot(coin: str, as_of_ms: int) -> Dict[str, Any]:
             "symbol": f"{normalized_coin}/USDT",
             "as_of": _timestamp_to_iso(as_of_ms),
             "indicator_snapshot": {
-                "version": 3,
+                "version": SNAPSHOT_VERSION,
                 "market_source": market_source(next((frame for frame in frames.values() if frame is not None), None)),
                 "market_source_fallback": False,
                 "reference": "last_completed_candle_before_current_hour_refresh",

@@ -42,12 +42,13 @@ def test_current_market_snapshot_reuses_completed_indicator_and_trend_paths(monk
     payload = result["data"]
     assert result["success"] is True
     assert payload["symbol"] == "BTC/USDT"
-    assert payload["indicator_snapshot"]["version"] == 3
+    assert payload["indicator_snapshot"]["version"] == 4
     assert set(payload["indicator_snapshot"]["timeframes"]) == {"1h", "2h", "4h", "1d", "1w", "1M"}
     assert all(
         value["status"] == "complete"
         for value in payload["indicator_snapshot"]["timeframes"].values()
     )
+    assert payload["indicator_snapshot"]["timeframes"]["4h"]["rvol20"] == 1.0
     assert set(payload["trend_states"]) == {"1w", "1d", "4h"}
     assert all(value["status"] == "complete" for value in payload["trend_states"].values())
     assert payload["market_regime"]["trade_bias"] == "up"

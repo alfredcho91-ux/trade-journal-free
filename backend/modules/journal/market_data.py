@@ -9,12 +9,22 @@ import pandas as pd
 from backend.utils.data_service import fetch_binance_klines
 
 BINANCE_USDT_M_FUTURES_SOURCE = "Binance USDT-M Futures"
+BINANCE_USDT_M_VOLUME_METADATA = {
+    "canonical_field": "volume",
+    "canonical_unit": "base_asset_quantity",
+    "quote_volume_field": "quote_volume",
+    "quote_volume_unit": "quote_asset_quantity",
+    "taker_buy_base_volume_field": "taker_buy_base_volume",
+    "taker_buy_quote_volume_field": "taker_buy_quote_volume",
+    "missing_volume": "unavailable",
+}
 
 
 def _with_source(frame: pd.DataFrame) -> pd.DataFrame:
     output = frame.copy()
     output.attrs["market_source"] = BINANCE_USDT_M_FUTURES_SOURCE
     output.attrs["market_source_fallback"] = False
+    output.attrs["volume_metadata"] = dict(BINANCE_USDT_M_VOLUME_METADATA)
     return output
 
 
@@ -43,8 +53,18 @@ def market_source(frame: Optional[pd.DataFrame]) -> str:
     return str(frame.attrs.get("market_source") or BINANCE_USDT_M_FUTURES_SOURCE) if frame is not None else "Unknown market data"
 
 
+def volume_metadata(frame: Optional[pd.DataFrame]) -> dict[str, str]:
+    """Describe the source-specific meaning of normalized volume fields."""
+    if frame is None:
+        return dict(BINANCE_USDT_M_VOLUME_METADATA)
+    metadata = frame.attrs.get("volume_metadata")
+    return dict(metadata) if isinstance(metadata, dict) else dict(BINANCE_USDT_M_VOLUME_METADATA)
+
+
 __all__ = [
     "BINANCE_USDT_M_FUTURES_SOURCE",
+    "BINANCE_USDT_M_VOLUME_METADATA",
     "load_journal_ohlcv",
     "market_source",
+    "volume_metadata",
 ]

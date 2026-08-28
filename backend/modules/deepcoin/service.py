@@ -30,6 +30,7 @@ from backend.modules.journal.repository import (
 from backend.modules.deepcoin.snapshot import (
     SNAPSHOT_BIN_COUNT,
     SNAPSHOT_INTERVALS,
+    SNAPSHOT_VERSION,
     SNAPSHOT_VPVR_CANDLES,
     build_indicator_snapshots as _build_indicator_snapshots,
     indicator_snapshot_for_event as _indicator_snapshot_for_fill,
@@ -622,8 +623,8 @@ def _snapshot_event_for_position(position: _PreparedFill) -> _PreparedFill:
 
 
 def _snapshot_needs_refresh(snapshot: Any) -> bool:
-    """Return whether a saved snapshot predates the complete multi-timeframe format."""
-    if not isinstance(snapshot, dict) or snapshot.get("version") != 3:
+    """Return whether a saved snapshot predates the complete RVOL20 format."""
+    if not isinstance(snapshot, dict) or snapshot.get("version") != SNAPSHOT_VERSION:
         return True
     timeframes = snapshot.get("timeframes")
     if not isinstance(timeframes, dict):
@@ -631,6 +632,7 @@ def _snapshot_needs_refresh(snapshot: Any) -> bool:
     return any(
         not isinstance(timeframes.get(interval), dict)
         or timeframes[interval].get("status") != "complete"
+        or "rvol20" not in timeframes[interval]
         for interval in ("1h", "2h", "4h", "1d")
     )
 
@@ -897,7 +899,7 @@ def sync_deepcoin_fills_service(inst_type: str, lookback_days: int) -> Dict[str,
         snapshot = snapshots.get(
             event.external_id,
             {
-                "version": 3,
+                "version": SNAPSHOT_VERSION,
                 "market_source": "Binance USDT-M Futures",
                 "market_source_fallback": False,
                 "reference": fallback_reference,

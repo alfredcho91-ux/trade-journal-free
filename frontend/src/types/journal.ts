@@ -12,6 +12,7 @@ export interface TradeIndicatorTimeframeSnapshot {
   reason?: string;
   candle_close_time?: string;
   close?: number | null;
+  rvol20?: number | null;
   rsi?: number | null;
   macd?: {
     line?: number | null;
