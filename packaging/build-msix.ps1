@@ -68,12 +68,21 @@ $stageRoot = Join-Path $workRoot 'stage'
 try {
     New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
     Expand-Archive -LiteralPath $SourceZip -DestinationPath $workRoot -Force
-    $distributionRoot = Join-Path $workRoot 'Trade Journal Free'
-    $exePath = Join-Path $distributionRoot 'Trade Journal Free.exe'
-    $internalPath = Join-Path $distributionRoot '_internal'
-    if (-not (Test-Path -LiteralPath $exePath -PathType Leaf) -or -not (Test-Path -LiteralPath $internalPath -PathType Container)) {
-        throw 'The ZIP does not contain the inspected distribution layout: Trade Journal Free/Trade Journal Free.exe and _internal/.'
+    $distribution = @(
+        @{ Root = 'Trade Journal'; Executable = 'Trade Journal.exe' },
+        @{ Root = 'Trade Journal Free'; Executable = 'Trade Journal Free.exe' }
+    ) | ForEach-Object {
+        $root = Join-Path $workRoot $_.Root
+        $exe = Join-Path $root $_.Executable
+        $internal = Join-Path $root '_internal'
+        if ((Test-Path -LiteralPath $exe -PathType Leaf) -and (Test-Path -LiteralPath $internal -PathType Container)) {
+            [PSCustomObject]@{ Root = $root; Executable = $exe }
+        }
+    } | Select-Object -First 1
+    if (-not $distribution) {
+        throw 'The ZIP does not contain a supported distribution layout: Trade Journal/Trade Journal.exe or Trade Journal Free/Trade Journal Free.exe with _internal/.'
     }
+    $distributionRoot = $distribution.Root
 
     Get-ChildItem -LiteralPath $distributionRoot -Force | Copy-Item -Destination $stageRoot -Recurse -Force
     New-Item -ItemType Directory -Path (Join-Path $stageRoot 'Assets') -Force | Out-Null
