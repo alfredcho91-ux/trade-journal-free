@@ -12,7 +12,7 @@
   <Identity
     Name="TODO_PARTNER_CENTER_IDENTITY_NAME"
     Publisher="TODO_PARTNER_CENTER_PUBLISHER"
-    Version="1.0.24.0"
+    Version="1.0.25.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
