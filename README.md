@@ -100,7 +100,7 @@ docker compose up --build
 
 ## 로컬 개발 실행
 
-요구사항은 Python 3.9 이상과 Node.js 24 LTS(프로젝트 `.nvmrc` 기준 24.20.0)입니다.
+검증된 로컬·CI 기준은 Python 3.11과 Node.js 24 LTS(프로젝트 `.nvmrc` 기준 24.20.0)입니다.
 
 ```bash
 chmod +x bootstrap.sh dev.sh start.sh
