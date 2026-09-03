@@ -1,12 +1,17 @@
-import type { StrategyRule, StrategyRuleDocument, StrategyVersion } from '../../types';
+import type { StrategyRule, StrategyRuleDocument, StrategyRuleDocumentV1, StrategyVersion } from '../../types';
 
 export type RuleGroup = 'entry_rules' | 'risk_rules' | 'exit_rules';
 
-export function emptyRules(): StrategyRuleDocument {
+export function emptyRules(): StrategyRuleDocumentV1 {
   return { schema_version: 1, entry_rules: [], risk_rules: [], exit_rules: [] };
 }
 
-export function cloneRules(rules: StrategyRuleDocument): StrategyRuleDocument {
+export function canCloneVersion(version: StrategyVersion): version is StrategyVersion & { rules: StrategyRuleDocumentV1 } {
+  return version.rules.schema_version === 1;
+}
+
+export function cloneRules(rules: StrategyRuleDocument): StrategyRuleDocumentV1 {
+  if (rules.schema_version !== 1) throw new Error('Rule Engine versions cannot be cloned in this editor yet.');
   return {
     schema_version: 1,
     entry_rules: rules.entry_rules.map((rule) => ({ ...rule })),
@@ -16,6 +21,7 @@ export function cloneRules(rules: StrategyRuleDocument): StrategyRuleDocument {
 }
 
 export function versionDraftFrom(source?: StrategyVersion) {
+  if (source && !canCloneVersion(source)) throw new Error('Rule Engine versions cannot be cloned in this editor yet.');
   return {
     version_label: '',
     description: source?.description ?? '',

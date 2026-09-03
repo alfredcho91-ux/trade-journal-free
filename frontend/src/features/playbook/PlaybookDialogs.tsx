@@ -1,9 +1,9 @@
 import { Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import type { Strategy, StrategyCreateInput, StrategyRuleDocument, StrategyVersion, StrategyVersionInput } from '../../types';
+import type { Strategy, StrategyCreateInput, StrategyRuleDocumentV1, StrategyVersion, StrategyVersionInput } from '../../types';
 import UnsavedChangesDialog from '../journal/UnsavedChangesDialog';
-import { cloneRules, emptyRules, newRule, normalizedDescription, type RuleGroup } from './strategyDraft';
+import { canCloneVersion, cloneRules, emptyRules, newRule, normalizedDescription, type RuleGroup } from './strategyDraft';
 
 const inputClass = 'w-full border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none placeholder:text-dark-600 focus:border-primary-400';
 const secondaryButton = 'border border-dark-600 px-3 py-2 text-xs font-medium text-dark-200 hover:border-dark-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -12,7 +12,7 @@ const primaryButton = 'border border-primary-400 bg-primary-500 px-3 py-2 text-x
 interface VersionDraft {
   version_label: string;
   description: string;
-  rules: StrategyRuleDocument;
+  rules: StrategyRuleDocumentV1;
 }
 
 function BaseSwitchConfirmDialog({ isKo, onKeepEditing, onDiscardAndSwitch }: {
@@ -32,14 +32,14 @@ function BaseSwitchConfirmDialog({ isKo, onKeepEditing, onDiscardAndSwitch }: {
   </div>;
 }
 
-function allRules(rules: StrategyRuleDocument) {
+function allRules(rules: StrategyRuleDocumentV1) {
   return [...rules.entry_rules, ...rules.risk_rules, ...rules.exit_rules];
 }
 
 function RuleEditor({ rules, isKo, onChange }: {
-  rules: StrategyRuleDocument;
+  rules: StrategyRuleDocumentV1;
   isKo: boolean;
-  onChange: (rules: StrategyRuleDocument) => void;
+  onChange: (rules: StrategyRuleDocumentV1) => void;
 }) {
   const groups: Array<{ key: RuleGroup; label: string }> = [
     { key: 'entry_rules', label: isKo ? '진입 규칙' : 'Entry rules' },
@@ -173,8 +173,9 @@ export function NewVersionDrawer({ strategy, versions, initialBase, isKo, pendin
   onClose: () => void;
   onSubmit: (payload: StrategyVersionInput) => void;
 }) {
-  const [baseId, setBaseId] = useState<number | null>(initialBase?.id ?? null);
-  const [initial] = useState<VersionDraft>(() => ({ version_label: '', description: initialBase?.description ?? '', rules: initialBase ? cloneRules(initialBase.rules) : emptyRules() }));
+  const safeInitialBase = initialBase && canCloneVersion(initialBase) ? initialBase : undefined;
+  const [baseId, setBaseId] = useState<number | null>(safeInitialBase?.id ?? null);
+  const [initial] = useState<VersionDraft>(() => ({ version_label: '', description: safeInitialBase?.description ?? '', rules: safeInitialBase ? cloneRules(safeInitialBase.rules) : emptyRules() }));
   const [baseline, setBaseline] = useState<VersionDraft>(() => initial);
   const [draft, setDraft] = useState<VersionDraft>(() => initial);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -184,6 +185,7 @@ export function NewVersionDrawer({ strategy, versions, initialBase, isKo, pendin
 
   const applyBase = (nextId: number | null) => {
     const source = versions.find((version) => version.id === nextId);
+    if (source && !canCloneVersion(source)) return;
     const nextBaseline: VersionDraft = {
       version_label: '',
       description: source?.description ?? '',
@@ -196,6 +198,8 @@ export function NewVersionDrawer({ strategy, versions, initialBase, isKo, pendin
 
   const requestBaseChange = (nextId: number | null) => {
     if (nextId === baseId) return;
+    const source = versions.find((version) => version.id === nextId);
+    if (source && !canCloneVersion(source)) return;
     if (dirty) {
       setPendingBase({ id: nextId });
       return;
@@ -207,7 +211,7 @@ export function NewVersionDrawer({ strategy, versions, initialBase, isKo, pendin
     <form className="space-y-5 p-5" onSubmit={(event) => { event.preventDefault(); if (validDraft(draft)) onSubmit(versionPayload(draft)); }}>
       <div className="grid grid-cols-2 gap-4">
         <label className="text-xs text-dark-300">{isKo ? '버전 라벨' : 'Version label'}<input autoFocus aria-label={isKo ? '버전 라벨' : 'Version label'} value={draft.version_label} maxLength={80} onChange={(event) => setDraft({ ...draft, version_label: event.target.value })} className={`mt-1.5 ${inputClass}`} placeholder="v1.1" /></label>
-        <label className="text-xs text-dark-300">{isKo ? '기준 버전' : 'Based on'}<select aria-label={isKo ? '기준 버전' : 'Based on'} value={baseId ?? ''} onChange={(event) => requestBaseChange(event.target.value ? Number(event.target.value) : null)} className={`mt-1.5 ${inputClass}`}><option value="">{isKo ? '빈 규칙 세트' : 'Empty rule set'}</option>{versions.map((version) => <option key={version.id} value={version.id}>{version.version_label}</option>)}</select></label>
+        <label className="text-xs text-dark-300">{isKo ? '기준 버전' : 'Based on'}<select aria-label={isKo ? '기준 버전' : 'Based on'} value={baseId ?? ''} onChange={(event) => requestBaseChange(event.target.value ? Number(event.target.value) : null)} className={`mt-1.5 ${inputClass}`}><option value="">{isKo ? '빈 규칙 세트' : 'Empty rule set'}</option>{versions.map((version) => <option key={version.id} value={version.id} disabled={!canCloneVersion(version)}>{version.version_label}{canCloneVersion(version) ? '' : (isKo ? ' (복제 불가)' : ' (cannot clone)')}</option>)}</select></label>
       </div>
       <label className="block text-xs text-dark-300">{isKo ? '버전 설명' : 'Version description'}<textarea aria-label={isKo ? '버전 설명' : 'Version description'} value={draft.description} maxLength={2000} onChange={(event) => setDraft({ ...draft, description: event.target.value })} className={`mt-1.5 min-h-20 resize-y ${inputClass}`} /></label>
       <RuleEditor rules={draft.rules} isKo={isKo} onChange={(rules) => setDraft({ ...draft, rules })} />

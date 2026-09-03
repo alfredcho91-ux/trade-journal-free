@@ -3,17 +3,30 @@ export interface StrategyRule {
   text: string;
 }
 
-export interface StrategyRuleDocument {
+export interface StrategyRuleV2 extends StrategyRule {
+  evaluation?: unknown;
+}
+
+export interface StrategyRuleDocumentV1 {
   schema_version: 1;
   entry_rules: StrategyRule[];
   risk_rules: StrategyRule[];
   exit_rules: StrategyRule[];
 }
 
+export interface StrategyRuleDocumentV2 {
+  schema_version: 2;
+  entry_rules: StrategyRuleV2[];
+  risk_rules: StrategyRuleV2[];
+  exit_rules: StrategyRuleV2[];
+}
+
+export type StrategyRuleDocument = StrategyRuleDocumentV1 | StrategyRuleDocumentV2;
+
 export interface StrategyVersionInput {
   version_label: string;
   description: string | null;
-  rules: StrategyRuleDocument;
+  rules: StrategyRuleDocumentV1;
 }
 
 export interface StrategyCreateInput {
