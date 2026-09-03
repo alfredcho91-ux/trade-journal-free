@@ -35,6 +35,8 @@ import { tradeOutcomeAssessment } from '../features/journal/tradeOutcomeAssessme
 import { summarizeTradeStyle } from '../features/journal/tradeStyleSummary';
 import { buildAnalyzedTrades } from '../features/tradeAnalysis/tradeAnalysis';
 import DailyPnlCalendar from '../features/journal/DailyPnlCalendar';
+import DailyJournalPanel from '../features/journal/DailyJournalPanel';
+import JournalViewTabs, { type JournalView } from '../features/journal/JournalViewTabs';
 import TradingStyleSelect from '../features/preferences/TradingStyleSelect';
 import {
   TRADING_STYLE_CONFIGS,
@@ -652,6 +654,9 @@ export default function JournalPage() {
   const [historyPeriod, setHistoryPeriod] = useState<JournalPeriod>(() => buildJournalPeriod());
   const [visibleTradeCount, setVisibleTradeCount] = useState(VISIBLE_TRADE_INCREMENT);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const [journalView, setJournalView] = useState<JournalView>('trades');
+  const [dailyDirty, setDailyDirty] = useState(false);
+  const [dailyResetRevision, setDailyResetRevision] = useState(0);
 
   const { data: entries, isLoading, isError: entriesError, refetch: refetchEntries } = useQuery({
     queryKey: journalQueryKeys.entries,
@@ -823,6 +828,25 @@ export default function JournalPage() {
           </p>
         </div>
       </div>
+
+      <JournalViewTabs
+        view={journalView}
+        dailyDirty={dailyDirty}
+        isKo={isKo}
+        onChange={setJournalView}
+        onDiscardDaily={() => {
+          setDailyDirty(false);
+          setDailyResetRevision((revision) => revision + 1);
+        }}
+      />
+
+      {journalView === 'daily' ? (
+        <DailyJournalPanel
+          isKo={isKo}
+          onDirtyChange={setDailyDirty}
+          resetRevision={dailyResetRevision}
+        />
+      ) : <>
 
       <JournalSyncPanel
         statuses={exchangeStatuses || []}
@@ -1163,6 +1187,8 @@ export default function JournalPage() {
           onClose={() => setConnectionOpen(false)}
         />
       )}
+
+      </>}
 
     </div>
   );

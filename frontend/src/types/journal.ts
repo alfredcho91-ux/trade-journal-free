@@ -648,6 +648,13 @@ export interface JournalEntry {
   r_multiple?: number;
   outcome?: string;
   emotion?: string;
+  emotion_before?: string | null;
+  emotion_during?: string | null;
+  emotion_after?: string | null;
+  confidence_score?: number | null;
+  focus_score?: number | null;
+  fomo?: boolean | null;
+  revenge_trade?: boolean | null;
   tags?: string;
   mistakes?: string;
   planned_stop_pct?: number | null;
@@ -656,7 +663,7 @@ export interface JournalEntry {
   setup_tags?: string[];
   mistake_tags?: string[];
   plan_recorded_at?: string | null;
-  notes?: string;
+  notes?: string | null;
   source?: string;
   external_id?: string;
   lifecycle_id?: string;
@@ -672,6 +679,43 @@ export interface JournalEntry {
   indicator_snapshot?: TradeIndicatorSnapshot;
   created_at?: string;
 }
+
+export interface JournalBehaviorUpdatePayload {
+  planned_stop_pct?: number | null;
+  planned_target_pct?: number | null;
+  planned_entry_reason?: string | null;
+  setup_tags?: string[];
+  mistake_tags?: string[];
+  emotion_before?: string | null;
+  emotion_during?: string | null;
+  emotion_after?: string | null;
+  confidence_score?: number | null;
+  focus_score?: number | null;
+  fomo?: boolean | null;
+  revenge_trade?: boolean | null;
+  notes?: string | null;
+}
+
+export interface DailyJournalEntry {
+  id: number;
+  trade_date: string;
+  market_bias: string | null;
+  session_plan: string | null;
+  max_daily_loss: number | null;
+  max_trade_count: number | null;
+  pre_session_notes: string | null;
+  post_session_notes: string | null;
+  what_went_well: string | null;
+  what_went_wrong: string | null;
+  next_focus: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DailyJournalUpdatePayload = Partial<Omit<
+  DailyJournalEntry,
+  'id' | 'trade_date' | 'created_at' | 'updated_at'
+>>;
 
 export type JournalBehaviorRuleType = 'trend_direction_forbid' | 'max_stop_pct' | 'min_rr' | 'no_scale_in';
 

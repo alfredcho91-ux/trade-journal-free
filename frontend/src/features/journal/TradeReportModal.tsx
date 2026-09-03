@@ -645,7 +645,6 @@ export default function TradeReportModal({
             </CompactSection>}
 
             {isClosedPosition(entry) && <TradeBehaviorEditor entry={entry} isKo={isKo} onUpdated={onBehaviorUpdated} />}
-            {entry.notes && <CompactSection title={isKo ? '메모' : 'Memo'}><p className="whitespace-pre-wrap text-xs leading-5 text-dark-300">{entry.notes}</p></CompactSection>}
           </aside>
         </div>
       </div>

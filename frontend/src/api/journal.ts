@@ -21,6 +21,9 @@ import type {
   JournalStopLossAnalysisData,
   JournalStopOptimizationData,
   JournalEntry,
+  JournalBehaviorUpdatePayload,
+  DailyJournalEntry,
+  DailyJournalUpdatePayload,
   JournalExitHoldAnalysisData,
   ExitHoldInterval,
   JournalPerformanceData,
@@ -241,18 +244,57 @@ export async function compareJournalBehavior(payload: {
   }
 }
 
-export async function updateJournalBehavior(id: number, payload: {
-  planned_stop_pct?: number | null;
-  planned_target_pct?: number | null;
-  planned_entry_reason?: string | null;
-  setup_tags?: string[];
-  mistake_tags?: string[];
-}): Promise<JournalEntry> {
+export async function updateJournalBehavior(id: number, payload: JournalBehaviorUpdatePayload): Promise<JournalEntry> {
   try {
     const res = await api.patch<ApiResponse<JournalEntry>>(`/journal/${id}/behavior`, payload);
     return unwrapApiResponse(res, 'Failed to update trade behavior.');
   } catch (error: unknown) {
     throw toApiClientError(error, 'Failed to update trade behavior.');
+  }
+}
+
+export async function getDailyJournals(params: {
+  start_date?: string;
+  end_date?: string;
+} = {}): Promise<DailyJournalEntry[]> {
+  try {
+    const res = await api.get<ApiResponse<DailyJournalEntry[]>>('/journal/daily', { params });
+    return unwrapApiResponse(res, 'Failed to load daily journal entries.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load daily journal entries.');
+  }
+}
+
+export async function getDailyJournal(tradeDate: string, signal?: AbortSignal): Promise<DailyJournalEntry | null> {
+  try {
+    const res = await api.get<ApiResponse<DailyJournalEntry>>(`/journal/daily/${tradeDate}`, { signal });
+    return unwrapApiResponse(res, 'Failed to load the daily journal.');
+  } catch (error: unknown) {
+    const apiError = toApiClientError(error, 'Failed to load the daily journal.');
+    if (apiError.status === 404) return null;
+    throw apiError;
+  }
+}
+
+export async function saveDailyJournal(
+  tradeDate: string,
+  payload: DailyJournalUpdatePayload,
+): Promise<DailyJournalEntry> {
+  try {
+    const res = await api.put<ApiResponse<DailyJournalEntry>>(`/journal/daily/${tradeDate}`, payload);
+    return unwrapApiResponse(res, 'Failed to save the daily journal.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to save the daily journal.');
+  }
+}
+
+export async function deleteDailyJournal(tradeDate: string): Promise<boolean> {
+  try {
+    const res = await api.delete<ApiResponse<null>>(`/journal/daily/${tradeDate}`);
+    ensureApiSuccess(res, 'Failed to delete the daily journal.');
+    return true;
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to delete the daily journal.');
   }
 }
 

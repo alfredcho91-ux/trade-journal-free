@@ -1,5 +1,8 @@
 export const journalQueryKeys = {
   entries: ['journal'] as const,
+  daily: ['daily-journal'] as const,
+  dailyDate: (tradeDate: string) => ['daily-journal', 'date', tradeDate] as const,
+  dailyRange: (startDate?: string, endDate?: string) => ['daily-journal', 'range', startDate, endDate] as const,
   excursions: (startTime: number | null, endTime: number | null) =>
     ['journal-excursions', startTime, endTime] as const,
   performance: (startTime: number | null, endTime: number | null) =>
