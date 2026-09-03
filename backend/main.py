@@ -1,5 +1,6 @@
 """Trade Journal API."""
 
+from contextlib import asynccontextmanager
 import secrets
 from typing import Optional
 
@@ -22,6 +23,8 @@ from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
 from backend.modules.journal.router import router as journal_router
 from backend.modules.plan_lab.router import router as plan_lab_router
+from backend.modules.strategy_assignments.repository import initialize_schema as initialize_assignment_schema
+from backend.modules.strategy_assignments.router import router as strategy_assignments_router
 from backend.modules.strategies.router import router as strategies_router
 from backend.utils.log_redaction import install_log_redaction
 
@@ -31,6 +34,13 @@ security = HTTPBasic(auto_error=False)
 
 if get_app_environment() == "production":
     get_basic_auth_credentials()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Install persistence schemas and integrity guards before serving requests."""
+    initialize_assignment_schema()
+    yield
 
 
 def verify_credentials(
@@ -72,6 +82,7 @@ app = FastAPI(
     version="1.0.25",
     default_response_class=ORJSONResponse,
     dependencies=[Depends(verify_credentials)],
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -126,6 +137,7 @@ def desktop_shutdown(request: Request):
 app.include_router(journal_router)
 app.include_router(plan_lab_router)
 app.include_router(strategies_router)
+app.include_router(strategy_assignments_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)

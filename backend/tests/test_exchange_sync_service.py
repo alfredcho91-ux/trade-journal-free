@@ -47,6 +47,9 @@ def test_ccxt_resync_updates_existing_positions_without_deleting_them(monkeypatc
     }
     updated_rows = []
 
+    def forbidden_delete(*_args, **_kwargs):
+        raise AssertionError("Normal exchange sync must not delete imported positions")
+
     monkeypatch.setattr(sync_service, "requested_symbols", lambda *_: ["BTC/USDT"])
     monkeypatch.setattr(sync_service, "fetch_trades", lambda *_: TradeFetchResult([{}], []))
     monkeypatch.setattr(sync_service, "normalize_trades", lambda *_: ([trade], 0))
@@ -56,6 +59,7 @@ def test_ccxt_resync_updates_existing_positions_without_deleting_them(monkeypatc
     monkeypatch.setattr(sync_service, "reconstruct_positions", lambda *_, **__: ([position], 0))
     monkeypatch.setattr(sync_service, "build_indicator_snapshots", lambda *_: {})
     monkeypatch.setattr(sync_service, "add_entries_if_new_external_ids", lambda *_: set())
+    monkeypatch.setattr(sync_service, "delete_imported_positions", forbidden_delete, raising=False)
     monkeypatch.setattr(
         sync_service,
         "update_imported_entries_by_external_id",
@@ -67,6 +71,7 @@ def test_ccxt_resync_updates_existing_positions_without_deleting_them(monkeypatc
     assert response["data"]["positions_imported"] == 0
     assert response["data"]["positions_updated"] == 1
     assert [row["external_id"] for row in updated_rows] == ["binance:position:1"]
+    assert "delete_imported_positions" not in sync_service.sync_ccxt.__code__.co_names
 
 
 def test_binance_funding_is_added_only_when_history_and_fee_are_complete():
