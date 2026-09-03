@@ -1,0 +1,1 @@
+"""Strategy Playbook domain."""

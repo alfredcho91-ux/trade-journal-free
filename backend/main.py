@@ -22,6 +22,7 @@ from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
 from backend.modules.journal.router import router as journal_router
 from backend.modules.plan_lab.router import router as plan_lab_router
+from backend.modules.strategies.router import router as strategies_router
 from backend.utils.log_redaction import install_log_redaction
 
 install_log_redaction()
@@ -124,6 +125,7 @@ def desktop_shutdown(request: Request):
 
 app.include_router(journal_router)
 app.include_router(plan_lab_router)
+app.include_router(strategies_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)
