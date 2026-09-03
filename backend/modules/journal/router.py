@@ -1,6 +1,6 @@
 """Trading Journal API router."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -17,6 +17,10 @@ from backend.modules.journal.schemas import (
     JournalBehaviorUpdate,
     JournalBehaviorUpdateEnvelope,
     JournalCurrentMarketEnvelope,
+    DailyJournalEnvelope,
+    DailyJournalListEnvelope,
+    DailyJournalRangeQuery,
+    DailyJournalUpsert,
     JournalDeleteEnvelope,
     JournalExitHoldEnvelope,
     JournalExitHoldQuery,
@@ -50,8 +54,12 @@ from backend.modules.journal.repository import (
     update_behavior_rule,
 )
 from backend.modules.journal.service import (
+    delete_daily_journal_service,
     delete_journal_service,
+    get_daily_journal_service,
     get_journal_service,
+    list_daily_journals_service,
+    upsert_daily_journal_service,
     update_journal_behavior_service,
 )
 from backend.utils.decorators import handle_api_errors
@@ -177,6 +185,38 @@ async def api_get_journal_sl_tp_analysis(query: Annotated[JournalSlTpQuery, Depe
         query.tp_max,
         query.tp_step,
     )
+
+
+@router.get("/journal/daily", response_model=DailyJournalListEnvelope)
+@handle_api_errors()
+async def api_list_daily_journals(query: Annotated[DailyJournalRangeQuery, Depends()]):
+    if query.start_date is not None and query.end_date is not None and query.start_date > query.end_date:
+        raise ValueError("start_date must be on or before end_date")
+    start_date = query.start_date.isoformat() if query.start_date is not None else None
+    end_date = query.end_date.isoformat() if query.end_date is not None else None
+    return await run_in_threadpool(list_daily_journals_service, start_date, end_date)
+
+
+@router.get("/journal/daily/{trade_date}", response_model=DailyJournalEnvelope)
+@handle_api_errors()
+async def api_get_daily_journal(trade_date: date):
+    return await run_in_threadpool(get_daily_journal_service, trade_date.isoformat())
+
+
+@router.put("/journal/daily/{trade_date}", response_model=DailyJournalEnvelope)
+@handle_api_errors()
+async def api_upsert_daily_journal(trade_date: date, payload: DailyJournalUpsert):
+    return await run_in_threadpool(
+        upsert_daily_journal_service,
+        trade_date.isoformat(),
+        payload.model_dump(exclude_unset=True),
+    )
+
+
+@router.delete("/journal/daily/{trade_date}", response_model=JournalDeleteEnvelope)
+@handle_api_errors()
+async def api_delete_daily_journal(trade_date: date):
+    return await run_in_threadpool(delete_daily_journal_service, trade_date.isoformat())
 
 
 @router.delete("/journal/{entry_id}", response_model=JournalDeleteEnvelope)

@@ -1,9 +1,10 @@
 """Journal domain schemas."""
 
 import math
+from datetime import date
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StrictBool, StrictInt, model_validator
 
 
 class JournalEntry(BaseModel):
@@ -25,6 +26,13 @@ class JournalEntry(BaseModel):
     r_multiple: Optional[float] = None
     outcome: Optional[str] = None
     emotion: Optional[str] = None
+    emotion_before: Optional[str] = None
+    emotion_during: Optional[str] = None
+    emotion_after: Optional[str] = None
+    confidence_score: Optional[int] = Field(default=None, ge=1, le=5)
+    focus_score: Optional[int] = Field(default=None, ge=1, le=5)
+    fomo: Optional[bool] = None
+    revenge_trade: Optional[bool] = None
     tags: Optional[str] = None
     mistakes: Optional[str] = None
     planned_stop_pct: Optional[float] = Field(default=None, gt=0, le=100)
@@ -71,11 +79,62 @@ class JournalBehaviorUpdate(BaseModel):
     planned_entry_reason: Optional[str] = Field(default=None, max_length=500)
     setup_tags: Optional[List[str]] = Field(default=None, max_length=20)
     mistake_tags: Optional[List[str]] = Field(default=None, max_length=20)
+    emotion_before: Optional[str] = Field(default=None, max_length=80)
+    emotion_during: Optional[str] = Field(default=None, max_length=80)
+    emotion_after: Optional[str] = Field(default=None, max_length=80)
+    confidence_score: Optional[int] = Field(default=None, ge=1, le=5)
+    focus_score: Optional[int] = Field(default=None, ge=1, le=5)
+    fomo: Optional[StrictBool] = None
+    revenge_trade: Optional[StrictBool] = None
+    notes: Optional[str] = None
 
 
 class JournalBehaviorUpdateEnvelope(BaseModel):
     success: bool
     data: JournalRecord
+
+
+class DailyJournalUpsert(BaseModel):
+    market_bias: Optional[str] = Field(default=None, max_length=160)
+    session_plan: Optional[str] = Field(default=None, max_length=5000)
+    max_daily_loss: Optional[float] = Field(default=None, gt=0)
+    max_trade_count: Optional[StrictInt] = Field(default=None, gt=0)
+    pre_session_notes: Optional[str] = Field(default=None, max_length=5000)
+    post_session_notes: Optional[str] = Field(default=None, max_length=5000)
+    what_went_well: Optional[str] = Field(default=None, max_length=5000)
+    what_went_wrong: Optional[str] = Field(default=None, max_length=5000)
+    next_focus: Optional[str] = Field(default=None, max_length=2000)
+
+
+class DailyJournalRecord(BaseModel):
+    id: int
+    trade_date: date
+    market_bias: Optional[str] = None
+    session_plan: Optional[str] = None
+    max_daily_loss: Optional[float] = None
+    max_trade_count: Optional[int] = None
+    pre_session_notes: Optional[str] = None
+    post_session_notes: Optional[str] = None
+    what_went_well: Optional[str] = None
+    what_went_wrong: Optional[str] = None
+    next_focus: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class DailyJournalEnvelope(BaseModel):
+    success: bool
+    data: DailyJournalRecord
+
+
+class DailyJournalListEnvelope(BaseModel):
+    success: bool
+    data: List[DailyJournalRecord]
+
+
+class DailyJournalRangeQuery(BaseModel):
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
 
 RuleType = Literal["trend_direction_forbid", "max_stop_pct", "min_rr", "no_scale_in"]
@@ -429,6 +488,10 @@ class JournalCurrentMarketEnvelope(BaseModel):
 
 
 __all__ = [
+    "DailyJournalEnvelope",
+    "DailyJournalListEnvelope",
+    "DailyJournalRangeQuery",
+    "DailyJournalUpsert",
     "JournalDeleteEnvelope",
     "JournalCurrentMarketEnvelope",
     "JournalEntry",
