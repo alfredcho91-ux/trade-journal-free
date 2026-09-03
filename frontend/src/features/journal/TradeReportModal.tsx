@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 import { useNavigate } from '../../router-context';
@@ -14,7 +14,9 @@ import { resolvePositionEntryTime } from '../../utils/positionReview';
 import { ENTRY_REASON_FIELDS, formatEntryReason } from './entryReasons';
 import { isClosedPosition } from './journalEntries';
 import { tradeOutcomeAssessment } from './tradeOutcomeAssessment';
+import StrategyAssignmentEditor from './StrategyAssignmentEditor';
 import TradeBehaviorEditor from './TradeBehaviorEditor';
+import UnsavedChangesDialog from './UnsavedChangesDialog';
 import {
   buildTradePathSummary,
   tradePathMarkerLabel,
@@ -152,6 +154,27 @@ export default function TradeReportModal({
   const navigate = useNavigate();
   const [reviewMoment, setReviewMoment] = useState<ReviewMoment>('entry');
   const [reportInterval, setReportInterval] = useState<ReportInterval>('4h');
+  const [assignmentDirty, setAssignmentDirty] = useState(false);
+  const [behaviorDirty, setBehaviorDirty] = useState(false);
+  const [pendingExit, setPendingExit] = useState<'close' | 'plan' | 'playbook' | null>(null);
+  const hasUnsavedChanges = assignmentDirty || behaviorDirty;
+  useEffect(() => {
+    setAssignmentDirty(false);
+    setBehaviorDirty(false);
+    setPendingExit(null);
+  }, [entry.id]);
+  const completeExit = (exit: 'close' | 'plan' | 'playbook') => {
+    onClose();
+    if (exit === 'plan' && entry.id != null) navigate(`/plan-lab?journalId=${entry.id}`);
+    if (exit === 'playbook') navigate('/playbook');
+  };
+  const requestExit = (exit: 'close' | 'plan' | 'playbook') => {
+    if (hasUnsavedChanges) {
+      setPendingExit(exit);
+      return;
+    }
+    completeExit(exit);
+  };
   const isGenericExchange = Boolean(entry.exchange && entry.exchange !== 'Deepcoin');
   const executionQuery = useQuery({
     queryKey: ['exchange-executions', entry.exchange, entry.symbol, entry.entry_datetime, entry.datetime],
@@ -568,16 +591,13 @@ export default function TradeReportModal({
               {isClosedPosition(entry) && entry.id != null && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose();
-                    navigate(`/plan-lab?journalId=${entry.id}`);
-                  }}
+                  onClick={() => requestExit('plan')}
                   className="border border-primary-400/35 px-2.5 py-1.5 text-[11px] text-primary-200 transition-colors hover:border-primary-300 hover:text-white"
                 >
                   {isKo ? '당시 계획 입력' : 'Enter historical plan'}
                 </button>
               )}
-              <button type="button" onClick={onClose} className="text-dark-400 transition-colors hover:text-white" title={isKo ? '닫기' : 'Close'}><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => requestExit('close')} className="text-dark-400 transition-colors hover:text-white" title={isKo ? '닫기' : 'Close'}><X className="h-5 w-5" /></button>
             </div>
           </div>
         </header>
@@ -644,10 +664,33 @@ export default function TradeReportModal({
               <div className="mt-3"><TradeExitReview qualityItem={qualityItem} isKo={isKo} /></div>
             </CompactSection>}
 
-            {isClosedPosition(entry) && <TradeBehaviorEditor entry={entry} isKo={isKo} onUpdated={onBehaviorUpdated} />}
+            {entry.id != null && <StrategyAssignmentEditor
+              entryId={entry.id}
+              isKo={isKo}
+              onDirtyChange={setAssignmentDirty}
+              onViewPlaybook={() => requestExit('playbook')}
+            />}
+
+            {isClosedPosition(entry) && <TradeBehaviorEditor
+              entry={entry}
+              isKo={isKo}
+              onUpdated={onBehaviorUpdated}
+              onDirtyChange={setBehaviorDirty}
+            />}
           </aside>
         </div>
       </div>
+      {pendingExit && <UnsavedChangesDialog
+        isKo={isKo}
+        onKeepEditing={() => setPendingExit(null)}
+        onDiscard={() => {
+          const exit = pendingExit;
+          setPendingExit(null);
+          setAssignmentDirty(false);
+          setBehaviorDirty(false);
+          completeExit(exit);
+        }}
+      />}
     </div>
   );
 }

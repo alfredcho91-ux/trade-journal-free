@@ -118,4 +118,39 @@ describe('TradeBehaviorEditor', () => {
     expect((screen.getByRole('button', { name: 'Save behavior journal' }) as HTMLButtonElement).disabled).toBe(true);
     expect(mockedUpdate).not.toHaveBeenCalled();
   });
+
+  it('reports dirty state and clears it after a successful Behavior save', async () => {
+    mockedUpdate.mockResolvedValue({ ...entry, planned_stop_pct: 2 });
+    const onDirtyChange = vi.fn();
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={client}>
+      <TradeBehaviorEditor entry={entry} isKo={false} onDirtyChange={onDirtyChange} />
+    </QueryClientProvider>);
+
+    const stop = screen.getByLabelText('Planned stop percentage');
+    await user.clear(stop);
+    await user.type(stop, '2');
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    await user.click(screen.getByRole('button', { name: 'Save behavior journal' }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it('clears parent-visible dirty state when a clean trade replaces the current trade', async () => {
+    const onDirtyChange = vi.fn();
+    const client = new QueryClient();
+    const user = userEvent.setup();
+    const { rerender } = render(<QueryClientProvider client={client}>
+      <TradeBehaviorEditor entry={entry} isKo={false} onDirtyChange={onDirtyChange} />
+    </QueryClientProvider>);
+    await user.clear(screen.getByLabelText('Planned stop percentage'));
+    await user.type(screen.getByLabelText('Planned stop percentage'), '2');
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+
+    rerender(<QueryClientProvider client={client}>
+      <TradeBehaviorEditor entry={{ ...entry, id: 8, planned_stop_pct: 3 }} isKo={false} onDirtyChange={onDirtyChange} />
+    </QueryClientProvider>);
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    expect(screen.getByLabelText<HTMLInputElement>('Planned stop percentage').value).toBe('3');
+  });
 });

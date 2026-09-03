@@ -66,10 +66,11 @@ function BooleanSelect({ value, label, isKo, onChange }: {
   </label>;
 }
 
-export default function TradeBehaviorEditor({ entry, isKo, onUpdated }: {
+export default function TradeBehaviorEditor({ entry, isKo, onUpdated, onDirtyChange }: {
   entry: JournalEntry;
   isKo: boolean;
   onUpdated?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [initial, setInitial] = useState<TradeBehaviorDraft>(() => tradeBehaviorDraftFromEntry(entry));
   const [draft, setDraft] = useState<TradeBehaviorDraft>(() => tradeBehaviorDraftFromEntry(entry));
@@ -99,6 +100,10 @@ export default function TradeBehaviorEditor({ entry, isKo, onUpdated }: {
     [draft, hasNumberErrors, initial],
   );
   const isDirty = hasNumberErrors || hasTradeBehaviorChanges(initial, draft);
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    return () => onDirtyChange?.(false);
+  }, [isDirty, onDirtyChange]);
   const stop = Number(draft.planned_stop_pct);
   const target = Number(draft.planned_target_pct);
   const plannedRr = stop > 0 && target > 0 ? target / stop : null;
