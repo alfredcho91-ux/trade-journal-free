@@ -180,6 +180,7 @@ export function ExitTimingCurve({
   interval,
   onIntervalChange,
   onOpenEvidence,
+  onOpenLossEvidence,
   isLoading = false,
 }: {
   rows: Array<{ id: string } & TradeQualityHoldAggregate>;
@@ -187,6 +188,7 @@ export function ExitTimingCurve({
   interval: '15m' | '1h' | '2h' | '4h' | '1d';
   onIntervalChange: (interval: '15m' | '1h' | '2h' | '4h' | '1d') => void;
   onOpenEvidence: (holdId: string) => void;
+  onOpenLossEvidence?: (holdId: string) => void;
   isLoading?: boolean;
 }) {
   const intervals: Array<{ id: typeof interval; label: string }> = [
@@ -201,9 +203,13 @@ export function ExitTimingCurve({
   const allRows = holdIds.map((id) => rowsById.get(id) || {
     id,
     available_count: 0,
+    return_sample_count: 0,
     average_return_pct: null,
     average_r: null,
     r_sample_count: 0,
+    loss_count: 0,
+    loss_rate_pct: null,
+    average_loss_pct: null,
   });
   const available = allRows.filter((row) => row.average_return_pct != null && Number.isFinite(row.average_return_pct)) as Array<{ id: string } & TradeQualityHoldAggregate & { average_return_pct: number }>;
   const [selectedId, setSelectedId] = useState<string>('actual');
@@ -247,6 +253,21 @@ export function ExitTimingCurve({
       ? `평균적으로 실제 청산보다 ${holdLabel(best.id, true)}까지 보유했을 때 수익률이 ${signed(bestDelta)}%p 더 높았습니다.`
       : `On average, holding until ${holdLabel(best.id, false, interval)} was ${signed(bestDelta)} percentage points better than the recorded exit.`);
   const zeroY = top + ((max - 0) / range) * height;
+  const lossAvailable = allRows.filter((row) => (
+    row.loss_rate_pct != null
+    && Number.isFinite(row.loss_rate_pct)
+    && (row.return_sample_count ?? row.available_count) > 0
+  )) as Array<{ id: string } & TradeQualityHoldAggregate & { loss_rate_pct: number }>;
+  const lossPoint = (row: typeof lossAvailable[number]) => ({
+    x: row.id === 'actual' ? left : left + (Number(row.id) / 10) * width,
+    y: top + ((100 - row.loss_rate_pct) / 100) * height,
+  });
+  const lossPoints = lossAvailable.map(lossPoint);
+  const actualLoss = lossAvailable.find((row) => row.id === 'actual');
+  const selectedLoss = lossAvailable.find((row) => row.id === selected?.id);
+  const selectedLossDelta = selectedLoss?.loss_rate_pct != null && actualLoss?.loss_rate_pct != null
+    ? selectedLoss.loss_rate_pct - actualLoss.loss_rate_pct
+    : null;
 
   return <section className="border border-dark-700 bg-dark-950/25 p-4 sm:p-5" aria-label={isKo ? '청산 시점별 추가 보유 결과' : 'Exit timing additional holding curve'}>
     <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-white">{isKo ? '청산 후 보유 결과' : 'Results after holding beyond exit'}</h3><span className="border border-dark-700 bg-dark-900/50 px-2 py-1 text-[10px] text-dark-400">{isKo ? '선택 기간 전체 평균' : 'Selected-period average'}</span></div><p className="mt-1 text-xs text-dark-500">{isKo ? `현재 ${intervalLabel} 기준입니다. 선택 기간의 거래들을 실제 청산과 비교해 조금 더 보유했을 때의 평균 가격 수익률을 복기합니다.` : `Uses ${intervalLabel} candles to compare the selected period's average recorded exit with holding the same trades longer.`}</p></div><ExitIntervalSelector intervals={intervals} interval={interval} onIntervalChange={onIntervalChange} /></div>
@@ -275,6 +296,16 @@ export function ExitTimingCurve({
         return <g key={row.id} tabIndex={0} role="button" aria-label={`${label}: ${signed(row.average_return_pct)}%, ${isKo ? '실제 청산 대비' : 'vs recorded exit'} ${delta == null ? '-' : `${signed(delta)}%p`}, n=${row.available_count}`} onFocus={() => setSelectedId(row.id)} onClick={() => { setSelectedId(row.id); onOpenEvidence(row.id); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(row.id); onOpenEvidence(row.id); } }} className="cursor-pointer outline-none"><title>{`${label}\n${isKo ? '평균 수익률' : 'Average return'} ${signed(row.average_return_pct)}%\n${isKo ? '실제 청산 대비' : 'vs recorded exit'} ${delta == null ? '-' : `${signed(delta)}%p`}\nn=${row.available_count}\n${isKo ? '누르면 해당 거래 보기' : 'Select to view trades'}`}</title>{isBest && <circle cx={current.x} cy={current.y} r={10} fill="none" stroke="#a78bfa" strokeWidth="2" strokeDasharray="3 2" />}<circle cx={current.x} cy={current.y} r={chosen ? 7 : 5.5} fill={isActual ? '#fbbf24' : isBest ? '#a78bfa' : '#60a5fa'} stroke="#0b1220" strokeWidth="3" />{isActual && <text x={current.x} y={current.y - 16} textAnchor="middle" className="fill-amber-200 text-[10px] font-semibold">{isKo ? '실제 청산' : 'Recorded exit'}</text>}{isBest && !isActual && <text x={current.x} y={current.y - 16} textAnchor="middle" className="fill-primary-200 text-[10px] font-semibold">{isKo ? '가장 좋았던 지점' : 'Best observed'}</text>}</g>;
       })}
     </svg></div>
+    {lossAvailable.length > 0 && <div className="mt-6 border-t border-dark-700 pt-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h4 className="text-sm font-semibold text-white">{isKo ? '손실 거래 비율' : 'Loss trade rate'}</h4><p className="mt-1 text-xs text-dark-500">{isKo ? '각 관찰 시점에서 수익률이 0% 미만인 거래의 비율입니다.' : 'Share of comparable trades with a return below 0% at each observation point.'}</p></div><span className="font-mono text-xs text-bear">{selectedLoss?.loss_rate_pct == null ? '-' : `${number(selectedLoss.loss_rate_pct, 1)}%`}</span></div>
+      <div className="mt-4 overflow-x-auto"><svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="min-w-[600px] w-full" role="img" aria-label={isKo ? '청산 시점별 손실 거래 비율 선 그래프' : 'Loss trade rate by exit timing'}>
+        {[0, 50, 100].map((value) => { const y = top + ((100 - value) / 100) * height; return <g key={value}><line x1={left} x2={chartWidth - right} y1={y} y2={y} stroke="currentColor" className="text-dark-800" /><text x={left - 8} y={y + 4} textAnchor="end" className="fill-dark-500 text-[11px]">{value}%</text></g>; })}
+        <polyline fill="none" stroke="#f87171" strokeWidth="2.25" points={lossPoints.map((item) => `${item.x},${item.y}`).join(' ')} />
+        {allRows.map((row) => { const x = row.id === 'actual' ? left : left + (Number(row.id) / 10) * width; return <text key={`loss-axis-${row.id}`} x={x} y={chartHeight - 26} textAnchor="middle" className={`text-[11px] ${row.loss_rate_pct != null ? 'fill-dark-400' : 'fill-dark-600'}`}>{holdAxisLabel(row.id, isKo)}</text>; })}
+        {lossAvailable.map((row, index) => { const current = lossPoints[index]; const isActual = row.id === 'actual'; const chosen = selected?.id === row.id; const sampleCount = row.return_sample_count ?? row.available_count; const lossCount = row.loss_count ?? 0; return <g key={`loss-${row.id}`} tabIndex={0} role="button" aria-label={`${holdLabel(row.id, isKo, interval)}: ${number(row.loss_rate_pct, 1)}% ${isKo ? '손실률' : 'loss rate'}, ${lossCount}/${sampleCount}`} onFocus={() => setSelectedId(row.id)} onClick={() => { setSelectedId(row.id); onOpenLossEvidence?.(row.id); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(row.id); onOpenLossEvidence?.(row.id); } }} className="cursor-pointer outline-none"><title>{`${holdLabel(row.id, isKo, interval)}\n${isKo ? '손실 거래 비율' : 'Loss trade rate'} ${number(row.loss_rate_pct, 1)}%\n${isKo ? '손실 거래' : 'Loss trades'} ${lossCount}/${sampleCount}\n${isKo ? '평균 손실' : 'Average loss'} ${signed(row.average_loss_pct)}%`}</title><circle cx={current.x} cy={current.y} r={chosen ? 7 : 5.5} fill={isActual ? '#fbbf24' : '#f87171'} stroke="#0b1220" strokeWidth="3" /></g>; })}
+      </svg></div>
+      {selectedLoss && <div className="mt-3 grid gap-2 border-t border-dark-700 pt-3 text-xs sm:grid-cols-4"><div><span className="text-dark-500">{isKo ? '선택 시점' : 'Point'}</span><b className="ml-2 text-dark-100">{holdLabel(selectedLoss.id, isKo, interval)}</b></div><div><span className="text-dark-500">{isKo ? '손실 거래' : 'Loss trades'}</span><b className="ml-2 font-mono text-bear">{selectedLoss.loss_count ?? 0}/{selectedLoss.return_sample_count ?? selectedLoss.available_count}</b></div><div><span className="text-dark-500">{isKo ? '평균 손실' : 'Average loss'}</span><b className="ml-2 font-mono text-bear">{signed(selectedLoss.average_loss_pct)}%</b></div><div><span className="text-dark-500">{isKo ? '실제 청산 대비' : 'vs recorded exit'}</span><b className={`ml-2 font-mono ${(selectedLossDelta ?? 0) <= 0 ? 'text-bull' : 'text-bear'}`}>{selectedLossDelta == null ? '-' : `${signed(selectedLossDelta)}%p`}</b></div></div>}
+    </div>}
     {selected && <div className="mt-4 grid gap-2 border-t border-dark-700 pt-3 text-xs sm:grid-cols-4"><div><span className="text-dark-500">{isKo ? '선택 시점' : 'Point'}</span><b className="ml-2 text-dark-100">{holdLabel(selected.id, isKo, interval)}</b></div><div><span className="text-dark-500">{isKo ? '평균 수익률' : 'Average return'}</span><b className={`ml-2 font-mono ${(selected.average_return_pct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{signed(selected.average_return_pct)}%</b></div><div><span className="text-dark-500">{isKo ? '실제 청산 대비' : 'vs recorded exit'}</span><b className={`ml-2 font-mono ${(selectedDelta || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{selectedDelta == null ? '-' : `${signed(selectedDelta)}%p`}</b></div><div><span className="text-dark-500">{isKo ? '표본' : 'Sample'}</span><b className="ml-2 font-mono text-dark-100">n={selected.available_count}</b></div></div>}
     <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden border border-dark-700 bg-dark-700 sm:grid-cols-4 xl:grid-cols-6">
       {allRows.map((row) => <button type="button" key={`result-${row.id}`} disabled={row.available_count === 0} onClick={() => onOpenEvidence(row.id)} className="bg-dark-950/80 px-3 py-2.5 text-left transition-colors hover:bg-primary-500/10 disabled:cursor-default disabled:hover:bg-dark-950/80"><div className="text-[10px] text-dark-500">{holdLabel(row.id, isKo, interval)}{row.id !== 'actual' && <span className="ml-1 text-dark-600">({intervalLabel})</span>}</div><div className={`mt-1 font-mono text-sm font-semibold ${row.average_return_pct == null ? 'text-dark-600' : row.average_return_pct >= 0 ? 'text-bull' : 'text-bear'}`}>{row.average_return_pct == null ? (isKo ? '데이터 부족' : 'Unavailable') : `${signed(row.average_return_pct)}%`}</div><div className="mt-1 text-[10px] text-dark-600">n={row.available_count}{row.available_count > 0 ? (isKo ? ' · 거래 보기' : ' · View trades') : ''}</div></button>)}

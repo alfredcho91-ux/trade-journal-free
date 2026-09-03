@@ -27,7 +27,7 @@ INTERVAL_MS = {
     "1d": 24 * 60 * 60 * 1000,
 }
 MAX_EXIT_HOLD_CANDLES = 20_000
-EXIT_HOLD_CACHE_VERSION = 1
+EXIT_HOLD_CACHE_VERSION = 2
 EXIT_HOLD_CACHE = DataCache(
     ttl_minutes=10,
     cache_dir=str(PROJECT_ROOT / ".cache" / "journal_exit_hold"),
@@ -48,11 +48,21 @@ def _hold_aggregates(items: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
             for item in items
             if item.get("hold_results", {}).get(key, {}).get("available")
         ]
+        returns = [
+            value
+            for result in results
+            if (value := finite(result.get("return_pct"))) is not None
+        ]
+        losses = [value for value in returns if value < 0]
         output[key] = {
             "available_count": len(results),
-            "average_return_pct": _mean(result.get("return_pct") for result in results),
+            "return_sample_count": len(returns),
+            "average_return_pct": _mean(returns),
             "average_r": _mean(result.get("r_multiple") for result in results),
             "r_sample_count": sum(finite(result.get("r_multiple")) is not None for result in results),
+            "loss_count": len(losses),
+            "loss_rate_pct": (len(losses) / len(returns) * 100) if returns else None,
+            "average_loss_pct": _mean(losses),
         }
     return output
 

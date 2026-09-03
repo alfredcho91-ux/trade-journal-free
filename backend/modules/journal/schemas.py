@@ -324,9 +324,13 @@ class QualityPerformance(BaseModel):
 
 class QualityHoldAggregate(BaseModel):
     available_count: int
+    return_sample_count: int = 0
     average_return_pct: Optional[float] = None
     average_r: Optional[float] = None
     r_sample_count: int
+    loss_count: int = 0
+    loss_rate_pct: Optional[float] = None
+    average_loss_pct: Optional[float] = None
 
 
 class QualityStrategyAggregate(BaseModel):

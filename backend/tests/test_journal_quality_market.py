@@ -175,6 +175,72 @@ def test_exit_hold_aggregates_exclude_unavailable_horizons_instead_of_zero():
     assert aggregates["3"]["available_count"] == 1
     assert aggregates["10"]["available_count"] == 1
     assert aggregates["3"]["average_return_pct"] == pytest.approx(3.0)
+    assert aggregates["actual"]["return_sample_count"] == 2
+    assert aggregates["actual"]["loss_count"] == 1
+    assert aggregates["actual"]["loss_rate_pct"] == pytest.approx(50.0)
+    assert aggregates["actual"]["average_loss_pct"] == pytest.approx(-1.0)
+    assert aggregates["1"]["loss_rate_pct"] == pytest.approx(0.0)
+    assert aggregates["1"]["average_loss_pct"] is None
+
+
+def test_exit_hold_loss_rate_is_one_hundred_when_all_evaluable_returns_are_losses():
+    items = [
+        {"hold_results": {"actual": {"available": True, "return_pct": -5.0}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": -1.0}}},
+    ]
+
+    actual = _hold_aggregates(items)["actual"]
+
+    assert actual["return_sample_count"] == 2
+    assert actual["loss_count"] == 2
+    assert actual["loss_rate_pct"] == pytest.approx(100.0)
+    assert actual["average_loss_pct"] == pytest.approx(-3.0)
+
+
+def test_exit_hold_loss_rate_includes_breakeven_in_denominator_not_losses():
+    items = [
+        {"hold_results": {"actual": {"available": True, "return_pct": -5.0}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": 0.0}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": 5.0}}},
+    ]
+
+    actual = _hold_aggregates(items)["actual"]
+
+    assert actual["return_sample_count"] == 3
+    assert actual["loss_count"] == 1
+    assert actual["loss_rate_pct"] == pytest.approx(100.0 / 3.0)
+
+
+def test_exit_hold_loss_rate_is_none_without_evaluable_returns():
+    items = [
+        {"hold_results": {"actual": {"available": False, "return_pct": -5.0}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": None}}},
+    ]
+
+    actual = _hold_aggregates(items)["actual"]
+
+    assert actual["return_sample_count"] == 0
+    assert actual["loss_count"] == 0
+    assert actual["loss_rate_pct"] is None
+    assert actual["average_loss_pct"] is None
+
+
+def test_exit_hold_loss_rate_excludes_non_finite_returns():
+    items = [
+        {"hold_results": {"actual": {"available": True, "return_pct": -5.0}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": 5.0}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": float("nan")}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": float("inf")}}},
+        {"hold_results": {"actual": {"available": True, "return_pct": float("-inf")}}},
+    ]
+
+    actual = _hold_aggregates(items)["actual"]
+
+    assert actual["available_count"] == 5
+    assert actual["return_sample_count"] == 2
+    assert actual["loss_count"] == 1
+    assert actual["loss_rate_pct"] == pytest.approx(50.0)
+    assert actual["average_loss_pct"] == pytest.approx(-5.0)
 
 
 @pytest.mark.parametrize("interval", ["15m", "1h", "2h", "4h", "1d"])

@@ -41,7 +41,7 @@ import TradeReportModal from '../features/journal/TradeReportModal';
 import { journalQueryKeys } from '../features/journal/journalQueryKeys';
 import { useLanguage, useTradingStyle } from '../store/useStore';
 import { useNavigate } from '../router-context';
-import { evidenceMinimumReturnLabel, useEvidenceNavigation, type EvidenceHoldResult } from '../features/tradeAnalysis/evidenceNavigation';
+import { evidenceMinimumReturnLabel, selectExitHoldEvidence, useEvidenceNavigation } from '../features/tradeAnalysis/evidenceNavigation';
 import type { ExitHoldInterval, PlanLabData, TradeQualityItem } from '../types';
 import TradingStyleSelect from '../features/preferences/TradingStyleSelect';
 import { TRADING_STYLE_CONFIGS, tradingStyleLabel } from '../features/preferences/tradingStyle';
@@ -488,31 +488,18 @@ export default function TradeAnalysisPage() {
     });
     navigate('/trade-explorer');
   }, [isKo, minimumAbsNetReturnPct, navigate, period, setEvidenceRequest]);
-  const openExitHoldEvidence = useCallback((holdId: string) => {
+  const openExitHoldEvidence = useCallback((holdId: string, lossOnly = false) => {
     const intervalLabel = exitHoldIntervalLabel(exitHoldInterval, isKo);
     const pointLabel = exitHoldPointLabel(holdId, exitHoldInterval, isKo);
-    const resultsByJournalId: Record<number, EvidenceHoldResult> = {};
-    const tradeIds: number[] = [];
-    (exitHoldQuery.data?.items || []).forEach((item) => {
-      if (item.direction !== direction) return;
-      const actual = item.hold_results.actual;
-      const selected = item.hold_results[holdId];
-      if (!actual?.available || !selected?.available) return;
-      const actualReturnPct = actual.return_pct != null && Number.isFinite(actual.return_pct) ? actual.return_pct : null;
-      const holdReturnPct = selected.return_pct != null && Number.isFinite(selected.return_pct) ? selected.return_pct : null;
-      if (actualReturnPct == null || holdReturnPct == null) return;
-      tradeIds.push(item.journal_id);
-      resultsByJournalId[item.journal_id] = {
-        actualReturnPct,
-        holdReturnPct,
-        differencePct: holdReturnPct - actualReturnPct,
-        exitTime: item.exit_datetime || null,
-      };
-    });
-    const uniqueTradeIds = [...new Set(tradeIds)];
+    const { tradeIds: uniqueTradeIds, resultsByJournalId } = selectExitHoldEvidence(
+      exitHoldQuery.data?.items || [],
+      direction,
+      holdId,
+      lossOnly,
+    );
     setEvidenceRequest({
-      title: isKo ? `${intervalLabel} · ${pointLabel} 근거 거래` : `${intervalLabel} · ${pointLabel} supporting trades`,
-      filterLabel: `${direction.toUpperCase()} · ${period.start} ~ ${period.end} · ${evidenceMinimumReturnLabel(minimumAbsNetReturnPct, isKo)} · ${intervalLabel} · ${pointLabel} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
+      title: isKo ? `${intervalLabel} · ${pointLabel} ${lossOnly ? '손실' : '근거'} 거래` : `${intervalLabel} · ${pointLabel} ${lossOnly ? 'loss' : 'supporting'} trades`,
+      filterLabel: `${direction.toUpperCase()} · ${period.start} ~ ${period.end} · ${evidenceMinimumReturnLabel(minimumAbsNetReturnPct, isKo)} · ${intervalLabel} · ${pointLabel}${lossOnly ? (isKo ? ' · 손실 거래' : ' · loss trades') : ''} · ${uniqueTradeIds.length}${isKo ? '건' : ' trades'}`,
       tradeIds: uniqueTradeIds,
       period,
       direction,
@@ -790,6 +777,7 @@ export default function TradeAnalysisPage() {
                 onIntervalChange={setExitHoldInterval}
                 isLoading={exitHoldQuery.isLoading || exitHoldQuery.isFetching}
                 onOpenEvidence={openExitHoldEvidence}
+                onOpenLossEvidence={(holdId) => openExitHoldEvidence(holdId, true)}
               />
               <EntryMovementComparison
                 trades={rangeTrades}
