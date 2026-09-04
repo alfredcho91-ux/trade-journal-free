@@ -5,3 +5,4 @@ export * from './journal';
 export * from './planLab';
 export * from './strategy';
 export * from './strategyAssignment';
+export * from './ruleEvaluation';

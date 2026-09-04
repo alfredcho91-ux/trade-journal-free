@@ -33,7 +33,21 @@ import type {
   PlanSource,
   PlanStatus,
   TradingPlan,
+  JournalStrategyEvaluation,
 } from '../types';
+
+export async function getJournalStrategyEvaluation(
+  journalEntryId: number,
+): Promise<JournalStrategyEvaluation | null> {
+  try {
+    const res = await api.get<ApiResponse<JournalStrategyEvaluation | null>>(
+      `/journal/${journalEntryId}/strategy-evaluation`,
+    );
+    return unwrapApiResponse(res, 'Failed to load Strategy rule adherence.');
+  } catch (error: unknown) {
+    throw toApiClientError(error, 'Failed to load Strategy rule adherence.');
+  }
+}
 
 export async function getPlans(): Promise<TradingPlan[]> {
   try {

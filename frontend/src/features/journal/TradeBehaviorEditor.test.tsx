@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { updateJournalBehavior } from '../../api/journal';
 import type { JournalEntry } from '../../types';
 import TradeBehaviorEditor from './TradeBehaviorEditor';
+import { journalQueryKeys } from './journalQueryKeys';
 
 vi.mock('../../api/journal', () => ({
   updateJournalBehavior: vi.fn(),
@@ -124,6 +125,7 @@ describe('TradeBehaviorEditor', () => {
     const onDirtyChange = vi.fn();
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const user = userEvent.setup();
+    client.setQueryData(journalQueryKeys.strategyEvaluation(7), { stable: true });
     render(<QueryClientProvider client={client}>
       <TradeBehaviorEditor entry={entry} isKo={false} onDirtyChange={onDirtyChange} />
     </QueryClientProvider>);
@@ -134,6 +136,7 @@ describe('TradeBehaviorEditor', () => {
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
     await user.click(screen.getByRole('button', { name: 'Save behavior journal' }));
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    expect(client.getQueryState(journalQueryKeys.strategyEvaluation(7))?.isInvalidated).toBe(true);
   });
 
   it('clears parent-visible dirty state when a clean trade replaces the current trade', async () => {

@@ -13,6 +13,7 @@ import {
 import { listStrategies, listStrategyVersions } from '../../api/strategies';
 import type { JournalStrategyAssignment, Strategy, StrategyVersion } from '../../types';
 import StrategyAssignmentEditor from './StrategyAssignmentEditor';
+import { journalQueryKeys } from './journalQueryKeys';
 import { strategyAssignmentQueryKeys } from './strategyAssignmentQueryKeys';
 
 vi.mock('../../api/strategyAssignments', () => ({
@@ -220,7 +221,8 @@ describe('Journal Strategy Assignment frontend', () => {
   it('15-16. confirms before DELETE and renders Not assigned after success', async () => {
     mockedGetAssignment.mockResolvedValue(assignment(101));
     const user = userEvent.setup();
-    renderEditor();
+    const { client } = renderEditor();
+    client.setQueryData(journalQueryKeys.strategyEvaluation(101), { stable: true });
     await user.click(await screen.findByRole('button', { name: 'Remove Strategy' }));
     expect(mockedDeleteAssignment).not.toHaveBeenCalled();
     const dialog = screen.getByRole('dialog', { name: 'Remove Strategy assignment' });
@@ -228,6 +230,7 @@ describe('Journal Strategy Assignment frontend', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(mockedDeleteAssignment).toHaveBeenCalledWith(101));
     expect(await screen.findByText('Not assigned')).toBeTruthy();
+    expect(client.getQueryState(journalQueryKeys.strategyEvaluation(101))?.isInvalidated).toBe(true);
   });
 
   it('17. keeps a dirty editor open and shows a PUT failure', async () => {
@@ -319,6 +322,8 @@ describe('Journal Strategy Assignment frontend', () => {
     mockedPutAssignment.mockImplementation((entryId) => entryId === 101 ? saveA.promise : Promise.resolve(assignment(entryId)));
     const user = userEvent.setup();
     const { rerender, client } = renderEditor(101);
+    client.setQueryData(journalQueryKeys.strategyEvaluation(101), { trade: 'A' });
+    client.setQueryData(journalQueryKeys.strategyEvaluation(202), { trade: 'B' });
     await user.click(await screen.findByRole('button', { name: 'Assign Strategy' }));
     await user.selectOptions(screen.getByLabelText('Select strategy'), '1');
     await waitFor(() => expect(screen.getByLabelText<HTMLSelectElement>('Select version').value).toBe('10'));
@@ -330,6 +335,9 @@ describe('Journal Strategy Assignment frontend', () => {
     expect(screen.getByText('Not assigned')).toBeTruthy();
     expect(client.getQueryData(strategyAssignmentQueryKeys.detail(101))).toEqual(assignment(101));
     expect(client.getQueryData(strategyAssignmentQueryKeys.detail(202))).toBeNull();
+    expect(client.getQueryState(journalQueryKeys.strategyEvaluation(101))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(journalQueryKeys.strategyEvaluation(202))?.isInvalidated).toBe(false);
+    expect(client.getQueryData(journalQueryKeys.strategyEvaluation(202))).toEqual({ trade: 'B' });
   });
 
   it('25. never infers from setup-like text and requires explicit Strategy selection', async () => {
@@ -346,6 +354,7 @@ describe('Journal Strategy Assignment frontend', () => {
     const { client } = renderEditor();
     client.setQueryData(['journal-performance'], { stable: true });
     client.setQueryData(['trade-analysis'], { stable: true });
+    client.setQueryData(journalQueryKeys.strategyEvaluation(101), { stable: true });
     await user.click(await screen.findByRole('button', { name: 'Assign Strategy' }));
     await user.selectOptions(screen.getByLabelText('Select strategy'), '1');
     await waitFor(() => expect(screen.getByLabelText<HTMLSelectElement>('Select version').value).toBe('10'));
@@ -354,6 +363,7 @@ describe('Journal Strategy Assignment frontend', () => {
     expect(mockedPutAssignment).toHaveBeenCalledWith(101, 10);
     expect(client.getQueryData(['journal-performance'])).toEqual({ stable: true });
     expect(client.getQueryData(['trade-analysis'])).toEqual({ stable: true });
+    expect(client.getQueryState(journalQueryKeys.strategyEvaluation(101))?.isInvalidated).toBe(true);
   });
 
   it('28. opens the assigned Strategy in Playbook through the supplied navigation boundary', async () => {

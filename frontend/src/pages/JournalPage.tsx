@@ -706,7 +706,8 @@ export default function JournalPage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteJournalEntry,
-    onSuccess: async () => {
+    onSuccess: async (_, journalEntryId) => {
+      queryClient.removeQueries({ queryKey: journalQueryKeys.strategyEvaluation(journalEntryId) });
       await queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries });
       await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
     },
@@ -718,6 +719,7 @@ export default function JournalPage() {
       setSyncMessage(isKo ? '거래 동기화 완료 · 분석 결과를 갱신하고 있습니다.' : 'Trade sync complete · Refreshing analysis results.');
 
       await queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries, refetchType: 'none' });
+      await queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluations });
       await Promise.all(journalDerivedQueryPrefixes.map((queryKey) => (
         queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
       )));

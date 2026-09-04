@@ -13,6 +13,7 @@ import { errorMessage } from '../playbook/strategyDraft';
 import { strategyQueryKeys } from '../playbook/strategyQueryKeys';
 import UnsavedChangesDialog from './UnsavedChangesDialog';
 import { strategyAssignmentQueryKeys } from './strategyAssignmentQueryKeys';
+import { journalQueryKeys } from './journalQueryKeys';
 
 interface Draft {
   entryId: number;
@@ -140,6 +141,7 @@ export default function StrategyAssignmentEditor({ entryId, isKo, onDirtyChange,
     },
     onSuccess: (saved, variables) => {
       queryClient.setQueryData(strategyAssignmentQueryKeys.detail(variables.entryId), saved);
+      void queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluation(variables.entryId) });
       if (currentEntryId.current === variables.entryId) {
         setDraft({ entryId: variables.entryId, strategyId: saved.strategy_id, versionId: saved.strategy_version_id });
         setEditing(false);
@@ -153,6 +155,7 @@ export default function StrategyAssignmentEditor({ entryId, isKo, onDirtyChange,
     },
     onSuccess: (_, variables) => {
       queryClient.setQueryData(strategyAssignmentQueryKeys.detail(variables.entryId), null);
+      void queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluation(variables.entryId) });
       if (currentEntryId.current === variables.entryId) {
         setConfirmRemove(false);
         setDraft(null);

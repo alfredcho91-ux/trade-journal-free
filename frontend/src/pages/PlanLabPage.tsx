@@ -489,10 +489,13 @@ export default function PlanLabPage() {
     status.configured && (status.id === 'deepcoin' || status.id === 'binance')
   ));
 
-  const invalidate = async () => {
+  const invalidate = async (journalEntryId?: number | null) => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: journalQueryKeys.plans }),
       queryClient.invalidateQueries({ queryKey: ['plan-lab'] }),
+      ...(journalEntryId == null ? [] : [
+        queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluation(journalEntryId) }),
+      ]),
     ]);
   };
   const saveMutation = useMutation({
@@ -504,14 +507,18 @@ export default function PlanLabPage() {
       if (!revision) throw new Error(historicalTradeId
         ? (isKo ? 'Stop과 TP 값을 확인하세요.' : 'Check Stop and TP.')
         : (isKo ? '계획 Entry, Stop, TP 값을 확인하세요.' : 'Check Plan Entry, Stop and TP.'));
-      if (revisionTarget) return addPlanRevision(revisionTarget.id, revision);
-      if (historicalTradeId) return createRetrospectivePlan(historicalTradeId, revision);
-      return createPlan({ exchange: draft.exchange, symbol: draft.symbol, side: draft.side, revision });
+      const targetJournalId = historicalTradeId ?? revisionTarget?.link?.journal_entry_id ?? null;
+      const plan = revisionTarget
+        ? await addPlanRevision(revisionTarget.id, revision)
+        : historicalTradeId
+          ? await createRetrospectivePlan(historicalTradeId, revision)
+          : await createPlan({ exchange: draft.exchange, symbol: draft.symbol, side: draft.side, revision });
+      return { plan, targetJournalId };
     },
-    onSuccess: async () => {
+    onSuccess: async ({ plan, targetJournalId }) => {
       if (historicalTradeId) setAnalysisRequested(true);
       setSavedTradeId(historicalTradeId); setRevisionTarget(undefined); setShowPretrade(false); setFormError(null);
-      await invalidate();
+      await invalidate(plan.link?.journal_entry_id ?? targetJournalId);
     },
     onError: (error) => setFormError(error instanceof Error ? error.message : String(error)),
   });
@@ -520,25 +527,27 @@ export default function PlanLabPage() {
       if (!openPositionTarget) throw new Error(isKo ? '진행중 거래를 다시 선택하세요.' : 'Select an open position again.');
       const revision = revisionPayload(draft, true);
       if (!revision) throw new Error(isKo ? 'Stop과 TP 값을 확인하세요.' : 'Check Stop and TP.');
-      if (inTradeRevisionTarget) return addInTradePlanRevision(inTradeRevisionTarget.id, revision);
-      return createInTradePlan({
+      const plan = inTradeRevisionTarget
+        ? await addInTradePlanRevision(inTradeRevisionTarget.id, revision)
+        : await createInTradePlan({
         exchange: openPositionTarget.exchange,
         position_id: openPositionTarget.position_id,
         revision,
       });
+      return plan;
     },
-    onSuccess: async () => {
+    onSuccess: async (plan) => {
       setFormError(null);
       setInTradeRevisionTarget(undefined);
       await Promise.all([
-        invalidate(),
+        invalidate(plan.link?.journal_entry_id),
         queryClient.invalidateQueries({ queryKey: exchangeQueryKeys.openPositions }),
       ]);
     },
     onError: (error) => setFormError(error instanceof Error ? error.message : String(error)),
   });
-  const linkMutation = useMutation({ mutationFn: ({ planId, journalId }: { planId: number; journalId: number }) => linkPlanToTrade(planId, journalId), onSuccess: invalidate });
-  const statusMutation = useMutation({ mutationFn: ({ planId, status }: { planId: number; status: 'active' | 'cancelled' }) => updatePlanStatus(planId, status), onSuccess: invalidate });
+  const linkMutation = useMutation({ mutationFn: ({ planId, journalId }: { planId: number; journalId: number }) => linkPlanToTrade(planId, journalId), onSuccess: async (_, variables) => invalidate(variables.journalId) });
+  const statusMutation = useMutation({ mutationFn: ({ planId, status }: { planId: number; status: 'active' | 'cancelled' }) => updatePlanStatus(planId, status), onSuccess: async (plan) => invalidate(plan.link?.journal_entry_id) });
   const latestSyncMutation = useMutation({
     mutationFn: async () => {
       if (!syncTargets.length) {
@@ -560,6 +569,7 @@ export default function PlanLabPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: journalQueryKeys.entries, refetchType: 'none' }),
         queryClient.invalidateQueries({ queryKey: journalQueryKeys.plans, refetchType: 'none' }),
+        queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluations }),
         ...journalDerivedQueryPrefixes.map((queryKey) => queryClient.invalidateQueries({ queryKey, refetchType: 'none' })),
       ]);
       await Promise.all([

@@ -30,6 +30,9 @@ export const journalQueryKeys = {
   ) => ['journal-sl-tp-analysis', startTime, endTime, slMin, slMax, slStep, tpMin, tpMax, tpStep] as const,
   currentMarket: (coin: string) => ['journal-current-market', coin] as const,
   plans: ['trading-plans'] as const,
+  strategyEvaluations: ['journal-strategy-evaluations'] as const,
+  strategyEvaluation: (journalEntryId: number) =>
+    ['journal-strategy-evaluations', journalEntryId] as const,
   planLab: (
     startTime: number | null,
     endTime: number | null,

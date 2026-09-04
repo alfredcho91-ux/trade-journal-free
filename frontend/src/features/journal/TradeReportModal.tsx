@@ -16,6 +16,7 @@ import { isClosedPosition } from './journalEntries';
 import { tradeOutcomeAssessment } from './tradeOutcomeAssessment';
 import StrategyAssignmentEditor from './StrategyAssignmentEditor';
 import TradeBehaviorEditor from './TradeBehaviorEditor';
+import RuleAdherencePanel from './RuleAdherencePanel';
 import UnsavedChangesDialog from './UnsavedChangesDialog';
 import {
   buildTradePathSummary,
@@ -670,6 +671,8 @@ export default function TradeReportModal({
               onDirtyChange={setAssignmentDirty}
               onViewPlaybook={() => requestExit('playbook')}
             />}
+
+            {entry.id != null && <RuleAdherencePanel entryId={entry.id} isKo={isKo} />}
 
             {isClosedPosition(entry) && <TradeBehaviorEditor
               entry={entry}

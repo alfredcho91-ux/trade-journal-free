@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { updateJournalBehavior } from '../../api/journal';
+import { getJournalStrategyEvaluation, updateJournalBehavior } from '../../api/journal';
 import {
   deleteJournalStrategyAssignment,
   getJournalStrategyAssignment,
@@ -15,10 +15,12 @@ import { listStrategies, listStrategyVersions } from '../../api/strategies';
 import { RouterContext } from '../../router-context';
 import type { JournalEntry, JournalStrategyAssignment, Strategy, StrategyVersion } from '../../types';
 import TradeReportModal from './TradeReportModal';
+import { journalQueryKeys } from './journalQueryKeys';
 
 vi.mock('../../api/journal', () => ({
   getDeepcoinTradeMarkers: vi.fn(),
   getExchangeExecutions: vi.fn(),
+  getJournalStrategyEvaluation: vi.fn().mockResolvedValue(null),
   updateJournalBehavior: vi.fn(),
 }));
 vi.mock('../../api/strategyAssignments', () => ({
@@ -36,6 +38,7 @@ vi.mock('../../components/TradeReferenceSummary', () => ({ default: () => null }
 vi.mock('../tradeAnalysis/TradeExitReviewPanel', () => ({ default: () => null }));
 
 const mockedBehaviorUpdate = vi.mocked(updateJournalBehavior);
+const mockedEvaluationGet = vi.mocked(getJournalStrategyEvaluation);
 const mockedAssignmentGet = vi.mocked(getJournalStrategyAssignment);
 const mockedAssignmentPut = vi.mocked(putJournalStrategyAssignment);
 const mockedAssignmentDelete = vi.mocked(deleteJournalStrategyAssignment);
@@ -119,6 +122,7 @@ async function makeAssignmentDirty(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+  mockedEvaluationGet.mockResolvedValue(null);
   mockedAssignmentGet.mockResolvedValue(null);
   mockedAssignmentPut.mockImplementation(async (entryId) => assignment(entryId));
   mockedAssignmentDelete.mockResolvedValue(null);
@@ -133,6 +137,64 @@ afterEach(() => {
 });
 
 describe('Trade Report combined unsaved-change boundary', () => {
+  it('does not refetch or preview evaluation for an unsaved Assignment draft', async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await screen.findByText('No Strategy Version assigned');
+    mockedEvaluationGet.mockClear();
+
+    await makeAssignmentDirty(user);
+
+    expect(screen.getByText('No Strategy Version assigned')).toBeTruthy();
+    expect(mockedEvaluationGet).not.toHaveBeenCalled();
+  });
+
+  it('refetches the exact trade evaluation after Assignment save and delete', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderModal();
+    await screen.findByText('No Strategy Version assigned');
+    mockedEvaluationGet.mockClear();
+    await makeAssignmentDirty(user);
+    await user.click(screen.getByRole('button', { name: 'Save Strategy' }));
+    await waitFor(() => expect(mockedEvaluationGet).toHaveBeenCalledWith(101));
+
+    unmount();
+    mockedAssignmentGet.mockResolvedValue(assignment(101));
+    renderModal();
+    await screen.findByText('No Strategy Version assigned');
+    mockedEvaluationGet.mockClear();
+    await user.click(await screen.findByRole('button', { name: 'Remove Strategy' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(mockedEvaluationGet).toHaveBeenCalledWith(101));
+  });
+
+  it('refetches the exact trade evaluation after a Behavior save', async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await screen.findByText('No Strategy Version assigned');
+    mockedEvaluationGet.mockClear();
+    await makeBehaviorDirty(user, '2.25');
+    await user.click(screen.getByRole('button', { name: 'Save behavior journal' }));
+    await waitFor(() => expect(mockedEvaluationGet).toHaveBeenCalledWith(101));
+  });
+
+  it('keeps Behavior and Assignment drafts dirty across an evaluation refetch', async () => {
+    const user = userEvent.setup();
+    const { client, onClose } = renderModal();
+    await makeBehaviorDirty(user, '2.75');
+    await makeAssignmentDirty(user);
+
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluation(101) });
+    });
+
+    expect(screen.getByLabelText<HTMLInputElement>('Planned stop percentage').value).toBe('2.75');
+    expect(screen.getByLabelText<HTMLSelectElement>('Select strategy').value).toBe('1');
+    await user.click(screen.getByTitle('Close'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toBeTruthy();
+  });
+
   it('blocks Behavior-only close and Keep Editing preserves the actual Behavior draft', async () => {
     const user = userEvent.setup();
     const { onClose } = renderModal();

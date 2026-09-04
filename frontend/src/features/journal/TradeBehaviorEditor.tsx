@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Save } from 'lucide-react';
 
 import { updateJournalBehavior } from '../../api/journal';
@@ -13,6 +13,7 @@ import {
   type ScoreDraft,
   type TradeBehaviorDraft,
 } from './tradeBehaviorForm';
+import { journalQueryKeys } from './journalQueryKeys';
 
 const EMOTION_SUGGESTIONS = ['Calm', 'Confident', 'Focused', 'Anxious', 'Fearful', 'Greedy', 'Frustrated', 'Tired', 'Neutral'];
 
@@ -72,6 +73,7 @@ export default function TradeBehaviorEditor({ entry, isKo, onUpdated, onDirtyCha
   onUpdated?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
   const [initial, setInitial] = useState<TradeBehaviorDraft>(() => tradeBehaviorDraftFromEntry(entry));
   const [draft, setDraft] = useState<TradeBehaviorDraft>(() => tradeBehaviorDraftFromEntry(entry));
   const [saved, setSaved] = useState(false);
@@ -112,6 +114,7 @@ export default function TradeBehaviorEditor({ entry, isKo, onUpdated, onDirtyCha
   const saveMutation = useMutation({
     mutationFn: (request: TradeBehaviorSaveRequest) => updateJournalBehavior(request.entryId, request.payload),
     onSuccess: (updatedEntry, request) => {
+      void queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluation(request.entryId) });
       if (entryIdRef.current !== request.entryId) return;
       const next = tradeBehaviorDraftFromEntry(updatedEntry);
       setInitial(next);
