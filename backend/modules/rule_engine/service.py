@@ -11,11 +11,74 @@ from backend.modules.rule_engine import repository
 from backend.modules.rule_engine.evaluator import evaluate_rule
 from backend.modules.rule_engine.extractors import extract_metric_observations
 from backend.modules.rule_engine.models import RuleCategory, RuleEvaluationResult
+from backend.modules.rule_engine.numeric import canonical_numeric
+from backend.modules.rule_engine.registry import METRIC_REGISTRY, REGISTRY_VERSION
+from backend.modules.rule_engine.schemas import (
+    RuleEngineMetadata,
+    RuleEngineMetadataEnvelope,
+    RuleMetricConstraints,
+    RuleMetricMetadata,
+)
 from backend.modules.rule_engine.summary import summarize_by_category
 from backend.modules.strategies.schemas import StrategyRuleDocument
 from backend.utils.error_handler import APIError, NotFoundError
 
 RULE_DOCUMENT_ADAPTER = TypeAdapter(StrategyRuleDocument)
+PUBLIC_VALUE_TYPES = {
+    "boolean": "boolean",
+    "numeric": "numeric",
+    "enum": "enum",
+    "normalized_string": "string",
+}
+OPERATOR_ORDER = ("eq", "lte", "gte", "in")
+
+
+def get_rule_engine_metadata_service() -> RuleEngineMetadataEnvelope:
+    """Project the immutable Registry into the public authoring contract."""
+    metrics = []
+    for metric in METRIC_REGISTRY.values():
+        supports_in = "in" in metric.allowed_operators
+        metrics.append(
+            RuleMetricMetadata(
+                metric_id=metric.id,
+                label=metric.label,
+                value_type=PUBLIC_VALUE_TYPES[metric.value_type],
+                unit=metric.unit,
+                lifecycle=metric.lifecycle,
+                allowed_operators=[
+                    operator
+                    for operator in OPERATOR_ORDER
+                    if operator in metric.allowed_operators
+                ],
+                constraints=RuleMetricConstraints(
+                    enum_values=list(metric.enum_values),
+                    minimum=(
+                        canonical_numeric(metric.minimum)
+                        if metric.minimum is not None
+                        else None
+                    ),
+                    maximum=(
+                        canonical_numeric(metric.maximum)
+                        if metric.maximum is not None
+                        else None
+                    ),
+                    max_in_values=metric.max_in_values if supports_in else None,
+                    max_string_length=(
+                        metric.max_string_length
+                        if metric.value_type == "normalized_string"
+                        else None
+                    ),
+                    string_format=metric.string_format,
+                ),
+            )
+        )
+    return RuleEngineMetadataEnvelope(
+        success=True,
+        data=RuleEngineMetadata(
+            registry_version=REGISTRY_VERSION,
+            metrics=metrics,
+        ),
+    )
 
 
 def _evaluate_document(
@@ -102,4 +165,4 @@ def get_strategy_evaluation_service(
     }
 
 
-__all__ = ["get_strategy_evaluation_service"]
+__all__ = ["get_rule_engine_metadata_service", "get_strategy_evaluation_service"]

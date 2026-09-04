@@ -312,6 +312,52 @@ def test_open_trade_stale_r_is_not_evaluable_through_api(evaluation_db):
     assert data["summary"]["exit"]["coverage_pct"] == "0"
 
 
+def test_open_trade_is_freshly_evaluated_after_exchange_close(evaluation_db):
+    entry = _journal(
+        evaluation_db,
+        "open-to-closed",
+        datetime=None,
+        exit_price=None,
+        pnl_pct=None,
+        outcome=None,
+    )
+    rules = _document(
+        exit=[_rule("closed-return", "execution.price_return_pct", "gte", 2)]
+    )
+    _, version = _strategy(evaluation_db, "Close Freshness", rules)
+    _assign(evaluation_db, entry["id"], version["id"])
+
+    with TestClient(app) as client:
+        open_response = client.get(
+            f"/api/journal/{entry['id']}/strategy-evaluation"
+        )
+    open_result = open_response.json()["data"]["rules"][0]
+    assert open_result["status"] == "NOT_EVALUABLE"
+    assert open_result["reason_code"] == "TRADE_NOT_CLOSED"
+
+    closed_payload = {
+        **entry,
+        "datetime": "2026-01-01T11:30:00+00:00",
+        "exit_price": 104.0,
+        "pnl_pct": 4.0,
+        "outcome": "Win",
+    }
+    updated = journal_repository.update_imported_entry_by_external_id(
+        closed_payload,
+        db_path=evaluation_db,
+    )
+    assert updated is not None
+
+    with TestClient(app) as client:
+        closed_response = client.get(
+            f"/api/journal/{entry['id']}/strategy-evaluation"
+        )
+    closed_result = closed_response.json()["data"]["rules"][0]
+    assert closed_result["status"] == "FOLLOWED"
+    assert closed_result["reason_code"] is None
+    assert closed_result["observation"]["value"] == "4"
+
+
 def test_journal_psychology_edit_changes_next_get(evaluation_db):
     entry = _journal(evaluation_db, "journal-edit")
     rules = _document(entry=[_rule("fomo-rule", "journal.fomo", "eq", False)])
@@ -498,6 +544,99 @@ def test_concurrent_assignment_change_cannot_mix_version_identity_and_rules(
     fresh = get_strategy_evaluation_service(entry["id"], db_path=evaluation_db)
     assert fresh["data"]["strategy_version"]["id"] == second["id"]
     assert [rule["rule_id"] for rule in fresh["data"]["rules"]] == ["second-rule"]
+
+
+def test_concurrent_plan_revision_uses_one_sqlite_snapshot(
+    evaluation_db, monkeypatch,
+):
+    entry = _journal(evaluation_db, "concurrent-plan", entry_price=102.0)
+    rules = _document(
+        entry=[
+            _rule("recorded", "plan.recorded_before_entry", "eq", True),
+            _rule("deviation", "execution.entry_deviation_r", "lte", 0.5),
+        ],
+        risk=[
+            _rule("stop", "plan.stop_distance_pct", "lte", 2),
+            _rule("reward-risk", "plan.total_reward_risk_ratio", "gte", 2),
+            _rule("max-hold", "plan.max_hold_hours", "lte", 12),
+        ],
+    )
+    _, version = _strategy(evaluation_db, "Concurrent Plan", rules)
+    _assign(evaluation_db, entry["id"], version["id"])
+    linked = _linked_plan(
+        evaluation_db,
+        entry,
+        monkeypatch,
+        received_at="2026-01-01T09:00:00+00:00",
+    )
+    revision_a = linked["latest_revision"]
+
+    journal_read = Event()
+    continue_read = Event()
+    original = evaluation_repository._fetch_journal_entry
+
+    def blocked_journal_read(conn, journal_entry_id):
+        result = original(conn, journal_entry_id)
+        journal_read.set()
+        if not continue_read.wait(10):
+            raise RuntimeError("Timed out waiting for Plan revision writer")
+        return result
+
+    monkeypatch.setattr(
+        evaluation_repository,
+        "_fetch_journal_entry",
+        blocked_journal_read,
+    )
+    monkeypatch.setattr(
+        plan_repository,
+        "utc_now",
+        lambda: "2026-01-01T09:30:00+00:00",
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future = executor.submit(
+            get_strategy_evaluation_service,
+            entry["id"],
+            db_path=evaluation_db,
+        )
+        assert journal_read.wait(10)
+        revised = plan_repository.add_revision(
+            linked["id"],
+            {
+                "entry_price": 100.0,
+                "entry_min": None,
+                "entry_max": None,
+                "stop_loss": 95.0,
+                "take_profit": 105.0,
+                "take_profit_2": None,
+                "setup": "concurrent revision",
+                "entry_note": None,
+                "exit_note": None,
+                "memo": None,
+                "max_hold_hours": 24.0,
+                "client_created_at": None,
+            },
+            db_path=evaluation_db,
+        )
+        continue_read.set()
+        snapshot_a = future.result(timeout=10)
+
+    assert revised is not None
+    revision_b = revised["latest_revision"]
+    results_a = _result_map(snapshot_a["data"])
+    assert {
+        result["observation"]["record_id"] for result in results_a.values()
+    } == {revision_a["id"]}
+    assert results_a["stop"]["status"] == "FOLLOWED"
+    assert results_a["max-hold"]["status"] == "FOLLOWED"
+
+    fresh = get_strategy_evaluation_service(entry["id"], db_path=evaluation_db)
+    results_b = _result_map(fresh["data"])
+    assert {
+        result["observation"]["record_id"] for result in results_b.values()
+    } == {revision_b["id"]}
+    assert results_b["stop"]["status"] == "VIOLATED"
+    assert results_b["max-hold"]["status"] == "VIOLATED"
 
 
 @pytest.mark.parametrize("mutation", ["update", "delete"])

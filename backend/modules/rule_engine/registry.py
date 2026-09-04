@@ -16,7 +16,9 @@ from backend.modules.rule_engine.numeric import canonical_numeric
 RuleOperator = Literal["eq", "lte", "gte", "in"]
 MetricValueType = Literal["boolean", "numeric", "enum", "normalized_string"]
 MetricLifecycle = Literal["ENTRY", "RISK", "REVIEW", "EXIT"]
+MetricStringFormat = Literal["uppercase_alphanumeric"]
 
+REGISTRY_VERSION = 1
 DEFAULT_MAX_IN_VALUES = 50
 DEFAULT_MAX_STRING_LENGTH = 80
 
@@ -34,6 +36,7 @@ class MetricDefinition:
     maximum: Optional[Decimal] = None
     max_in_values: int = DEFAULT_MAX_IN_VALUES
     max_string_length: int = DEFAULT_MAX_STRING_LENGTH
+    string_format: Optional[MetricStringFormat] = None
 
 
 def _metric(
@@ -47,6 +50,7 @@ def _metric(
     enum_values: tuple[str, ...] = (),
     minimum: Optional[str] = None,
     maximum: Optional[str] = None,
+    string_format: Optional[MetricStringFormat] = None,
 ) -> MetricDefinition:
     return MetricDefinition(
         id=identifier,
@@ -58,12 +62,21 @@ def _metric(
         enum_values=enum_values,
         minimum=Decimal(minimum) if minimum is not None else None,
         maximum=Decimal(maximum) if maximum is not None else None,
+        string_format=string_format,
     )
 
 
 _METRICS = (
     _metric("trade.direction", "Trade direction", "enum", "direction", ("eq", "in"), "ENTRY", enum_values=("Long", "Short")),
-    _metric("trade.symbol", "Trade symbol", "normalized_string", "symbol", ("eq", "in"), "ENTRY"),
+    _metric(
+        "trade.symbol",
+        "Trade symbol",
+        "normalized_string",
+        "symbol",
+        ("eq", "in"),
+        "ENTRY",
+        string_format="uppercase_alphanumeric",
+    ),
     _metric("plan.recorded_before_entry", "Plan recorded before entry", "boolean", "boolean", ("eq",), "ENTRY"),
     _metric("execution.entry_deviation_r", "Entry deviation", "numeric", "R", ("lte", "gte"), "ENTRY"),
     _metric("plan.stop_distance_pct", "Stop distance", "numeric", "percent", ("lte", "gte"), "RISK"),
@@ -114,6 +127,8 @@ def _validate_enum_item(metric: MetricDefinition, value: Any) -> str:
 def _validate_normalized_string(metric: MetricDefinition, value: Any) -> str:
     if not isinstance(value, str) or not value or len(value) > metric.max_string_length:
         raise ValueError(f"Expected value for {metric.id} must be a non-empty normalized string")
+    if metric.string_format != "uppercase_alphanumeric":
+        raise ValueError(f"String validation contract is unavailable for metric {metric.id}")
     if not value.isascii() or not value.isalnum() or value != value.upper():
         raise ValueError(
             f"Expected value for {metric.id} must already use canonical uppercase alphanumeric form"
@@ -174,7 +189,9 @@ __all__ = [
     "METRIC_REGISTRY",
     "MetricDefinition",
     "MetricLifecycle",
+    "MetricStringFormat",
     "MetricValueType",
+    "REGISTRY_VERSION",
     "RuleOperator",
     "validate_evaluator_definition",
     "validate_observation_value",

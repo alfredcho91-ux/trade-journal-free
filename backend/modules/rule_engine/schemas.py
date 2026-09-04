@@ -10,6 +10,48 @@ from backend.modules.rule_engine.models import (
     CategoryEvaluationSummaries,
     RuleEvaluationResult,
 )
+from backend.modules.rule_engine.registry import MetricLifecycle, RuleOperator
+
+
+PublicMetricValueType = Literal["boolean", "numeric", "enum", "string"]
+PublicStringFormat = Literal["uppercase_alphanumeric"]
+
+
+class RuleMetricConstraints(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enum_values: List[str]
+    minimum: Optional[str]
+    maximum: Optional[str]
+    max_in_values: Optional[int]
+    max_string_length: Optional[int]
+    string_format: Optional[PublicStringFormat]
+
+
+class RuleMetricMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    metric_id: str
+    label: str
+    value_type: PublicMetricValueType
+    unit: Optional[str]
+    lifecycle: MetricLifecycle
+    allowed_operators: List[RuleOperator]
+    constraints: RuleMetricConstraints
+
+
+class RuleEngineMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registry_version: Literal[1]
+    metrics: List[RuleMetricMetadata]
+
+
+class RuleEngineMetadataEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+    data: RuleEngineMetadata
 
 
 class EvaluationStrategyIdentity(BaseModel):
@@ -53,4 +95,9 @@ class JournalStrategyEvaluationEnvelope(BaseModel):
     data: Optional[JournalStrategyEvaluation]
 
 
-__all__ = ["JournalStrategyEvaluationEnvelope"]
+__all__ = [
+    "JournalStrategyEvaluationEnvelope",
+    "RuleEngineMetadataEnvelope",
+    "RuleMetricConstraints",
+    "RuleMetricMetadata",
+]
