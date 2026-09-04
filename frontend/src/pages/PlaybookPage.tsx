@@ -14,12 +14,13 @@ import {
   retireStrategyVersion,
   updateStrategy,
 } from '../api/strategies';
+import { getRuleEngineMetadata } from '../api/ruleEngine';
 import UnsavedChangesDialog from '../features/journal/UnsavedChangesDialog';
 import { NewStrategyDrawer, NewVersionDrawer } from '../features/playbook/PlaybookDialogs';
-import { canCloneVersion, errorMessage, normalizedDescription } from '../features/playbook/strategyDraft';
+import { errorMessage, normalizedDescription } from '../features/playbook/strategyDraft';
 import { strategyQueryKeys } from '../features/playbook/strategyQueryKeys';
 import { useLanguage } from '../store/useStore';
-import type { Strategy, StrategyCreateInput, StrategyRule, StrategyVersion, StrategyVersionInput } from '../types';
+import type { RuleEngineMetadata, Strategy, StrategyCreateInput, StrategyRuleV2, StrategyVersion, StrategyVersionInput } from '../types';
 
 const secondaryButton = 'inline-flex items-center gap-1.5 border border-dark-600 px-3 py-2 text-xs font-medium text-dark-200 hover:border-dark-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
 const primaryButton = 'inline-flex items-center gap-1.5 border border-primary-400 bg-primary-500 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-400 disabled:cursor-not-allowed disabled:opacity-50';
@@ -45,10 +46,14 @@ function VersionBadge({ version, isKo }: { version: StrategyVersion; isKo: boole
   return <span className="border border-primary-500/30 bg-primary-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary-300">{isKo ? '비활성' : 'INACTIVE'}</span>;
 }
 
-function RuleColumn({ title, rules, isKo }: { title: string; rules: StrategyRule[]; isKo: boolean }) {
+function RuleColumn({ title, rules, isKo }: { title: string; rules: StrategyRuleV2[]; isKo: boolean }) {
   return <section className="min-h-36 border-r border-dark-700 px-4 py-3 last:border-r-0">
     <div className="mb-3 flex items-center justify-between"><h4 className="text-[11px] font-semibold uppercase tracking-wider text-dark-300">{title}</h4><span className="font-mono text-[10px] text-dark-600">{rules.length}</span></div>
-    {rules.length ? <ol className="space-y-2">{rules.map((rule, index) => <li key={rule.id} className="flex gap-2 text-xs leading-5 text-dark-200"><span className="w-4 shrink-0 text-right font-mono text-dark-600">{index + 1}</span><span>{rule.text}</span></li>)}</ol> : <p className="text-xs text-dark-600">{isKo ? '규칙 없음' : 'No rules'}</p>}
+    {rules.length ? <ol className="space-y-2">{rules.map((rule, index) => {
+      const evaluation = rule.evaluation;
+      const expected = evaluation && (Array.isArray(evaluation.expected) ? evaluation.expected.join(', ') : String(evaluation.expected));
+      return <li key={rule.id} className="flex gap-2 text-xs leading-5 text-dark-200"><span className="w-4 shrink-0 text-right font-mono text-dark-600">{index + 1}</span><span><span className="block">{rule.text}</span>{evaluation && <span className="mt-0.5 block font-mono text-[10px] text-primary-300">{evaluation.metric_id} · {evaluation.operator} · {expected}</span>}</span></li>;
+    })}</ol> : <p className="text-xs text-dark-600">{isKo ? '규칙 없음' : 'No rules'}</p>}
   </section>;
 }
 
@@ -127,6 +132,11 @@ export default function PlaybookPage() {
   selectedStrategyRef.current = selectedStrategyId;
 
   const listQuery = useQuery({ queryKey: strategyQueryKeys.list(showArchived), queryFn: () => listStrategies(showArchived) });
+  const metadataQuery = useQuery({
+    queryKey: strategyQueryKeys.ruleMetadata(),
+    queryFn: getRuleEngineMetadata,
+    staleTime: Infinity,
+  });
   const strategies = useMemo(() => listQuery.data ?? [], [listQuery.data]);
   const filteredStrategies = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
@@ -161,7 +171,6 @@ export default function PlaybookPage() {
   }, [selectedVersionId, versions]);
   const selectedVersion = versions.find((version) => version.id === selectedVersionId);
   const newVersionBase = selectedVersion ?? versions.find((version) => version.is_active) ?? versions[0];
-  const v2CloneBlocked = Boolean(newVersionBase && !canCloneVersion(newVersionBase));
 
   const refreshStrategy = async (strategyId: number) => {
     await Promise.all([
@@ -212,11 +221,7 @@ export default function PlaybookPage() {
     setSelectedStrategyId(strategyId);
   };
   const openEditor = (next: Editor) => { createMutation.reset(); updateMutation.reset(); versionMutation.reset(); setEditorDirty(false); setEditor(next); };
-  const openNewVersionEditor = () => {
-    const base = selectedVersion ?? versions.find((version) => version.is_active) ?? versions[0];
-    if (base && !canCloneVersion(base)) return;
-    openEditor('new-version');
-  };
+  const openNewVersionEditor = () => openEditor('new-version');
   const submitLifecycle = (action: LifecycleAction) => {
     if (!selectedStrategy) return;
     lifecycleMutation.reset();
@@ -258,7 +263,7 @@ export default function PlaybookPage() {
         {detailQuery.isLoading && !selectedStrategy ? <div className="flex h-full items-center justify-center text-sm text-dark-500">{isKo ? '전략 상세를 불러오는 중...' : 'Loading strategy detail...'}</div> : selectedStrategy ? <>
           <div className="border-b border-dark-700 px-5 py-4"><div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-lg font-semibold text-white">{selectedStrategy.name}</h2>{selectedStrategy.archived_at ? <span className="border border-dark-600 px-2 py-0.5 text-[10px] font-semibold text-dark-400">{isKo ? '보관됨' : 'ARCHIVED'}</span> : selectedStrategy.active_version_id ? <span className="border border-bull/40 bg-bull/10 px-2 py-0.5 text-[10px] font-semibold text-bull">{isKo ? '활성' : 'ACTIVE'}</span> : <span className="border border-primary-500/30 px-2 py-0.5 text-[10px] font-semibold text-primary-300">{isKo ? '활성 버전 없음' : 'NO ACTIVE VERSION'}</span>}</div><p className="mt-1.5 max-w-3xl text-xs leading-5 text-dark-400">{selectedStrategy.description || (isKo ? '전략 설명이 없습니다.' : 'No strategy description.')}</p><p className="mt-2 text-[10px] text-dark-600">{isKo ? '활성 버전' : 'Active version'}: <span className="font-mono text-dark-300">{versions.find((version) => version.id === selectedStrategy.active_version_id)?.version_label ?? (isKo ? '없음' : 'None')}</span></p></div><div className="flex shrink-0 gap-2"><button type="button" onClick={() => openEditor('edit-strategy')} className={secondaryButton}><Edit3 className="h-3.5 w-3.5" />{isKo ? '전략 편집' : 'Edit Strategy'}</button><button type="button" disabled={lifecycleMutation.isPending} onClick={() => setConfirmLifecycle(selectedStrategy.archived_at ? 'restore' : 'archive')} className={secondaryButton}>{selectedStrategy.archived_at ? <RotateCcw className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}{selectedStrategy.archived_at ? (isKo ? '복원' : 'Restore') : (isKo ? '보관' : 'Archive')}</button></div></div></div>
 
-          <div className="border-b border-dark-700"><div className="flex h-11 items-center justify-between border-b border-dark-800 px-5"><h3 className="text-[11px] font-semibold uppercase tracking-wider text-dark-300">{isKo ? '버전 기록' : 'Version History'}</h3><div className="flex items-center gap-3">{v2CloneBlocked && <span id="v2-clone-unavailable" className="text-[10px] text-dark-500">{isKo ? 'Rule Engine 버전은 아직 이 편집기에서 복제할 수 없습니다.' : 'Rule Engine versions cannot be cloned in this editor yet.'}</span>}<button type="button" disabled={Boolean(selectedStrategy.archived_at) || v2CloneBlocked} aria-describedby={v2CloneBlocked ? 'v2-clone-unavailable' : undefined} onClick={openNewVersionEditor} className={secondaryButton}><Plus className="h-3.5 w-3.5" />{isKo ? '새 버전' : 'New Version'}</button></div></div>
+          <div className="border-b border-dark-700"><div className="flex h-11 items-center justify-between border-b border-dark-800 px-5"><h3 className="text-[11px] font-semibold uppercase tracking-wider text-dark-300">{isKo ? '버전 기록' : 'Version History'}</h3><button type="button" disabled={Boolean(selectedStrategy.archived_at)} onClick={openNewVersionEditor} className={secondaryButton}><Plus className="h-3.5 w-3.5" />{isKo ? '새 버전' : 'New Version'}</button></div>
             {versionsQuery.isLoading ? <div className="px-5 py-6 text-xs text-dark-500">{isKo ? '버전을 불러오는 중...' : 'Loading versions...'}</div> : versions.length ? <div>{versions.map((version) => <button key={version.id} type="button" onClick={() => setSelectedVersionId(version.id)} aria-pressed={version.id === selectedVersionId} className={`grid w-full grid-cols-[90px_90px_1fr_120px] items-center gap-3 border-b border-dark-800 px-5 py-2.5 text-left last:border-b-0 ${version.id === selectedVersionId ? 'bg-dark-800/80' : 'hover:bg-dark-800/40'}`}><span className="font-mono text-xs font-semibold text-white">{version.version_label}</span><span><VersionBadge version={version} isKo={isKo} /></span><span className="truncate text-xs text-dark-400">{version.description || (isKo ? '설명 없음' : 'No description')}</span><span className="text-right font-mono text-[10px] text-dark-600">{formatDate(version.created_at, isKo)}</span></button>)}</div> : <div className="px-5 py-6 text-xs text-dark-500">{isKo ? '버전이 없습니다.' : 'No versions.'}</div>}
           </div>
 
@@ -267,9 +272,9 @@ export default function PlaybookPage() {
       </section>
     </div>}
 
-    {editor === 'new-strategy' && <NewStrategyDrawer isKo={isKo} pending={createMutation.isPending} error={createMutation.error ? errorMessage(createMutation.error, 'Failed to create strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload: StrategyCreateInput) => createMutation.mutate(payload)} />}
+    {editor === 'new-strategy' && <NewStrategyDrawer metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={createMutation.isPending} error={createMutation.error ? errorMessage(createMutation.error, 'Failed to create strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload: StrategyCreateInput) => createMutation.mutate(payload)} />}
     {editor === 'edit-strategy' && selectedStrategy && <EditStrategyDrawer strategy={selectedStrategy} isKo={isKo} pending={updateMutation.isPending} error={updateMutation.error ? errorMessage(updateMutation.error, 'Failed to update strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(name, description) => updateMutation.mutate({ strategyId: selectedStrategy.id, name, description })} />}
-    {editor === 'new-version' && selectedStrategy && !v2CloneBlocked && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} isKo={isKo} pending={versionMutation.isPending} error={versionMutation.error ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload })} />}
+    {editor === 'new-version' && selectedStrategy && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={versionMutation.isPending} error={versionMutation.error ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload })} />}
 
     {pendingSelection !== null && <UnsavedChangesDialog isKo={isKo} onKeepEditing={() => setPendingSelection(null)} onDiscard={() => { const next = pendingSelection; setPendingSelection(null); setEditor(null); setEditorDirty(false); setSelectedVersionId(null); setSelectedStrategyId(next); }} />}
     {confirmLifecycle && selectedStrategy && <ConfirmDialog title={confirmLifecycle === 'archive' ? (isKo ? '전략 보관' : 'Archive Strategy') : confirmLifecycle === 'restore' ? (isKo ? '전략 복원' : 'Restore Strategy') : confirmLifecycle === 'activate' ? (isKo ? '버전 활성화' : 'Activate Version') : (isKo ? '버전 은퇴' : 'Retire Version')} body={confirmLifecycle === 'archive' ? (isKo ? '보관은 삭제가 아닙니다. 전략, 버전 기록과 규칙은 계속 열람할 수 있습니다.' : 'Archive does not delete anything. The strategy, version history, and rules remain viewable.') : confirmLifecycle === 'restore' ? (isKo ? '전략을 복원합니다. 활성 버전은 자동으로 선택되지 않습니다.' : 'Restore this strategy. No active version will be chosen automatically.') : confirmLifecycle === 'activate' ? (isKo ? `${selectedVersion?.version_label} 버전을 현재 활성 버전으로 지정합니다.` : `Make ${selectedVersion?.version_label} the current active version.`) : (isKo ? `${selectedVersion?.version_label} 버전을 은퇴 처리합니다. 기록은 유지됩니다.` : `Retire ${selectedVersion?.version_label}. Its history remains intact.`)} confirmLabel={confirmLifecycle === 'archive' ? (isKo ? '보관' : 'Archive') : confirmLifecycle === 'restore' ? (isKo ? '복원' : 'Restore') : confirmLifecycle === 'activate' ? (isKo ? '활성화' : 'Activate') : (isKo ? '은퇴' : 'Retire')} danger={confirmLifecycle === 'archive' || confirmLifecycle === 'retire'} onCancel={() => setConfirmLifecycle(null)} onConfirm={() => submitLifecycle(confirmLifecycle)} />}

@@ -6,4 +6,5 @@ export const strategyQueryKeys = {
   detail: (strategyId: number) => ['strategies', 'detail', strategyId] as const,
   versions: (strategyId: number) => ['strategies', 'detail', strategyId, 'versions'] as const,
   version: (strategyId: number, versionId: number) => ['strategies', 'detail', strategyId, 'versions', versionId] as const,
+  ruleMetadata: () => ['strategies', 'rule-engine-metadata'] as const,
 };

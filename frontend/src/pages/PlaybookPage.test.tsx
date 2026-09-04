@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from '../App';
 import { ApiClientError } from '../api/config';
+import { getRuleEngineMetadata } from '../api/ruleEngine';
 import {
   activateStrategyVersion,
   archiveStrategy,
@@ -22,7 +23,7 @@ import {
 import { cloneRules, newRule } from '../features/playbook/strategyDraft';
 import { strategyQueryKeys } from '../features/playbook/strategyQueryKeys';
 import { useStore } from '../store/useStore';
-import type { Strategy, StrategyRuleDocumentV1, StrategyRuleDocumentV2, StrategyVersion } from '../types';
+import type { RuleEngineMetadata, Strategy, StrategyRuleDocumentV1, StrategyRuleDocumentV2, StrategyRuleEvaluator, StrategyVersion } from '../types';
 import PlaybookPage from './PlaybookPage';
 
 vi.mock('../api/strategies', () => ({
@@ -30,6 +31,7 @@ vi.mock('../api/strategies', () => ({
   archiveStrategy: vi.fn(), restoreStrategy: vi.fn(), listStrategyVersions: vi.fn(), getStrategyVersion: vi.fn(),
   createStrategyVersion: vi.fn(), activateStrategyVersion: vi.fn(), retireStrategyVersion: vi.fn(),
 }));
+vi.mock('../api/ruleEngine', () => ({ getRuleEngineMetadata: vi.fn() }));
 
 const mockedList = vi.mocked(listStrategies);
 const mockedGet = vi.mocked(getStrategy);
@@ -41,6 +43,21 @@ const mockedRestore = vi.mocked(restoreStrategy);
 const mockedCreateVersion = vi.mocked(createStrategyVersion);
 const mockedActivate = vi.mocked(activateStrategyVersion);
 const mockedRetire = vi.mocked(retireStrategyVersion);
+const mockedMetadata = vi.mocked(getRuleEngineMetadata);
+
+const constraints = {
+  enum_values: [], minimum: null, maximum: null, max_in_values: null,
+  max_string_length: null, string_format: null,
+};
+const metadata: RuleEngineMetadata = {
+  registry_version: 1,
+  metrics: [
+    { metric_id: 'journal.fomo', label: 'FOMO', value_type: 'boolean', unit: null, lifecycle: 'REVIEW', allowed_operators: ['eq'], constraints },
+    { metric_id: 'journal.confidence_score', label: 'Confidence', value_type: 'numeric', unit: 'score', lifecycle: 'ENTRY', allowed_operators: ['lte', 'gte'], constraints: { ...constraints, minimum: '1', maximum: '5' } },
+    { metric_id: 'trade.direction', label: 'Direction', value_type: 'enum', unit: null, lifecycle: 'ENTRY', allowed_operators: ['eq', 'in'], constraints: { ...constraints, enum_values: ['Long', 'Short'], max_in_values: 2 } },
+    { metric_id: 'trade.symbol', label: 'Symbol', value_type: 'string', unit: null, lifecycle: 'ENTRY', allowed_operators: ['eq', 'in'], constraints: { ...constraints, max_in_values: 2, max_string_length: 8, string_format: 'uppercase_alphanumeric' } },
+  ],
+};
 
 const rules: StrategyRuleDocumentV1 = {
   schema_version: 1,
@@ -49,7 +66,7 @@ const rules: StrategyRuleDocumentV1 = {
   exit_rules: [{ id: 'exit-structure', text: 'Exit on structural invalidation' }],
 };
 
-function v2Rules(evaluation?: unknown): StrategyRuleDocumentV2 {
+function v2Rules(evaluation?: StrategyRuleEvaluator): StrategyRuleDocumentV2 {
   const rule = { id: 'entry-v2', text: 'Readable Rule Engine rule', ...(evaluation === undefined ? {} : { evaluation }) };
   return { schema_version: 2, entry_rules: [rule], risk_rules: [], exit_rules: [] };
 }
@@ -85,6 +102,7 @@ beforeEach(() => {
   useStore.setState({ language: 'en' });
   window.history.replaceState(null, '', '/playbook');
   setupDefault();
+  mockedMetadata.mockResolvedValue(metadata);
 });
 
 afterEach(() => {
@@ -143,7 +161,7 @@ describe('Playbook frontend acceptance', () => {
     await user.type(screen.getByLabelText('Initial version label'), 'v1.0');
     await user.click(screen.getByRole('button', { name: 'Create Strategy' }));
     await waitFor(() => expect(mockedCreate).toHaveBeenCalled());
-    expect(mockedCreate.mock.calls[0][0]).toEqual(expect.objectContaining({ name: 'Trend Following', initial_version: expect.objectContaining({ version_label: 'v1.0', rules: expect.objectContaining({ schema_version: 1 }) }) }));
+    expect(mockedCreate.mock.calls[0][0]).toEqual(expect.objectContaining({ name: 'Trend Following', initial_version: expect.objectContaining({ version_label: 'v1.0', rules: expect.objectContaining({ schema_version: 2 }) }) }));
   });
 
   it('6. surfaces a duplicate-name 409 message', async () => {
@@ -225,7 +243,7 @@ describe('Playbook frontend acceptance', () => {
     await user.type(screen.getByLabelText('Version label'), 'v1.1');
     await user.click(screen.getByRole('button', { name: 'Create Version' }));
     await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalledWith(1, expect.objectContaining({ version_label: 'v1.1' })));
-    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual(rules);
+    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual(cloneRules(rules));
   });
 
   it('15. clone preserves existing rule IDs', () => {
@@ -241,62 +259,79 @@ describe('Playbook frontend acceptance', () => {
   });
 
   it('17. cloning and editing leaves the source Version untouched', () => {
-    const source = cloneRules(rules); const cloned = cloneRules(source);
+    const source = cloneRules(rules); const snapshot = structuredClone(source); const cloned = cloneRules(source);
     cloned.entry_rules[0].text = 'Changed'; cloned.risk_rules.splice(0, 1);
-    expect(source).toEqual(rules);
+    expect(source).toEqual(snapshot);
+    expect(rules.schema_version).toBe(1);
   });
 
-  it('blocks cloning a descriptive-only v2 Version while keeping it readable', async () => {
+  it('clones a descriptive-only v2 Version without adding an evaluator', async () => {
     const descriptiveRules = v2Rules();
     mockedVersions.mockResolvedValue([version(1, 10, { rules: descriptiveRules })]);
+    mockedCreateVersion.mockResolvedValue(version(1, 11, { is_active: false }));
     const user = userEvent.setup(); renderPage();
 
-    expect(() => cloneRules(descriptiveRules)).toThrow('Rule Engine versions cannot be cloned in this editor yet.');
+    expect(cloneRules(descriptiveRules)).toEqual(descriptiveRules);
     expect(await screen.findByText('Readable Rule Engine rule')).toBeTruthy();
-    expect(screen.getByText('Rule Engine versions cannot be cloned in this editor yet.')).toBeTruthy();
     const newVersion = screen.getByRole('button', { name: 'New Version' });
-    expect((newVersion as HTMLButtonElement).disabled).toBe(true);
+    expect((newVersion as HTMLButtonElement).disabled).toBe(false);
     await user.click(newVersion);
-    expect(screen.queryByRole('dialog', { name: 'New Version' })).toBeNull();
-    expect(mockedCreateVersion).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText('Version label'), 'v2.1');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalled());
+    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual(descriptiveRules);
   });
 
-  it('blocks cloning an evaluator-bearing v2 Version', async () => {
+  it('normalizes a persisted descriptive evaluation null to an omitted draft field', () => {
+    const persisted: StrategyRuleDocumentV2 = {
+      schema_version: 2,
+      entry_rules: [{ id: 'persisted-null', text: 'Descriptive only', evaluation: null }],
+      risk_rules: [],
+      exit_rules: [],
+    };
+    expect(cloneRules(persisted).entry_rules[0]).toEqual({ id: 'persisted-null', text: 'Descriptive only' });
+  });
+
+  it('clones an evaluator-bearing v2 Version losslessly', async () => {
+    const evaluation: StrategyRuleEvaluator = { metric_id: 'trade.direction', operator: 'in', expected: ['Long', 'Short'] };
     mockedVersions.mockResolvedValue([version(1, 10, {
-      rules: v2Rules({ metric_id: 'journal.fomo', operator: 'eq', expected: false }),
+      rules: v2Rules(evaluation),
     })]);
+    mockedCreateVersion.mockResolvedValue(version(1, 11, { is_active: false }));
     const user = userEvent.setup(); renderPage();
 
     expect(await screen.findByText('Readable Rule Engine rule')).toBeTruthy();
-    const newVersion = screen.getByRole('button', { name: 'New Version' });
-    expect((newVersion as HTMLButtonElement).disabled).toBe(true);
-    await user.click(newVersion);
-    expect(screen.queryByRole('dialog', { name: 'New Version' })).toBeNull();
-    expect(mockedCreateVersion).not.toHaveBeenCalled();
+    expect(screen.getByText('trade.direction · in · Long, Short')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'New Version' }));
+    expect((screen.getByLabelText('Entry rules 1 evaluate automatically') as HTMLInputElement).checked).toBe(true);
+    await user.type(screen.getByLabelText('Version label'), 'v2.1');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalled());
+    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual(v2Rules(evaluation));
   });
 
-  it('prevents an empty v2 document from entering the v1 editor', async () => {
+  it('keeps an empty v2 clone as schema v2', async () => {
     mockedVersions.mockResolvedValue([version(1, 10, {
       rules: { schema_version: 2, entry_rules: [], risk_rules: [], exit_rules: [] },
     })]);
+    mockedCreateVersion.mockResolvedValue(version(1, 11, { is_active: false }));
     const user = userEvent.setup(); renderPage();
 
-    await screen.findByText('Rule Engine versions cannot be cloned in this editor yet.');
-    const newVersion = screen.getByRole('button', { name: 'New Version' });
-    expect((newVersion as HTMLButtonElement).disabled).toBe(true);
-    await user.click(newVersion);
-    expect(screen.queryByLabelText('Version label')).toBeNull();
-    expect(mockedCreateVersion).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.type(screen.getByLabelText('Version label'), 'v2.1');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalled());
+    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual({ schema_version: 2, entry_rules: [], risk_rules: [], exit_rules: [] });
   });
 
-  it('can select a v1 Version after viewing v2 and clone the v1 definition normally', async () => {
+  it('selects a v1 Version after viewing v2 and produces a v2 definition', async () => {
     const v2 = version(1, 12, { sequence: 2, version_label: 'v2.0', rules: v2Rules() });
     const v1 = version(1, 11, { sequence: 1, version_label: 'v1.0', is_active: false });
     mockedVersions.mockResolvedValue([v2, v1]);
     mockedCreateVersion.mockResolvedValue(version(1, 13, { version_label: 'v1.1', is_active: false }));
     const user = userEvent.setup(); renderPage();
 
-    expect((await screen.findByRole('button', { name: 'New Version' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((await screen.findByRole('button', { name: 'New Version' }) as HTMLButtonElement).disabled).toBe(false);
     await user.click(screen.getByRole('button', { name: /v1\.0/ }));
     const newVersion = screen.getByRole('button', { name: 'New Version' });
     expect((newVersion as HTMLButtonElement).disabled).toBe(false);
@@ -305,10 +340,10 @@ describe('Playbook frontend acceptance', () => {
     await user.click(screen.getByRole('button', { name: 'Create Version' }));
 
     await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalledTimes(1));
-    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual(rules);
+    expect(mockedCreateVersion.mock.calls[0][1].rules).toEqual(cloneRules(rules));
   });
 
-  it('refuses a programmatic switch from a v1 draft to a v2 base', async () => {
+  it('switches from a v1 draft to a v2 base after confirmation', async () => {
     const v1 = version(1, 11, { sequence: 2, version_label: 'v1.0' });
     const v2 = version(1, 12, { sequence: 1, version_label: 'v2.0', is_active: false, rules: v2Rules() });
     mockedVersions.mockResolvedValue([v1, v2]);
@@ -316,12 +351,127 @@ describe('Playbook frontend acceptance', () => {
 
     await user.click(await screen.findByRole('button', { name: 'New Version' }));
     const base = screen.getByLabelText('Based on') as HTMLSelectElement;
-    const v2Option = within(base).getByRole('option', { name: 'v2.0 (cannot clone)' }) as HTMLOptionElement;
-    expect(v2Option.disabled).toBe(true);
+    const v2Option = within(base).getByRole('option', { name: 'v2.0' }) as HTMLOptionElement;
+    expect(v2Option.disabled).toBe(false);
+    await user.type(screen.getByLabelText('Version description'), 'dirty');
     fireEvent.change(base, { target: { value: '12' } });
-    expect(base.value).toBe('11');
-    expect((screen.getByLabelText('Entry rules 1') as HTMLInputElement).value).toBe('Confirm resistance breakout');
+    await user.click(screen.getByRole('button', { name: 'Discard and Switch' }));
+    expect(base.value).toBe('12');
+    expect((screen.getByLabelText('Entry rules 1') as HTMLInputElement).value).toBe('Readable Rule Engine rule');
+  });
+
+  it('loads exactly the backend metrics and drives boolean, numeric, enum, and string editors from metadata', async () => {
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.click(screen.getByLabelText('Entry rules 1 evaluate automatically'));
+
+    const metricSelect = screen.getByLabelText('Entry rules 1 metric');
+    expect(within(metricSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(metadata.metrics.map((item) => item.label));
+    expect(within(screen.getByLabelText('Entry rules 1 operator')).getAllByRole('option').map((option) => option.textContent)).toEqual(['eq']);
+    expect(screen.getByLabelText('Entry rules 1 expected value').tagName).toBe('SELECT');
+
+    await user.selectOptions(metricSelect, 'journal.confidence_score');
+    expect(within(screen.getByLabelText('Entry rules 1 operator')).getAllByRole('option').map((option) => option.textContent)).toEqual(['lte', 'gte']);
+    const numeric = screen.getByLabelText('Entry rules 1 expected value') as HTMLInputElement;
+    expect(numeric.type).toBe('number'); expect(numeric.min).toBe('1'); expect(numeric.max).toBe('5');
+    expect(screen.getByText('score')).toBeTruthy();
+
+    await user.selectOptions(metricSelect, 'trade.direction');
+    await user.selectOptions(screen.getByLabelText('Entry rules 1 operator'), 'in');
+    expect(screen.getByLabelText('Entry rules 1 expected Long')).toBeTruthy();
+    expect(screen.getByLabelText('Entry rules 1 expected Short')).toBeTruthy();
+
+    await user.selectOptions(metricSelect, 'trade.symbol');
+    await user.selectOptions(screen.getByLabelText('Entry rules 1 operator'), 'in');
+    expect((screen.getByLabelText('Entry rules 1 expected values') as HTMLInputElement).placeholder).toBe('BTCUSDT, ETHUSDT');
+    expect(screen.getByText(/max 2/)).toBeTruthy();
+  });
+
+  it('toggles evaluation off without emitting null and preserves the carried rule ID', async () => {
+    mockedCreateVersion.mockResolvedValue(version(1, 12, { is_active: false }));
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    const toggle = screen.getByLabelText('Entry rules 1 evaluate automatically');
+    await user.click(toggle); await user.click(toggle);
+    await user.type(screen.getByLabelText('Version label'), 'v2.1');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalled());
+    const submitted = mockedCreateVersion.mock.calls[0][1].rules.entry_rules[0];
+    expect(submitted).toEqual({ id: 'entry-breakout', text: 'Confirm resistance breakout' });
+    expect('evaluation' in submitted).toBe(false);
+  });
+
+  it('blocks invalid metadata-driven values and surfaces a backend 422', async () => {
+    mockedCreateVersion.mockRejectedValue(new ApiClientError('Expected value rejected by registry', { status: 422 }));
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.type(screen.getByLabelText('Version label'), 'v2.1');
+    await user.click(screen.getByLabelText('Entry rules 1 evaluate automatically'));
+    await user.selectOptions(screen.getByLabelText('Entry rules 1 metric'), 'journal.confidence_score');
+    const expected = screen.getByLabelText('Entry rules 1 expected value');
+    await user.clear(expected); await user.type(expected, '6');
+    expect((screen.getByRole('button', { name: 'Create Version' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('alert').textContent).toContain('at most 5');
+    await user.clear(expected); await user.type(expected, '5');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Expected value rejected by registry');
+  });
+
+  it('preserves v2 evaluator JSON and disables submission while metadata is unavailable', async () => {
+    const evaluation: StrategyRuleEvaluator = { metric_id: 'trade.direction', operator: 'in', expected: ['Long', 'Short'] };
+    mockedVersions.mockResolvedValue([version(1, 10, { rules: v2Rules(evaluation) })]);
+    mockedMetadata.mockRejectedValue(new Error('registry offline'));
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    expect(await screen.findByText(/Preserved evaluator:/)).toBeTruthy();
+    expect(screen.getAllByText(/trade.direction · in · Long, Short/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('alert').textContent).toContain('registry offline');
+    expect((screen.getByLabelText('Entry rules 1 evaluate automatically') as HTMLInputElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText('Version label'), 'v2.1');
+    expect((screen.getByRole('button', { name: 'Create Version' }) as HTMLButtonElement).disabled).toBe(true);
     expect(mockedCreateVersion).not.toHaveBeenCalled();
+  });
+
+  it('does not guess evaluator defaults while metadata is loading', async () => {
+    const pendingMetadata = deferred<RuleEngineMetadata>();
+    mockedMetadata.mockReturnValue(pendingMetadata.promise);
+    mockedVersions.mockResolvedValue([version(1, 10, { rules: v2Rules({ metric_id: 'journal.fomo', operator: 'eq', expected: false }) })]);
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    expect(screen.getByText(/Preserved evaluator:/)).toBeTruthy();
+    expect((screen.getByLabelText('Entry rules 1 evaluate automatically') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByLabelText('Entry rules 1 metric')).toBeNull();
+    pendingMetadata.resolve(metadata);
+    expect(await screen.findByLabelText('Entry rules 1 metric')).toBeTruthy();
+    expect((screen.getByLabelText('Entry rules 1 expected value') as HTMLSelectElement).value).toBe('false');
+  });
+
+  it('treats evaluator edits as dirty and keeps or discards them through base switching', async () => {
+    const current = version(1, 13, { sequence: 3, version_label: 'v2.0', rules: v2Rules() });
+    const older = version(1, 12, { sequence: 2, version_label: 'v1.0', is_active: false, rules });
+    setupDefault([strategy(1, { active_version_id: current.id })]); mockedVersions.mockResolvedValue([current, older]);
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.click(screen.getByLabelText('Entry rules 1 evaluate automatically'));
+    await user.selectOptions(screen.getByLabelText('Based on'), '12');
+    expect(screen.getByRole('dialog', { name: 'Change base version' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Keep Editing' }));
+    expect((screen.getByLabelText('Entry rules 1 evaluate automatically') as HTMLInputElement).checked).toBe(true);
+    await user.selectOptions(screen.getByLabelText('Based on'), '12');
+    await user.click(screen.getByRole('button', { name: 'Discard and Switch' }));
+    expect((screen.getByLabelText('Based on') as HTMLSelectElement).value).toBe('12');
+    expect((screen.getByLabelText('Entry rules 1 evaluate automatically') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('keeps persisted v2 evaluator history read-only and adds no Journal adherence UI', async () => {
+    mockedVersions.mockResolvedValue([version(1, 10, { rules: v2Rules({ metric_id: 'journal.fomo', operator: 'eq', expected: false }), retired_at: '2026-09-04T00:00:00Z', is_active: false })]);
+    renderPage();
+    expect(await screen.findByText('journal.fomo · eq · false')).toBeTruthy();
+    expect(screen.getByText('READ ONLY')).toBeTruthy();
+    expect(screen.queryByLabelText('Entry rules 1 evaluate automatically')).toBeNull();
+    expect(screen.queryByText('FOLLOWED')).toBeNull();
+    expect(screen.queryByText('VIOLATED')).toBeNull();
+    expect((screen.getByRole('button', { name: 'New Version' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('18. activates a Version through its lifecycle endpoint', async () => {

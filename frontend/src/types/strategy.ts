@@ -3,8 +3,17 @@ export interface StrategyRule {
   text: string;
 }
 
+export type StrategyRuleOperator = 'eq' | 'lte' | 'gte' | 'in';
+export type StrategyRuleExpected = boolean | number | string | string[];
+
+export interface StrategyRuleEvaluator {
+  metric_id: string;
+  operator: StrategyRuleOperator;
+  expected: StrategyRuleExpected;
+}
+
 export interface StrategyRuleV2 extends StrategyRule {
-  evaluation?: unknown;
+  evaluation?: StrategyRuleEvaluator | null;
 }
 
 export interface StrategyRuleDocumentV1 {
@@ -26,7 +35,7 @@ export type StrategyRuleDocument = StrategyRuleDocumentV1 | StrategyRuleDocument
 export interface StrategyVersionInput {
   version_label: string;
   description: string | null;
-  rules: StrategyRuleDocumentV1;
+  rules: StrategyRuleDocumentV2;
 }
 
 export interface StrategyCreateInput {
@@ -60,4 +69,32 @@ export interface StrategyVersion {
   is_active: boolean;
   retired_at: string | null;
   created_at: string;
+}
+
+export type RuleMetricValueType = 'boolean' | 'numeric' | 'enum' | 'string';
+export type RuleMetricLifecycle = 'ENTRY' | 'RISK' | 'REVIEW' | 'EXIT';
+export type RuleMetricStringFormat = 'uppercase_alphanumeric';
+
+export interface RuleMetricConstraints {
+  enum_values: string[];
+  minimum: string | null;
+  maximum: string | null;
+  max_in_values: number | null;
+  max_string_length: number | null;
+  string_format: RuleMetricStringFormat | null;
+}
+
+export interface RuleMetricMetadata {
+  metric_id: string;
+  label: string;
+  value_type: RuleMetricValueType;
+  unit: string | null;
+  lifecycle: RuleMetricLifecycle;
+  allowed_operators: StrategyRuleOperator[];
+  constraints: RuleMetricConstraints;
+}
+
+export interface RuleEngineMetadata {
+  registry_version: 1;
+  metrics: RuleMetricMetadata[];
 }
