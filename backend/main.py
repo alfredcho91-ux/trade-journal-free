@@ -23,6 +23,7 @@ from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
 from backend.modules.journal.router import router as journal_router
 from backend.modules.plan_lab.router import router as plan_lab_router
+from backend.modules.rule_engine.router import router as rule_engine_router
 from backend.modules.strategy_assignments.repository import initialize_schema as initialize_assignment_schema
 from backend.modules.strategy_assignments.router import router as strategy_assignments_router
 from backend.modules.strategies.router import router as strategies_router
@@ -138,6 +139,7 @@ app.include_router(journal_router)
 app.include_router(plan_lab_router)
 app.include_router(strategies_router)
 app.include_router(strategy_assignments_router)
+app.include_router(rule_engine_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)

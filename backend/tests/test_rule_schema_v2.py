@@ -394,8 +394,11 @@ def test_v2_response_is_additive_and_safe_for_current_read_only_rule_rendering(r
     assert rendered_fields == [("entry-lineage", "Follow the recorded process")]
 
 
-def test_no_runtime_evaluation_endpoint_exists_yet():
-    assert not any(
-        route.path == "/api/journal/{journal_entry_id}/strategy-evaluation"
+def test_phase4_exposes_only_the_read_only_runtime_evaluation_endpoint():
+    routes = [
+        route
         for route in app.routes
-    )
+        if route.path == "/api/journal/{journal_entry_id}/strategy-evaluation"
+    ]
+    assert len(routes) == 1
+    assert routes[0].methods == {"GET"}

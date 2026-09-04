@@ -57,6 +57,7 @@ def test_free_edition_exposes_only_journal_analysis_routes():
         ("GET", "/api/journal/{journal_entry_id}/strategy-version"),
         ("PUT", "/api/journal/{journal_entry_id}/strategy-version"),
         ("DELETE", "/api/journal/{journal_entry_id}/strategy-version"),
+        ("GET", "/api/journal/{journal_entry_id}/strategy-evaluation"),
         ("GET", "/api/deepcoin/status"),
         ("GET", "/api/deepcoin/open-positions"),
         ("POST", "/api/deepcoin/sync"),
