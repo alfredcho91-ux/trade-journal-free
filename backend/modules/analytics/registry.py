@@ -10,20 +10,24 @@ class DimensionDefinition:
     label: str
     semantics: str
     multi_membership: bool = False
+    category: str = "trade"
+    time_basis: str | None = None
+    timezone: str | None = None
 
 
 _DIMENSIONS = (
-    DimensionDefinition("all", "All trades", "One aggregate, including an empty sample."),
-    DimensionDefinition("strategy", "Strategy", "Exact assignment's Strategy ID; archived included; UNASSIGNED separate."),
-    DimensionDefinition("strategy_version", "Strategy version", "Exact assigned version ID, including retired versions; never current active substitution."),
-    DimensionDefinition("setup", "Recorded setup", "Distinct recorded setup_tags; one membership per tag; UNRECORDED separate. Group totals may overlap.", True),
-    *(DimensionDefinition(field, field.replace("_", " ").title(), "Recorded Journal value; null is UNRECORDED; invalid historical value is INVALID.")
+    DimensionDefinition("all", "All trades", "One aggregate, including an empty sample.", category="aggregate"),
+    DimensionDefinition("strategy", "Strategy", "Exact assignment's Strategy ID; archived included; UNASSIGNED separate.", category="strategy"),
+    DimensionDefinition("strategy_version", "Strategy version", "Exact assigned version ID, including retired versions; never current active substitution.", category="strategy"),
+    DimensionDefinition("setup", "Recorded setup", "Distinct recorded setup_tags; one membership per tag; UNRECORDED separate. Group totals may overlap.", multi_membership=True),
+    *(DimensionDefinition(field, field.replace("_", " ").title(), "Recorded Journal value; null is UNRECORDED; invalid historical value is INVALID.", category="psychology")
       for field in ("confidence_score", "focus_score", "fomo", "revenge_trade")),
     DimensionDefinition("symbol", "Symbol", "Exact stored Journal symbol; no cross-market normalization."),
     DimensionDefinition("direction", "Direction", "Recorded Long/Short; missing and invalid distinct."),
-    DimensionDefinition("rule", "Rule", "Identity = assigned version ID + category + rule ID; each trade-rule is one sample."),
-    DimensionDefinition("rule_status", "Rule status", "PR2B FOLLOWED / VIOLATED / NOT_EVALUABLE; no-rule trades are separate context."),
-    *(DimensionDefinition(field, field.title(), "Journal close datetime in UTC; naive timestamps treated as UTC; ISO week starts Monday.")
+    DimensionDefinition("rule", "Rule", "Identity = assigned version ID + category + rule ID; each trade-rule is one sample.", category="rule"),
+    DimensionDefinition("rule_status", "Rule status", "PR2B FOLLOWED / VIOLATED / NOT_EVALUABLE; no-rule trades are separate context.", category="rule"),
+    *(DimensionDefinition(field, f"Close {field}", "Journal close/exit datetime in UTC; naive timestamps treated as UTC; ISO week starts Monday.",
+                          category="time", time_basis="CLOSE_DATETIME", timezone="UTC")
       for field in ("day", "week", "month", "weekday", "hour")),
 )
 DIMENSION_REGISTRY = MappingProxyType({item.id: item for item in _DIMENSIONS})
@@ -35,6 +39,7 @@ class MetricDefinition:
     id: str
     label: str
     unit: str
+    value_type: str
     sample_unit: str
     aggregation: str
     availability: str
@@ -42,11 +47,13 @@ class MetricDefinition:
 
 
 def _trade(identifier, label, unit, aggregation, availability):
-    return MetricDefinition(identifier, label, unit, "trade", aggregation, availability, TRADE_DIMENSIONS)
+    value_type = "integer" if unit == "count" else "decimal"
+    return MetricDefinition(identifier, label, unit, value_type, "trade", aggregation, availability, TRADE_DIMENSIONS)
 
 
 def _rule(identifier, label, unit, aggregation):
-    return MetricDefinition(identifier, label, unit, "trade_rule", aggregation,
+    value_type = "integer" if unit == "count" else "decimal"
+    return MetricDefinition(identifier, label, unit, value_type, "trade_rule", aggregation,
                             "Assigned version's reconstructed rules; missing observations remain NOT_EVALUABLE. Empty denominator returns null.",
                             tuple(DIMENSION_REGISTRY))
 

@@ -1,7 +1,7 @@
 """Pure selection, grouping and aggregation over already-loaded historical facts."""
 
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
 from typing import Any, Mapping
@@ -211,8 +211,18 @@ def analyze(facts: list[TradeFacts], query: AnalyticsQuery, *, excluded_unavaila
                     rules.append(result)
     groups = [aggregate_group(identity, list(trades.values()), rules, query.metric)
               for _, (identity, trades, rules) in sorted(buckets.items())]
+    metric = METRIC_REGISTRY[query.metric]
+    dimension = DIMENSION_REGISTRY[query.dimension]
     return AnalyticsData(
-        metric=asdict(METRIC_REGISTRY[query.metric]), dimension=asdict(DIMENSION_REGISTRY[query.dimension]),
+        metric={
+            "id": metric.id, "label": metric.label, "unit": metric.unit,
+            "sample_unit": metric.sample_unit, "aggregation": metric.aggregation,
+            "availability": metric.availability, "supported_dimensions": metric.supported_dimensions,
+        },
+        dimension={
+            "id": dimension.id, "label": dimension.label, "semantics": dimension.semantics,
+            "multi_membership": dimension.multi_membership,
+        },
         filters=query.filters, groups=groups, selected_trade_count=len(selected),
         excluded_unavailable_close_count=excluded_unavailable_close_count,
         warnings=[
