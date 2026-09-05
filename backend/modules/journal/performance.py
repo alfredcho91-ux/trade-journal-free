@@ -19,6 +19,11 @@ def run_journal_performance_service(start_time: int, end_time: int) -> Dict[str,
         and (close_time := timestamp_ms(entry.get("datetime"))) is not None
         and start_time <= close_time <= end_time
     ]
+    return {"success": True, "data": summarize_performance(entries)}
+
+
+def summarize_performance(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Pure aggregation of already-selected closed positions; shared with analytics."""
     ordered = sorted(entries, key=lambda item: timestamp_ms(item.get("datetime")) or 0)
     evaluated = [entry for entry in ordered if finite_float(entry.get("realized_pnl")) is not None]
     pnl_values = [float(entry["realized_pnl"]) for entry in evaluated]
@@ -42,7 +47,7 @@ def run_journal_performance_service(start_time: int, end_time: int) -> Dict[str,
     best = max(evaluated, key=lambda item: float(item["realized_pnl"]), default=None)
     worst = min(evaluated, key=lambda item: float(item["realized_pnl"]), default=None)
     max_win_streak, max_loss_streak = _streaks(pnl_values)
-    return {"success": True, "data": {
+    return {
         "closed_trade_count": len(entries),
         "evaluated_trade_count": len(evaluated),
         "missing_pnl_count": len(entries) - len(evaluated),
@@ -72,7 +77,7 @@ def run_journal_performance_service(start_time: int, end_time: int) -> Dict[str,
             key=lambda item: item["net_pnl"],
             reverse=True,
         ),
-    }}
+    }
 
 
 def _group_by(entries: Iterable[Dict[str, Any]], key: str) -> Dict[str, List[Dict[str, Any]]]:
@@ -143,4 +148,4 @@ def _net_return_pct(entry: Dict[str, Any]) -> Optional[float]:
     return pnl / invested * 100 if invested is not None and pnl is not None else None
 
 
-__all__ = ["run_journal_performance_service"]
+__all__ = ["run_journal_performance_service", "summarize_performance"]

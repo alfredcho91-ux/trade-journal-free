@@ -18,6 +18,7 @@ from backend.config.settings import (
     get_app_environment,
     get_basic_auth_credentials,
 )
+from backend.modules.analytics.router import router as analytics_router
 from backend.modules.deepcoin.router import router as deepcoin_router
 from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
@@ -140,6 +141,7 @@ app.include_router(plan_lab_router)
 app.include_router(strategies_router)
 app.include_router(strategy_assignments_router)
 app.include_router(rule_engine_router)
+app.include_router(analytics_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)

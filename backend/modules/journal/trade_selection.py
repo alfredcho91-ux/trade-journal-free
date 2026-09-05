@@ -18,11 +18,19 @@ def timestamp_ms(value: Any) -> Optional[int]:
         return None
     try:
         timestamp = pd.Timestamp(value)
-    except (TypeError, ValueError):
+        # pandas accepts values such as the literal "NaT" but they are not
+        # usable instants. Treat them as absent historical timestamps instead
+        # of letting timestamp()/tz handling leak an exception to callers.
+        if pd.isna(timestamp):
+            return None
+    except (TypeError, ValueError, OverflowError):
         return None
     if timestamp.tzinfo is None:
         timestamp = timestamp.tz_localize("UTC")
-    return int(timestamp.timestamp() * 1000)
+    try:
+        return int(timestamp.timestamp() * 1000)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def finite_float(value: Any) -> Optional[float]:
