@@ -114,7 +114,7 @@ function Shell({ children }: { children: ReactNode }) {
           </button>
 
           <div className="ml-auto flex items-center gap-2">
-            {pathname !== '/journal' && pathname !== '/playbook' && <div className="flex h-9 border border-dark-700" aria-label={isKo ? '분석 코인' : 'Analysis coin'}>
+            {pathname !== '/journal' && pathname !== '/playbook' && pathname !== '/trade-analysis' && <div className="flex h-9 border border-dark-700" aria-label={isKo ? '분석 코인' : 'Analysis coin'}>
               {MARKET_COINS.map((coin) => (
                 <button
                   key={coin}

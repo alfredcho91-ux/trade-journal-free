@@ -44,6 +44,7 @@ import { useNavigate } from '../router-context';
 import { evidenceMinimumReturnLabel, selectExitHoldEvidence, useEvidenceNavigation } from '../features/tradeAnalysis/evidenceNavigation';
 import type { ExitHoldInterval, PlanLabData, TradeQualityItem } from '../types';
 import TradingStyleSelect from '../features/preferences/TradingStyleSelect';
+import AnalyticsWorkspace from '../features/analytics/AnalyticsWorkspace';
 import { TRADING_STYLE_CONFIGS, tradingStyleLabel } from '../features/preferences/tradingStyle';
 
 type AnalysisMode = 'all' | 'wins' | 'losses' | 'compare';
@@ -282,6 +283,10 @@ function TradeQuality({
 }
 
 export default function TradeAnalysisPage() {
+  return <AnalyticsWorkspace overview={<TradeAnalysisOverview />} />;
+}
+
+function TradeAnalysisOverview() {
   const isKo = useLanguage() === 'ko';
   const tradingStyle = useTradingStyle();
   const styleConfig = TRADING_STYLE_CONFIGS[tradingStyle];
