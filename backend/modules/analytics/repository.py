@@ -100,7 +100,7 @@ def _read_plans(conn, entries):
     return linked
 
 
-def load_snapshot(query, *, db_path: Path | None = None, include_plans=False):
+def load_snapshot(query, *, db_path: Path | None = None, include_plans=False, include_unassigned_plans=False):
     path = Path(db_path or journal.JOURNAL_DB_PATH).resolve()
     if not path.exists():
         return AnalyticsSnapshot([], {}, {})
@@ -112,5 +112,8 @@ def load_snapshot(query, *, db_path: Path | None = None, include_plans=False):
         assignment_map = _read_assignments(conn)
         excluded = sum(str(entry.get("source") or "").endswith("_position") and close_timestamp(entry) is None for entry in entries)
         selected = [entry for entry in entries if matches_trade(entry, assignment_map.get(entry["id"]), query.filters)]
-        linked = _read_plans(conn, [entry for entry in selected if entry["id"] in assignment_map]) if include_plans else {}
+        # Review also needs explicit Plan evidence for unassigned trades. Keep
+        # the existing analytics default and the same read transaction.
+        plan_entries = selected if include_unassigned_plans else [entry for entry in selected if entry["id"] in assignment_map]
+        linked = _read_plans(conn, plan_entries) if include_plans else {}
         return AnalyticsSnapshot(selected, assignment_map, linked, excluded)
