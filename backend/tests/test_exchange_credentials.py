@@ -33,7 +33,8 @@ def test_exchange_credentials_use_os_vault_and_scrub_legacy_file(monkeypatch, tm
     saved = json.loads(keyring.values[(keyring_store.SERVICE_NAME, "okx")])
     assert saved == {"api_key": "api key", "secret_key": "secret", "passphrase": "pass phrase"}
     assert env_file.read_text(encoding="utf-8") == "OTHER=value\n"
-    assert os.stat(env_file).st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert os.stat(env_file).st_mode & 0o777 == 0o600
     assert credentials.load_exchange_credentials("okx") == credentials.StoredCredentials(
         "api key", "secret", "pass phrase"
     )
@@ -47,6 +48,8 @@ def test_legacy_environment_credentials_are_migrated(monkeypatch, tmp_path):
     monkeypatch.setattr(keyring_store, "_keyring_module", lambda: keyring)
     monkeypatch.setenv("BINANCE_API_KEY", "api")
     monkeypatch.setenv("BINANCE_SECRET_KEY", "secret")
+    # Match settings._load_local_env ownership rather than deployment overrides.
+    monkeypatch.setattr(legacy_env, "LOCAL_ENV_KEYS_LOADED", {"BINANCE_API_KEY", "BINANCE_SECRET_KEY"})
 
     loaded = credentials.load_exchange_credentials("binance")
 

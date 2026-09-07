@@ -32,6 +32,7 @@ from backend.modules.strategy_assignments.repository import initialize_schema as
 from backend.modules.strategy_assignments.router import router as strategy_assignments_router
 from backend.modules.strategies.router import router as strategies_router
 from backend.utils.log_redaction import install_log_redaction
+from backend.utils.local_request_security import LocalRequestSecurityMiddleware
 
 install_log_redaction()
 
@@ -98,6 +99,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(LocalRequestSecurityMiddleware)
 
 
 @app.exception_handler(RequestValidationError)

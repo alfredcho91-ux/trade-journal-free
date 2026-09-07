@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from backend.config.settings import get_app_environment
+from backend.modules.exchanges import legacy_env
 from backend.modules.exchanges.encrypted_store import (
     EncryptedCredentialStoreError,
     delete_encrypted_credentials,
@@ -29,6 +30,13 @@ CredentialSource = Literal["environment", "keyring", "encrypted_db", "none"]
 
 class CredentialStorageError(RuntimeError):
     """Raised when the configured credential store is unavailable."""
+
+
+class CredentialCleanupPending(CredentialStorageError):
+    """Protected persistence succeeded, but legacy cleanup needs a retry."""
+
+
+CLEANUP_PENDING = "Protected credentials are available; legacy plaintext cleanup is pending. Retry from exchange settings."
 
 
 @dataclass(frozen=True)
@@ -79,30 +87,40 @@ def credential_source(exchange_id: str) -> CredentialSource:
     return resolve_exchange_credentials(exchange_id).source
 
 
+@legacy_env.serialized_credential_lifecycle
 def save_local_exchange_credentials(exchange_id: str, api_key: str, secret_key: str, passphrase: str = "") -> None:
     credentials = StoredCredentials(_value(api_key), _value(secret_key), _optional_value(passphrase))
     _save_payload(credential_storage_mode(), exchange_id, _serialize(credentials))
-    remove_legacy_values(exchange_id)
+    if _cleanup_error(exchange_id):
+        raise CredentialCleanupPending(CLEANUP_PENDING) from None
 
 
+@legacy_env.serialized_credential_lifecycle
 def delete_exchange_credentials(exchange_id: str) -> CredentialDeleteResult:
     """Remove persisted credentials; deployment environment values remain external."""
     mode = credential_storage_mode()
+    # Never delete the authoritative store while stale plaintext can repopulate
+    # it on restart. A failed cleanup leaves deletion visibly incomplete.
+    if _cleanup_error(exchange_id):
+        raise CredentialCleanupPending("Credentials were not deleted; legacy plaintext cleanup is pending. Retry from exchange settings.") from None
     if mode == "encrypted_db":
         deleted = _delete_encrypted(exchange_id)
         _best_effort_keyring_delete(exchange_id)
     else:
         deleted = _delete_keyring(exchange_id)
         _best_effort_encrypted_delete(exchange_id)
-    remove_legacy_values(exchange_id)
     return CredentialDeleteResult(deleted=deleted, environment_override=_environment_credentials(exchange_id) is not None)
 
 
+@legacy_env.serialized_credential_lifecycle
 def _resolve_exchange_credentials(exchange_id: str) -> CredentialResolution:
     environment = _environment_credentials(exchange_id)
-    if environment is not None:
-        _migrate_legacy_values(exchange_id, environment)
-        return CredentialResolution(environment, "environment")
+    present_keys = {key for key in legacy_env.legacy_keys(exchange_id) if os.getenv(key)}
+    loaded_keys = present_keys.intersection(legacy_env.LOCAL_ENV_KEYS_LOADED)
+    if environment is not None and not loaded_keys:
+        # Explicit deployment environment remains externally owned. Do not
+        # write it into the vault just because an unrelated old .env exists.
+        return CredentialResolution(environment, "environment", _cleanup_error(exchange_id))
 
     mode = credential_storage_mode()
     payload = _load_payload(mode, exchange_id)
@@ -116,7 +134,21 @@ def _resolve_exchange_credentials(exchange_id: str) -> CredentialResolution:
     credentials = _parse_payload(payload)
     if payload is not None and credentials is None:
         return CredentialResolution(None, "none", "Stored exchange credentials are invalid")
-    return CredentialResolution(credentials, source)
+    if credentials is not None:
+        # Store first: retry/restart must never overwrite newer protected values
+        # from a stale .env loaded by settings at startup.
+        return CredentialResolution(credentials, source, _cleanup_error(exchange_id))
+    if environment is not None:
+        if loaded_keys != present_keys:
+            return CredentialResolution(None, "none", "Mixed deployment and legacy credentials require explicit configuration in exchange settings.")
+        _save_payload(mode, exchange_id, _serialize(environment))
+        return CredentialResolution(environment, mode, _cleanup_error(exchange_id))
+    try:
+        if has_legacy_values(exchange_id):
+            return CredentialResolution(None, "none", "Legacy credentials could not be loaded. Restart or configure credentials in exchange settings.")
+    except legacy_env.LegacyCleanupError:
+        return CredentialResolution(None, "none", "Legacy credential file could not be inspected. Retry from exchange settings.")
+    return CredentialResolution(None, "none")
 
 
 def _save_payload(mode: StorageMode, exchange_id: str, payload: str) -> None:
@@ -125,15 +157,15 @@ def _save_payload(mode: StorageMode, exchange_id: str, payload: str) -> None:
             save_encrypted_credentials(exchange_id, payload)
         else:
             save_keyring_payload(exchange_id, payload)
-    except (EncryptedCredentialStoreError, KeyringStoreError, OSError, ValueError, TypeError) as exc:
-        raise CredentialStorageError("The configured credential store is unavailable") from exc
+    except (EncryptedCredentialStoreError, KeyringStoreError, OSError, ValueError, TypeError):
+        raise CredentialStorageError("The configured credential store is unavailable") from None
 
 
 def _load_payload(mode: StorageMode, exchange_id: str) -> Optional[str]:
     try:
         return load_encrypted_credentials(exchange_id) if mode == "encrypted_db" else load_keyring_payload(exchange_id)
-    except (EncryptedCredentialStoreError, KeyringStoreError, OSError, ValueError, TypeError) as exc:
-        raise CredentialStorageError("Stored exchange credentials could not be loaded") from exc
+    except (EncryptedCredentialStoreError, KeyringStoreError, OSError, ValueError, TypeError):
+        raise CredentialStorageError("Stored exchange credentials could not be loaded") from None
 
 
 def _load_keyring_for_migration(exchange_id: str) -> Optional[str]:
@@ -146,15 +178,15 @@ def _load_keyring_for_migration(exchange_id: str) -> Optional[str]:
 def _delete_encrypted(exchange_id: str) -> bool:
     try:
         return delete_encrypted_credentials(exchange_id)
-    except (EncryptedCredentialStoreError, OSError) as exc:
-        raise CredentialStorageError("Encrypted credentials could not be deleted") from exc
+    except (EncryptedCredentialStoreError, OSError):
+        raise CredentialStorageError("Encrypted credentials could not be deleted") from None
 
 
 def _delete_keyring(exchange_id: str) -> bool:
     try:
         return delete_keyring_payload(exchange_id)
-    except KeyringStoreError as exc:
-        raise CredentialStorageError("Operating-system credentials could not be deleted") from exc
+    except KeyringStoreError:
+        raise CredentialStorageError("Operating-system credentials could not be deleted") from None
 
 
 def _best_effort_keyring_delete(exchange_id: str) -> None:
@@ -171,14 +203,12 @@ def _best_effort_encrypted_delete(exchange_id: str) -> None:
         pass
 
 
-def _migrate_legacy_values(exchange_id: str, credentials: StoredCredentials) -> None:
-    if not has_legacy_values(exchange_id):
-        return
+def _cleanup_error(exchange_id: str) -> Optional[str]:
     try:
-        _save_payload(credential_storage_mode(), exchange_id, _serialize(credentials))
-    except CredentialStorageError:
-        return
-    remove_legacy_values(exchange_id)
+        remove_legacy_values(exchange_id)
+    except (legacy_env.LegacyCleanupError, OSError):
+        return CLEANUP_PENDING
+    return None
 
 
 def _environment_credentials(exchange_id: str) -> Optional[StoredCredentials]:

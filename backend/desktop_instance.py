@@ -26,13 +26,14 @@ class DesktopInstance:
     def acquire(self) -> bool:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         handle = self.lock_path.open("a+", encoding="utf-8")
-        handle.seek(0)
-        if handle.read(1) == "":
-            handle.write("0")
-            handle.flush()
-        handle.seek(0)
-
         try:
+            # Windows byte-range locks can reject the initial read too.
+            # Treat it as a collision and close this second handle as usual.
+            handle.seek(0)
+            if handle.read(1) == "":
+                handle.write("0")
+                handle.flush()
+            handle.seek(0)
             if sys.platform == "win32":
                 import msvcrt
 

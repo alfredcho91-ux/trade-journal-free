@@ -11,6 +11,7 @@ from backend.config.settings import DeepcoinCredentials
 from backend.modules.deepcoin.service import DeepcoinClient, sync_deepcoin_fills_service
 from backend.modules.exchanges.ccxt_adapter import exchange_client
 from backend.modules.exchanges.credentials import (
+    CredentialCleanupPending,
     CredentialStorageError,
     delete_exchange_credentials,
     load_exchange_credentials,
@@ -98,6 +99,8 @@ def configure_exchange_credentials_service(
         save_local_exchange_credentials(
             exchange_id, credentials.api_key, credentials.secret_key, credentials.passphrase
         )
+    except CredentialCleanupPending as exc:
+        raise BusinessLogicError(str(exc), error_code="EXCHANGE_CREDENTIAL_CLEANUP_PENDING") from None
     except (CredentialStorageError, OSError, ValueError) as exc:
         raise BusinessLogicError(
             "Credentials could not be saved in the configured protected store.",
@@ -107,7 +110,10 @@ def configure_exchange_credentials_service(
 
 
 def delete_exchange_credentials_service(exchange_id: str) -> Dict[str, Any]:
-    result = delete_exchange_credentials(exchange_id)
+    try:
+        result = delete_exchange_credentials(exchange_id)
+    except CredentialCleanupPending as exc:
+        raise BusinessLogicError(str(exc), error_code="EXCHANGE_CREDENTIAL_CLEANUP_PENDING") from None
     statuses = exchange_status_service()["data"]["exchanges"]
     return {
         "success": True,

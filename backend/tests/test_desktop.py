@@ -13,3 +13,5 @@ def test_windowed_desktop_config_does_not_require_console_streams(monkeypatch):
 
     assert config.use_colors is False
     assert config.log_config is None
+    assert config.host == "127.0.0.1"
+    assert config.port == 5181
