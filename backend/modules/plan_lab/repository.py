@@ -238,6 +238,7 @@ def add_in_trade_revision(
     """Append an immutable in-trade revision only while the server still sees it open."""
     server_time = utc_now()
     with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
         plan = conn.execute(
             f"SELECT id, exchange, symbol, symbol_key, side, source, status, live_position_id FROM {PLAN_TABLE} WHERE id=?",
             (plan_id,),
@@ -272,6 +273,9 @@ def add_in_trade_revision(
 def add_revision(plan_id: int, revision: Dict[str, Any], *, db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     server_time = utc_now()
     with _connect(db_path) as conn:
+        # Serialize appenders before reading either the parent or MAX(version).
+        # This API has no expected-revision field: concurrent appends both win.
+        conn.execute("BEGIN IMMEDIATE")
         plan = conn.execute(
             f"SELECT id, side, source FROM {PLAN_TABLE} WHERE id = ?", (plan_id,),
         ).fetchone()

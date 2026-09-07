@@ -75,7 +75,7 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
             raise RuntimeError("Assignment storage requires SQLite foreign key enforcement")
         journal_repository._ensure_schema(conn)
         strategy_repository._ensure_schema(conn)
-        # This one-time move must finish before an Assignment can be read or written.
+        # Safe legacy migration retains Journal rows with annotations or links.
         execution_repository._ensure_schema(conn)
         _ensure_schema(conn)
         conn.commit()

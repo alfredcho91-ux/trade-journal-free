@@ -634,9 +634,11 @@ def test_all_real_journal_delete_paths_remove_assignments(assignment_db):
             (legacy["external_id"],),
         ).fetchone()
 
-    assert remaining_journals == []
-    assert remaining_assignments == []
-    assert migrated is not None
+    # Explicit deletion still cleans assignments; automatic execution migration
+    # must retain annotated/assigned sources instead of deleting their history.
+    assert remaining_journals == [(legacy["id"],)]
+    assert remaining_assignments == [(legacy["id"],)]
+    assert migrated is None
 
 
 def test_cleanup_and_version_guard_triggers_work_with_foreign_keys_off(assignment_db):

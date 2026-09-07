@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
@@ -29,6 +30,37 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 
 def _ensure_schema(connection: sqlite3.Connection) -> None:
+    """Atomically bootstrap executions and migrate only proven-safe sources.
+
+    A caller's transaction is never committed here. A savepoint also restores
+    the entire migration unit if an insert/delete/trigger fails midway through.
+    """
+    owns_transaction = not connection.in_transaction
+    if owns_transaction:
+        connection.execute("BEGIN IMMEDIATE")
+    connection.execute("SAVEPOINT execution_bootstrap")
+    try:
+        _create_schema(connection)
+        # Reserve the writer before reading identities even in a caller-owned
+        # deferred transaction. No existing execution is modified.
+        connection.execute(f"UPDATE {TABLE_NAME} SET external_id = external_id WHERE 0")
+        _migrate_legacy_rows(connection)
+    except Exception:
+        connection.execute("ROLLBACK TO execution_bootstrap")
+        connection.execute("RELEASE execution_bootstrap")
+        if owns_transaction:
+            connection.rollback()
+        raise
+    connection.execute("RELEASE execution_bootstrap")
+    if owns_transaction:
+        try:
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+
+def _create_schema(connection: sqlite3.Connection) -> None:
     connection.execute(f"""
         CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
             external_id TEXT PRIMARY KEY,
@@ -67,27 +99,102 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
     connection.execute(
         f"CREATE INDEX IF NOT EXISTS {TABLE_NAME}_lookup ON {TABLE_NAME} (exchange, symbol, datetime)"
     )
-    _migrate_legacy_rows(connection)
-    connection.commit()
 
 
-def _migrate_legacy_rows(connection: sqlite3.Connection) -> None:
+def _migrate_legacy_rows(connection: sqlite3.Connection) -> Dict[int, str]:
+    """Return per-source outcomes; FAILED propagates and rolls back bootstrap.
+
+    Never infer success from an ignored insert. Non-representable facts or
+    Journal-dependent entities stay attached to the original Journal identity.
+    No status is persisted and no provenance is manufactured.
+    """
     journal_exists = connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'journal_entries'"
     ).fetchone()
     if journal_exists is None:
-        return
+        return {}
     sources = ("binance_fill", "bybit_fill", "okx_fill")
     placeholders = ", ".join("?" for _ in sources)
-    connection.execute(f"""
-        INSERT OR IGNORE INTO {TABLE_NAME} ({", ".join(COLUMNS)})
-        SELECT external_id, datetime, symbol, direction, size, entry_price,
-               source, exchange, order_id, notes, fee, fee_currency, indicator_snapshot, created_at,
-               NULL, NULL, NULL, NULL, 1, NULL
-        FROM journal_entries
-        WHERE source IN ({placeholders}) AND external_id IS NOT NULL
-    """, sources)
-    connection.execute(f"DELETE FROM journal_entries WHERE source IN ({placeholders})", sources)
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    outcomes = {}
+    rows = connection.execute(
+        f"SELECT * FROM journal_entries WHERE source IN ({placeholders}) ORDER BY id", sources,
+    ).fetchall()
+    for row in rows:
+        source = dict(row)
+        identifier = source["id"]
+        payload = {column: source.get(column) for column in COLUMNS}
+        payload["fee_complete"] = source.get("fee_complete", 1)
+        if not _legacy_execution_is_representable(source, payload):
+            outcomes[identifier] = "NOT_MIGRATABLE"
+            continue
+        if _legacy_has_dependents(connection, tables, source):
+            outcomes[identifier] = "NOT_MIGRATABLE"
+            continue
+        existing = connection.execute(
+            f"SELECT {', '.join(COLUMNS)} FROM {TABLE_NAME} WHERE external_id=?",
+            (payload["external_id"],),
+        ).fetchone()
+        values = tuple(payload[column] for column in COLUMNS)
+        if existing is not None and tuple(existing) != values:
+            outcomes[identifier] = "CONFLICT"
+            continue
+        if existing is None:
+            connection.execute(
+                f"INSERT INTO {TABLE_NAME} ({', '.join(COLUMNS)}) VALUES ({', '.join('?' for _ in COLUMNS)})",
+                values,
+            )
+        # Verify after insertion too: a trigger must not silently suppress or
+        # rewrite the destination and allow removal of the only source copy.
+        destination = connection.execute(
+            f"SELECT {', '.join(COLUMNS)} FROM {TABLE_NAME} WHERE external_id=?",
+            (payload["external_id"],),
+        ).fetchone()
+        if destination is None or tuple(destination) != values:
+            raise RuntimeError("Legacy execution migration verification failed")
+        connection.execute("DELETE FROM journal_entries WHERE id=?", (identifier,))
+        if connection.execute("SELECT 1 FROM journal_entries WHERE id=?", (identifier,)).fetchone():
+            raise RuntimeError("Legacy execution source removal failed")
+        outcomes[identifier] = "MIGRATED" if existing is None else "ALREADY_EQUIVALENT"
+    return outcomes
+
+
+def _legacy_execution_is_representable(source: Dict[str, Any], payload: Dict[str, Any]) -> bool:
+    for field in ("external_id", "datetime", "symbol", "direction", "source", "exchange"):
+        if not isinstance(payload[field], str) or not payload[field].strip():
+            return False
+    price = payload["entry_price"]
+    if not isinstance(price, (int, float)) or not math.isfinite(price):
+        return False
+    # Preserve every non-representable column, not just today's user-owned
+    # allowlist. False/zero are recorded evidence, not missing values.
+    for column, value in source.items():
+        if column == "id" or column in COLUMNS or value is None or value == "":
+            continue
+        if column in {"setup_tags", "mistake_tags", "indicators"}:
+            try:
+                if json.loads(value) == []:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        return False
+    return True
+
+
+def _legacy_has_dependents(connection: sqlite3.Connection, tables: Set[str], source: Dict[str, Any]) -> bool:
+    # These are the current Journal identity consumers. Experiments refer to
+    # Strategy/Version identities, never Journal identities. Do not reassign
+    # either relationship to an execution or infer a Strategy from tags.
+    if "journal_strategy_assignments" in tables and connection.execute(
+        "SELECT 1 FROM journal_strategy_assignments WHERE journal_entry_id=?", (source["id"],),
+    ).fetchone():
+        return True
+    if "trading_plan_links" in tables and connection.execute(
+        "SELECT 1 FROM trading_plan_links WHERE journal_entry_id=? OR journal_external_id=?",
+        (source["id"], source["external_id"]),
+    ).fetchone():
+        return True
+    return False
 
 
 def add_executions_if_new(rows: Iterable[Dict[str, Any]], *, db_path: Optional[Path] = None) -> Set[str]:
