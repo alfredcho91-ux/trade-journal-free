@@ -23,12 +23,19 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState<LocationState>(readLocation);
 
   useEffect(() => {
-    const handlePopState = () => setLocation(readLocation());
+    const handlePopState = () => {
+      if (!window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))) {
+        window.history.pushState(null, '', `${location.pathname}${location.search}`);
+        return;
+      }
+      setLocation(readLocation());
+    };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [location.pathname, location.search]);
 
   const navigate = useCallback((to: string, options: NavigateOptions = {}) => {
+    if (!window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))) return;
     const nextUrl = new URL(to, window.location.href);
     const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
     if (options.replace) {

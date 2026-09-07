@@ -295,9 +295,10 @@ def test_api_contract_historical_assignment_and_read_only(db):
     strategies.activate_version(strategy["id"], second["id"], db_path=db)
     strategies.retire_version(strategy["id"], first, db_path=db)
     strategies.set_strategy_archived(strategy["id"], True, db_path=db)
-    with sqlite3.connect(db) as conn:
-        before = list(conn.iterdump())
     with TestClient(app) as client:
+        # Production startup may install additive schemas; requests must remain read-only.
+        with sqlite3.connect(db) as conn:
+            before = list(conn.iterdump())
         response = client.post("/api/analytics/query", json=query("adherence_pct", "strategy_version").model_dump(mode="json"))
         repeated = client.post("/api/analytics/query", json=query("adherence_pct", "strategy_version").model_dump(mode="json"))
         invalid = client.post("/api/analytics/query", json={"metric": "sql", "filters": {"start_time": START, "end_time": END}})

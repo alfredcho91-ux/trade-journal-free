@@ -20,6 +20,8 @@ from backend.config.settings import (
 )
 from backend.modules.analytics.router import router as analytics_router
 from backend.modules.review.router import router as review_router
+from backend.modules.experiments.router import router as experiments_router
+from backend.modules.experiments.repository import initialize_schema as initialize_experiment_schema
 from backend.modules.deepcoin.router import router as deepcoin_router
 from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
@@ -43,6 +45,7 @@ if get_app_environment() == "production":
 async def lifespan(_app: FastAPI):
     """Install persistence schemas and integrity guards before serving requests."""
     initialize_assignment_schema()
+    initialize_experiment_schema()
     yield
 
 
@@ -144,6 +147,7 @@ app.include_router(strategy_assignments_router)
 app.include_router(rule_engine_router)
 app.include_router(analytics_router)
 app.include_router(review_router)
+app.include_router(experiments_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)

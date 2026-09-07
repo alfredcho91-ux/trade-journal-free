@@ -5,8 +5,11 @@ import type { AnalyticsMetadata } from '../../types/analytics';
 import { analyticsError, analyticsQueryKeys, buildRequest, initialDraft, presets, type BuilderDraft } from './analyticsBuilder';
 import { AnalyticsFilterInput, inputClass } from './AnalyticsFilters';
 import AnalyticsResults from './AnalyticsResults';
+import ReviewWorkspace from '../review/ReviewWorkspace';
+import ExperimentsWorkspace from '../review/ExperimentsWorkspace';
+import type { ExperimentSeed } from '../review/reviewHandoff';
 
-const sections = ['Overview', 'Edge Explorer', 'Strategy', 'Psychology', 'Rules', 'Time'] as const;
+const sections = ['Overview', 'Edge Explorer', 'Strategy', 'Psychology', 'Rules', 'Time', 'Review', 'Experiments'] as const;
 type Section = typeof sections[number];
 const storageKey = 'analytics-workspace-v1';
 function readState(): { draft?: BuilderDraft; section?: Section } {
@@ -25,10 +28,12 @@ function Builder({ metadata, overview }: { metadata: AnalyticsMetadata; overview
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [experimentDirty, setExperimentDirty] = useState(false);
+  const [experimentSeed, setExperimentSeed] = useState<ExperimentSeed | null>(null);
   useEffect(() => { try { sessionStorage.setItem(storageKey, JSON.stringify({ draft, section })); } catch { /* Storage may be disabled. */ } }, [draft, section]);
   const built = buildRequest(metadata, draft);
   const fingerprint = built.request ? JSON.stringify(built.request) : null;
-  const active = section !== 'Overview' && fingerprint !== null && submitted === fingerprint;
+  const active = section !== 'Overview' && section !== 'Review' && section !== 'Experiments' && fingerprint !== null && submitted === fingerprint;
   const result = useQuery({ queryKey: analyticsQueryKeys.result(built.request),
     queryFn: ({ signal }) => queryAnalytics(built.request!, signal), enabled: active, retry: false });
   const metric = metadata.metrics.find(m => m.id === draft.metric);
@@ -39,10 +44,10 @@ function Builder({ metadata, overview }: { metadata: AnalyticsMetadata; overview
   const update = (next: BuilderDraft) => { setDraft(next); setSubmitted(null); setShowErrors(false); };
   return <div className="space-y-4">
     <div className="flex flex-wrap gap-1 border-b border-dark-700 pb-2" aria-label="Analytics sections">
-      {sections.map(s => <button type="button" key={s} aria-pressed={section === s} onClick={() => setSection(s)}
+      {sections.map(s => <button type="button" key={s} aria-pressed={section === s} onClick={() => { if (s === section || !experimentDirty || window.confirm('Discard unsaved experiment changes?')) setSection(s); }}
         className={`rounded px-4 py-2 text-sm ${section === s ? 'bg-primary-500/20 text-primary-200' : 'text-dark-300 hover:bg-dark-800'}`}>{s}</button>)}
     </div>
-    {section === 'Overview' ? overview : <>
+    {section === 'Overview' ? overview : section === 'Review' ? <ReviewWorkspace metadata={metadata} onExperiment={seed => { setExperimentSeed(seed); setSection('Experiments'); }} /> : section === 'Experiments' ? <ExperimentsWorkspace metadata={metadata} seed={experimentSeed} onDirtyChange={setExperimentDirty} /> : <>
       <p className="text-sm text-dark-300">Explore observed historical results by metric, group and recorded filters.</p>
       {!!highlights.length && <div className="flex flex-wrap gap-2" aria-label={`${section} dimensions`}>
         {highlights.map(d => <button type="button" key={d.id} disabled={!metric?.supported_dimensions.includes(d.id)}

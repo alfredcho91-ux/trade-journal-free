@@ -87,6 +87,12 @@ def get_analytics_metadata_service() -> AnalyticsMetadataEnvelope:
 def query_analytics(query: AnalyticsQuery, *, db_path: Path | None = None) -> AnalyticsEnvelope:
     rule_metric = METRIC_REGISTRY[query.metric].sample_unit == "trade_rule"
     snapshot = repository.load_snapshot(query, db_path=db_path, include_plans=rule_metric)
+    return analyze_snapshot(snapshot, query)
+
+
+def analyze_snapshot(snapshot, query: AnalyticsQuery) -> AnalyticsEnvelope:
+    """Reuse official reconstruction on an already coherent read snapshot."""
+    rule_metric = METRIC_REGISTRY[query.metric].sample_unit == "trade_rule"
     facts = []
     result_count = 0
     for entry in snapshot.entries:
