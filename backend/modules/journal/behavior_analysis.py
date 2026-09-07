@@ -125,8 +125,11 @@ def _planned_comparison(entry: Dict[str, Any], quality: Dict[str, Any]) -> Dict[
         "planned_entry_reason": entry.get("planned_entry_reason"),
         "plan_recorded_at": entry.get("plan_recorded_at"),
         "recording_phase": recording_phase,
-        "eligible_for_exit_plan_review": recording_phase in {"before_entry", "during_trade"},
-        "eligible_for_entry_rule_review": recording_phase == "before_entry",
+        # This is the original note timestamp, not a revision timestamp for
+        # these mutable values. Comparisons stay descriptive, never evidence
+        # of historical compliance. Official Plan Lab revisions are separate.
+        "eligible_for_exit_plan_review": False,
+        "eligible_for_entry_rule_review": False,
         "actual_price_return_pct": realized,
         "maximum_favorable_move_pct": mfe,
         "maximum_adverse_move_pct": mae,
@@ -163,7 +166,7 @@ def _rule_result(rule: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
         if maximum is None or maximum <= 0:
             reason = "최대 손절률 설정이 올바르지 않습니다."
         elif not plan["eligible_for_entry_rule_review"]:
-            reason = "진입 전에 기록된 계획이 아니므로 규칙 준수를 판정하지 않습니다."
+            reason = "현재 legacy 계획 값의 진입 전 상태를 검증할 수 없어 규칙 준수를 판정하지 않습니다."
         elif plan["planned_stop_pct"] is None:
             reason = "계획 손절률이 기록되지 않았습니다."
         else:
@@ -174,7 +177,7 @@ def _rule_result(rule: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
         if minimum is None or minimum <= 0:
             reason = "최소 손익비 설정이 올바르지 않습니다."
         elif not plan["eligible_for_entry_rule_review"]:
-            reason = "진입 전에 기록된 계획이 아니므로 규칙 준수를 판정하지 않습니다."
+            reason = "현재 legacy 계획 값의 진입 전 상태를 검증할 수 없어 규칙 준수를 판정하지 않습니다."
         elif plan["planned_rr"] is None:
             reason = "계획 SL/TP가 모두 기록되지 않았습니다."
         else:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -10,7 +9,6 @@ import numpy as np
 
 from backend.modules.journal import repository
 from backend.modules.journal.analysis import run_journal_excursions_service
-from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.market_context import load_market_frames
 from backend.modules.journal.trade_selection import closed_positions, market_group_key
 from backend.modules.journal.quality_market import (
@@ -23,16 +21,8 @@ from backend.modules.journal.quality_market import (
     point_in_time_trend_state,
     trade_alignment,
 )
-from backend.config.settings import PROJECT_ROOT
-from backend.utils.cache import DataCache
 
 MIN_REGIME_CONCLUSION_SAMPLE = 5
-QUALITY_ANALYSIS_CACHE_VERSION = 10
-QUALITY_ANALYSIS_CACHE = DataCache(
-    ttl_minutes=10,
-    cache_dir=str(PROJECT_ROOT / ".cache" / "journal_quality"),
-)
-QUALITY_ANALYSIS_LOCK = threading.Lock()
 
 
 def _mean(values: Iterable[Any]) -> Optional[float]:
@@ -323,38 +313,6 @@ def _filter_positions_by_net_return(
     }
 
 
-def _analysis_cache_key(
-    start_time: int,
-    end_time: int,
-    positions: List[Dict[str, Any]],
-    min_abs_net_return_pct: float,
-) -> str:
-    return position_analysis_cache_key(
-        f"journal_quality:return-filter:{min_abs_net_return_pct:.6f}",
-        QUALITY_ANALYSIS_CACHE_VERSION,
-        start_time,
-        end_time,
-        positions,
-        (
-            "id",
-            "symbol",
-            "direction",
-            "entry_datetime",
-            "datetime",
-            "entry_price",
-            "exit_price",
-            "realized_pnl",
-            "invested_amount",
-            "leverage",
-            "fee",
-            "funding_fee",
-            "source",
-            "size",
-            "r_multiple",
-        ),
-    )
-
-
 def _build_item(
     entry: Dict[str, Any],
     frames: Dict[str, Any],
@@ -408,24 +366,6 @@ def run_journal_quality_analysis_service(
 
     all_positions = closed_positions(repository.list_entries(), start_time, end_time)
     positions, return_filter = _filter_positions_by_net_return(all_positions, min_abs_net_return_pct)
-    cache_key = _analysis_cache_key(start_time, end_time, positions, return_filter["minimum_abs_net_return_pct"])
-    cached_result = QUALITY_ANALYSIS_CACHE.get(cache_key)
-    if cached_result is not None:
-        return cached_result
-    with QUALITY_ANALYSIS_LOCK:
-        cached_result = QUALITY_ANALYSIS_CACHE.get(cache_key)
-        if cached_result is not None:
-            return cached_result
-        return _run_uncached_quality_analysis(start_time, end_time, positions, return_filter, cache_key)
-
-
-def _run_uncached_quality_analysis(
-    start_time: int,
-    end_time: int,
-    positions: List[Dict[str, Any]],
-    return_filter: Dict[str, Any],
-    cache_key: str,
-) -> Dict[str, Any]:
     excursion_response = run_journal_excursions_service(start_time, end_time)
     excursion_data = excursion_response["data"]
     excursions = {item["journal_id"]: item for item in excursion_data["items"]}
@@ -472,7 +412,6 @@ def _run_uncached_quality_analysis(
             "warnings": sorted(set(warnings)),
         },
     }
-    QUALITY_ANALYSIS_CACHE.set(cache_key, result)
     return result
 
 

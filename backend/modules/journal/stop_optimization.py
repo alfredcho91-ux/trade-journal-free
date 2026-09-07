@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 import math
-import threading
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
-from backend.config.settings import PROJECT_ROOT
 from backend.modules.journal import repository
 from backend.modules.journal.analysis import (
     EXCURSION_INTERVAL,
     EXCURSION_INTERVAL_MS,
     MAX_EXCURSION_CANDLES,
 )
-from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.quality_analysis import run_journal_quality_analysis_service
 from backend.modules.journal.quality_market import finite, finite_timestamp
 from backend.modules.journal.trade_selection import (
@@ -26,7 +23,6 @@ from backend.modules.journal.trade_selection import (
     path_covers_position,
     position_batches,
 )
-from backend.utils.cache import DataCache
 from backend.modules.journal.market_data import load_journal_ohlcv
 
 FIXED_STOP_CANDIDATES = tuple(round(value * 0.25, 2) for value in range(1, 17))
@@ -35,12 +31,6 @@ RECOVERY_THRESHOLDS = FIXED_STOP_CANDIDATES
 TRAIN_RATIO = 0.7
 MIN_RECOVERY_SAMPLE = 3
 MIN_REGIME_SAMPLE = 5
-STOP_OPTIMIZATION_CACHE_VERSION = 5
-STOP_OPTIMIZATION_CACHE = DataCache(
-    ttl_minutes=60,
-    cache_dir=str(PROJECT_ROOT / ".cache" / "journal_stop_optimization"),
-)
-STOP_OPTIMIZATION_LOCK = threading.Lock()
 
 
 def _percentile(values: Iterable[Any], percentile: float) -> Optional[float]:
@@ -412,60 +402,40 @@ def _build_path_items(
     return sorted(items, key=lambda item: item["entry_time"])
 
 
-def _cache_key(start_time: int, end_time: int, positions: List[Dict[str, Any]]) -> str:
-    return position_analysis_cache_key(
-        "journal_stop_optimization",
-        STOP_OPTIMIZATION_CACHE_VERSION,
-        start_time,
-        end_time,
-        positions,
-        ("id", "datetime", "entry_datetime", "symbol", "direction", "entry_price", "exit_price", "realized_pnl"),
-    )
-
-
 def run_journal_stop_optimization_service(start_time: int, end_time: int) -> Dict[str, Any]:
     """Find robust stop ranges using chronological train/validation splits."""
     if start_time > end_time:
         raise ValueError("start_time must be before end_time")
     positions = closed_positions(repository.list_entries(), start_time, end_time)
-    cache_key = _cache_key(start_time, end_time, positions)
-    cached = STOP_OPTIMIZATION_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    with STOP_OPTIMIZATION_LOCK:
-        cached = STOP_OPTIMIZATION_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        quality = run_journal_quality_analysis_service(start_time, end_time)["data"]
-        warnings = list(quality.get("warnings") or [])
-        quality_items = {int(item["journal_id"]): item for item in quality.get("items") or []}
-        items = _build_path_items(positions, quality_items, warnings)
-        result = {
-            "success": True,
-            "data": {
-                "interval": EXCURSION_INTERVAL,
-                "methodology": {
-                    "winner_definition": "net_realized_pnl_above_zero",
-                    "candidate_return_basis": "directional_price_return_before_fees_and_funding",
-                    "train_ratio": TRAIN_RATIO,
-                    "score_weights": {"winner_preservation": 0.20, "profit_factor": 0.25, "average_r": 0.25, "drawdown": 0.20, "stop_efficiency": 0.10},
-                    "same_candle_recovery_counted": False,
-                    "minimum_regime_sample": MIN_REGIME_SAMPLE,
-                },
-                "direction_breakdown": {
-                    direction: _analysis_bundle([item for item in items if item["direction"] == direction])
-                    for direction in ("Long", "Short")
-                },
-                "regime_breakdown": {
-                    direction: _regime_analysis([item for item in items if item["direction"] == direction])
-                    for direction in ("Long", "Short")
-                },
-                "coverage": {"closed_positions_considered": len(positions), "analyzed_positions": len(items)},
-                "warnings": sorted(set(warnings)),
+    quality = run_journal_quality_analysis_service(start_time, end_time)["data"]
+    warnings = list(quality.get("warnings") or [])
+    quality_items = {int(item["journal_id"]): item for item in quality.get("items") or []}
+    items = _build_path_items(positions, quality_items, warnings)
+    result = {
+        "success": True,
+        "data": {
+            "interval": EXCURSION_INTERVAL,
+            "methodology": {
+                "winner_definition": "net_realized_pnl_above_zero",
+                "candidate_return_basis": "directional_price_return_before_fees_and_funding",
+                "train_ratio": TRAIN_RATIO,
+                "score_weights": {"winner_preservation": 0.20, "profit_factor": 0.25, "average_r": 0.25, "drawdown": 0.20, "stop_efficiency": 0.10},
+                "same_candle_recovery_counted": False,
+                "minimum_regime_sample": MIN_REGIME_SAMPLE,
             },
-        }
-        STOP_OPTIMIZATION_CACHE.set(cache_key, result)
-        return result
+            "direction_breakdown": {
+                direction: _analysis_bundle([item for item in items if item["direction"] == direction])
+                for direction in ("Long", "Short")
+            },
+            "regime_breakdown": {
+                direction: _regime_analysis([item for item in items if item["direction"] == direction])
+                for direction in ("Long", "Short")
+            },
+            "coverage": {"closed_positions_considered": len(positions), "analyzed_positions": len(items)},
+            "warnings": sorted(set(warnings)),
+        },
+    }
+    return result
 
 
 __all__ = ["run_journal_stop_optimization_service"]

@@ -30,6 +30,22 @@ afterEach(() => {
 });
 
 describe('TradeBehaviorEditor', () => {
+  it('labels invalid history and preserves it while saving unrelated notes', async () => {
+    const historic = { ...entry, fomo: 2, revenge_trade: 'malformed' };
+    mockedUpdate.mockResolvedValue({ ...historic, notes: 'new' });
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={client}><TradeBehaviorEditor entry={historic} isKo={false} /></QueryClientProvider>);
+    await user.click(screen.getByText('PSYCHOLOGY'));
+    expect((screen.getByLabelText('FOMO') as HTMLSelectElement).value).toBe('invalid');
+    expect(screen.getAllByText('Invalid historical value')).toHaveLength(2);
+    await user.click(screen.getByText('NOTES'));
+    await user.clear(screen.getByLabelText('Trade notes'));
+    await user.type(screen.getByLabelText('Trade notes'), 'new');
+    await user.click(screen.getByRole('button', { name: 'Save behavior journal' }));
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith(7, { notes: 'new' }));
+  });
+
   it('shows the four compact sections and bilingual labels', () => {
     renderEditor(false);
     expect(screen.getByText('PLAN')).toBeTruthy();

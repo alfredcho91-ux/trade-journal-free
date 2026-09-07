@@ -39,6 +39,7 @@ class DataCache:
         ttl_minutes: int = 5,
         cache_dir: Optional[str] = None,
         ttl_seconds: Optional[int] = None,
+        persistent: bool = True,
     ):
         """
         Args:
@@ -52,6 +53,7 @@ class DataCache:
             self.ttl_seconds = ttl_minutes * 60
 
         self._configured_cache_dir = cache_dir
+        self._persistent = persistent
         self._cache: Any = None
         self._cache_ready = False
         self._use_diskcache = False
@@ -90,7 +92,7 @@ class DataCache:
             return
 
         cache_backend = os.getenv("DATA_CACHE_BACKEND", "disk").strip().lower()
-        prefer_memory = cache_backend in {"memory", "mem", "off", "disabled", "none"}
+        prefer_memory = not self._persistent or cache_backend in {"memory", "mem", "off", "disabled", "none"}
 
         if DISKCACHE_AVAILABLE and not prefer_memory:
             try:

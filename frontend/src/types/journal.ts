@@ -657,8 +657,8 @@ export interface JournalEntry {
   emotion_after?: string | null;
   confidence_score?: number | null;
   focus_score?: number | null;
-  fomo?: boolean | null;
-  revenge_trade?: boolean | null;
+  fomo?: boolean | number | string | null;
+  revenge_trade?: boolean | number | string | null;
   tags?: string;
   mistakes?: string;
   planned_stop_pct?: number | null;

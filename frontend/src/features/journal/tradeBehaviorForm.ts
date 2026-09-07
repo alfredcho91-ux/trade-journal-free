@@ -1,7 +1,7 @@
 import type { JournalBehaviorUpdatePayload, JournalEntry } from '../../types';
 
 export type ScoreDraft = '' | '1' | '2' | '3' | '4' | '5';
-export type BooleanDraft = 'unrecorded' | 'no' | 'yes';
+export type BooleanDraft = 'unrecorded' | 'no' | 'yes' | 'invalid';
 
 export interface TradeBehaviorDraft {
   planned_stop_pct: string;
@@ -23,8 +23,8 @@ function scoreDraft(value: number | null | undefined): ScoreDraft {
   return value != null && value >= 1 && value <= 5 ? String(value) as ScoreDraft : '';
 }
 
-function booleanDraft(value: boolean | null | undefined): BooleanDraft {
-  return value == null ? 'unrecorded' : value ? 'yes' : 'no';
+function booleanDraft(value: JournalEntry['fomo']): BooleanDraft {
+  return value == null ? 'unrecorded' : value === true ? 'yes' : value === false ? 'no' : 'invalid';
 }
 
 export function tradeBehaviorDraftFromEntry(entry: JournalEntry): TradeBehaviorDraft {
@@ -84,7 +84,7 @@ function nullableScore(value: ScoreDraft): number | null {
   return value ? Number(value) : null;
 }
 
-function nullableBoolean(value: BooleanDraft): boolean | null {
+function nullableBoolean(value: Exclude<BooleanDraft, 'invalid'>): boolean | null {
   return value === 'unrecorded' ? null : value === 'yes';
 }
 
@@ -111,8 +111,13 @@ export function serializeTradeBehaviorChanges(
   setWhenChanged('emotion_after', nullableText(initial.emotion_after), nullableText(current.emotion_after));
   setWhenChanged('confidence_score', nullableScore(initial.confidence_score), nullableScore(current.confidence_score));
   setWhenChanged('focus_score', nullableScore(initial.focus_score), nullableScore(current.focus_score));
-  setWhenChanged('fomo', nullableBoolean(initial.fomo), nullableBoolean(current.fomo));
-  setWhenChanged('revenge_trade', nullableBoolean(initial.revenge_trade), nullableBoolean(current.revenge_trade));
+  for (const field of ['fomo', 'revenge_trade'] as const) {
+    // Preserve invalid history during unrelated edits; only an explicit valid
+    // selection replaces it. Never serialize INVALID as false or null.
+    if (initial[field] !== current[field] && current[field] !== 'invalid') {
+      payload[field] = nullableBoolean(current[field]);
+    }
+  }
   setWhenChanged('notes', nullableText(initial.notes), nullableText(current.notes));
   return payload;
 }

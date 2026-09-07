@@ -61,6 +61,7 @@ function BooleanSelect({ value, label, isKo, onChange }: {
   return <label className="text-xs text-dark-400">{label}
     <select value={value} onChange={(event) => onChange(event.target.value as BooleanDraft)} className="mt-1 w-full border border-dark-700 bg-dark-950 px-2.5 py-2 text-sm text-white">
       <option value="unrecorded">{isKo ? '미기록' : 'Not recorded'}</option>
+      {value === 'invalid' && <option value="invalid" disabled>{isKo ? '유효하지 않은 과거 기록' : 'Invalid historical value'}</option>}
       <option value="no">{isKo ? '아니오' : 'No'}</option>
       <option value="yes">{isKo ? '예' : 'Yes'}</option>
     </select>

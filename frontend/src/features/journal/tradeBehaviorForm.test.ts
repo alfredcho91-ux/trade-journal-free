@@ -8,6 +8,17 @@ import {
 } from './tradeBehaviorForm';
 
 describe('trade behavior form serialization', () => {
+  it.each([2, -1, 'false', 'malformed'])('preserves invalid history %s unless explicitly edited', (raw) => {
+    const initial = tradeBehaviorDraftFromEntry({ id: 1, fomo: raw, revenge_trade: raw, notes: 'old' });
+    expect(initial.fomo).toBe('invalid');
+    expect(initial.revenge_trade).toBe('invalid');
+    expect(hasTradeBehaviorChanges(initial, { ...initial })).toBe(false);
+    expect(serializeTradeBehaviorChanges(initial, { ...initial, notes: 'new' })).toEqual({ notes: 'new' });
+    expect(serializeTradeBehaviorChanges(initial, { ...initial, fomo: 'no' })).toEqual({ fomo: false });
+    expect(serializeTradeBehaviorChanges(initial, { ...initial, revenge_trade: 'yes' })).toEqual({ revenge_trade: true });
+    expect(serializeTradeBehaviorChanges(initial, { ...initial, fomo: 'unrecorded' })).toEqual({ fomo: null });
+  });
+
   it('omits every untouched field on initial load', () => {
     const initial = tradeBehaviorDraftFromEntry({
       id: 1,

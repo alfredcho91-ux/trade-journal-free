@@ -32,16 +32,7 @@ def _bounded_rows(conn, sql, limit):
 
 def _read_journal(conn):
     rows = _bounded_rows(conn, f"SELECT {', '.join(journal.JOURNAL_COLUMNS)} FROM {journal.TABLE_NAME} ORDER BY id", MAX_TRADES)
-    entries = []
-    for row in rows:
-        entry = journal._row_to_dict(row)
-        # SQLite stores bool as 0/1. Preserve malformed historical values instead
-        # of inheriting the general Journal decoder's bool(any non-null value).
-        for field in ("fomo", "revenge_trade"):
-            value = row[field]
-            entry[field] = bool(value) if type(value) is int and value in (0, 1) else value
-        entries.append(entry)
-    return entries
+    return [journal._row_to_dict(row) for row in rows]
 
 
 def _read_assignments(conn):

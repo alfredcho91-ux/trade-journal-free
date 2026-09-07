@@ -282,8 +282,6 @@ def test_exit_hold_service_loads_the_selected_ohlcv_interval(monkeypatch, interv
         "excluded_below_threshold_count": 0,
         "excluded_return_unavailable_count": 0,
     }))
-    monkeypatch.setattr(exit_hold_analysis.EXIT_HOLD_CACHE, "get", lambda key: None)
-    monkeypatch.setattr(exit_hold_analysis.EXIT_HOLD_CACHE, "set", lambda key, value: None)
     monkeypatch.setattr(exit_hold_analysis, "market_source", lambda loaded: "Binance USDT-M Futures")
 
     def fake_load(symbol, requested_interval, **kwargs):

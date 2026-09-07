@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import threading
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
-from backend.config.settings import PROJECT_ROOT, get_deepcoin_credentials
+from backend.config.settings import get_deepcoin_credentials
 from backend.modules.deepcoin.service import DeepcoinClient
 from backend.modules.journal import repository
-from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.market_context import load_market_frames
 from backend.modules.journal.trade_selection import closed_positions, market_group_key
 from backend.modules.journal.quality_market import (
@@ -21,7 +19,6 @@ from backend.modules.journal.quality_market import (
     finite_timestamp,
     point_in_time_trend_state,
 )
-from backend.utils.cache import DataCache
 from backend.utils.error_handler import DataLoadError
 
 STOP_HORIZONS = (1, 2, 3)
@@ -32,12 +29,6 @@ FALSE_STOP_MIN_ORIGINAL_R = 2.0
 REVERSAL_MIN_OPPOSITE_R = 2.0
 GOOD_STOP_MIN_OPPOSITE_PCT = 1.0
 DIRECTION_DOMINANCE_RATIO = 1.25
-STOP_ANALYSIS_CACHE_VERSION = 3
-STOP_ANALYSIS_CACHE = DataCache(
-    ttl_minutes=10,
-    cache_dir=str(PROJECT_ROOT / ".cache" / "journal_stop_loss"),
-)
-STOP_ANALYSIS_LOCK = threading.Lock()
 CLASS_IDS = ("false_stop", "good_stop", "reversal_opportunity", "noise_chop")
 
 
@@ -434,17 +425,6 @@ def _direction_breakdown(items: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any
     return output
 
 
-def _cache_key(start_time: int, end_time: int, positions: List[Dict[str, Any]]) -> str:
-    return position_analysis_cache_key(
-        "journal_stop_loss",
-        STOP_ANALYSIS_CACHE_VERSION,
-        start_time,
-        end_time,
-        positions,
-        ("id", "symbol", "direction", "entry_datetime", "datetime", "entry_price", "exit_price", "realized_pnl"),
-    )
-
-
 def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Dict[str, Any]:
     if start_time > end_time:
         raise ValueError("start_time must be before end_time")
@@ -453,86 +433,77 @@ def run_journal_stop_loss_analysis_service(start_time: int, end_time: int) -> Di
         position for position in all_positions
         if str(position.get("source") or "") == "deepcoin_position"
     ]
-    cache_key = _cache_key(start_time, end_time, positions)
-    cached = STOP_ANALYSIS_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    with STOP_ANALYSIS_LOCK:
-        cached = STOP_ANALYSIS_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
 
-        warnings: List[str] = []
-        excluded_count = len(all_positions) - len(positions)
-        if excluded_count:
-            warnings.append(
-                f"{excluded_count} non-Deepcoin positions were excluded because confirmed stop-order import is not available for those connectors."
-            )
-        stop_positions = [
-            position for position in positions
-            if str(position.get("exchange") or "").strip().lower() == "deepcoin"
-        ]
-        if len(stop_positions) < len(positions):
-            warnings.append("Stop-loss confirmation is available only for Deepcoin positions.")
-        symbols = [str(position["symbol"]) for position in stop_positions if position.get("symbol")]
-        events_by_symbol, trigger_coverage = _load_stop_events(symbols, warnings)
-        matched = _match_confirmed_stops(stop_positions, events_by_symbol)
-        matched_by_market: Dict[tuple[str, str, str], List[Tuple[Dict[str, Any], Dict[str, Any]]]] = defaultdict(list)
-        for position, event in matched:
-            matched_by_market[market_group_key(position)].append((position, event))
+    warnings: List[str] = []
+    excluded_count = len(all_positions) - len(positions)
+    if excluded_count:
+        warnings.append(
+            f"{excluded_count} non-Deepcoin positions were excluded because confirmed stop-order import is not available for those connectors."
+        )
+    stop_positions = [
+        position for position in positions
+        if str(position.get("exchange") or "").strip().lower() == "deepcoin"
+    ]
+    if len(stop_positions) < len(positions):
+        warnings.append("Stop-loss confirmation is available only for Deepcoin positions.")
+    symbols = [str(position["symbol"]) for position in stop_positions if position.get("symbol")]
+    events_by_symbol, trigger_coverage = _load_stop_events(symbols, warnings)
+    matched = _match_confirmed_stops(stop_positions, events_by_symbol)
+    matched_by_market: Dict[tuple[str, str, str], List[Tuple[Dict[str, Any], Dict[str, Any]]]] = defaultdict(list)
+    for position, event in matched:
+        matched_by_market[market_group_key(position)].append((position, event))
 
-        items: List[Dict[str, Any]] = []
-        for (_exchange, instrument_type, symbol), pairs in matched_by_market.items():
-            grouped_positions = [position for position, _ in pairs]
-            frames = load_market_frames(symbol, grouped_positions, warnings, instrument_type)
-            if "4h" not in frames:
-                continue
-            for position, event in pairs:
-                items.append(_analyze_stop(position, event, frames, positions))
-        items.sort(key=lambda item: item.get("stop_time") or 0, reverse=True)
+    items: List[Dict[str, Any]] = []
+    for (_exchange, instrument_type, symbol), pairs in matched_by_market.items():
+        grouped_positions = [position for position, _ in pairs]
+        frames = load_market_frames(symbol, grouped_positions, warnings, instrument_type)
+        if "4h" not in frames:
+            continue
+        for position, event in pairs:
+            items.append(_analyze_stop(position, event, frames, positions))
+    items.sort(key=lambda item: item.get("stop_time") or 0, reverse=True)
 
-        result = {
-            "success": True,
-            "data": {
-                "interval": "4h",
-                "horizons": list(STOP_HORIZONS),
-                "criteria": {
-                    "stop_identification": "confirmed_deepcoin_sl_trigger",
-                    "stop_match_max_time_minutes": STOP_MATCH_MAX_TIME_MS / 60_000,
-                    "stop_match_max_price_diff_pct": STOP_MATCH_MAX_PRICE_DIFF_PCT,
-                    "risk_basis": "absolute_distance_between_entry_and_confirmed_stop_trigger",
-                    "post_candles": "first_3_fully_completed_4h_candles_after_stop",
-                    "classification_priority": ["reversal_opportunity", "good_stop", "false_stop", "noise_chop"],
-                    "false_stop": {
-                        "entry_recovered": True,
-                        "minimum_original_direction_mfe_r": FALSE_STOP_MIN_ORIGINAL_R,
-                        "minimum_dominance_ratio": DIRECTION_DOMINANCE_RATIO,
-                    },
-                    "reversal_opportunity": {
-                        "minimum_opposite_direction_mfe_pct": GOOD_STOP_MIN_OPPOSITE_PCT,
-                        "minimum_opposite_direction_mfe_r": REVERSAL_MIN_OPPOSITE_R,
-                        "requires_4h_opposite_trend_transition": True,
-                    },
-                    "good_stop": {
-                        "minimum_opposite_direction_mfe_pct": GOOD_STOP_MIN_OPPOSITE_PCT,
-                    },
-                    "noise_chop": "all_remaining_confirmed_stops",
+    result = {
+        "success": True,
+        "data": {
+            "interval": "4h",
+            "horizons": list(STOP_HORIZONS),
+            "criteria": {
+                "stop_identification": "confirmed_deepcoin_sl_trigger",
+                "stop_match_max_time_minutes": STOP_MATCH_MAX_TIME_MS / 60_000,
+                "stop_match_max_price_diff_pct": STOP_MATCH_MAX_PRICE_DIFF_PCT,
+                "risk_basis": "absolute_distance_between_entry_and_confirmed_stop_trigger",
+                "post_candles": "first_3_fully_completed_4h_candles_after_stop",
+                "classification_priority": ["reversal_opportunity", "good_stop", "false_stop", "noise_chop"],
+                "false_stop": {
+                    "entry_recovered": True,
+                    "minimum_original_direction_mfe_r": FALSE_STOP_MIN_ORIGINAL_R,
+                    "minimum_dominance_ratio": DIRECTION_DOMINANCE_RATIO,
                 },
-                "summary": _summary(items),
-                "regime_patterns": _regime_patterns(items),
-                "direction_breakdown": _direction_breakdown(items),
-                "coverage": {
-                    "closed_positions_considered": len(positions),
-                    "non_deepcoin_positions_excluded": excluded_count,
-                    "matched_confirmed_stops": len(matched),
-                    "trigger_history": trigger_coverage,
+                "reversal_opportunity": {
+                    "minimum_opposite_direction_mfe_pct": GOOD_STOP_MIN_OPPOSITE_PCT,
+                    "minimum_opposite_direction_mfe_r": REVERSAL_MIN_OPPOSITE_R,
+                    "requires_4h_opposite_trend_transition": True,
                 },
-                "items": items,
-                "warnings": sorted(set(warnings)),
+                "good_stop": {
+                    "minimum_opposite_direction_mfe_pct": GOOD_STOP_MIN_OPPOSITE_PCT,
+                },
+                "noise_chop": "all_remaining_confirmed_stops",
             },
-        }
-        STOP_ANALYSIS_CACHE.set(cache_key, result)
-        return result
+            "summary": _summary(items),
+            "regime_patterns": _regime_patterns(items),
+            "direction_breakdown": _direction_breakdown(items),
+            "coverage": {
+                "closed_positions_considered": len(positions),
+                "non_deepcoin_positions_excluded": excluded_count,
+                "matched_confirmed_stops": len(matched),
+                "trigger_history": trigger_coverage,
+            },
+            "items": items,
+            "warnings": sorted(set(warnings)),
+        },
+    }
+    return result
 
 
 __all__ = ["run_journal_stop_loss_analysis_service"]

@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
-from backend.config.settings import PROJECT_ROOT
 from backend.modules.deepcoin.snapshot import (
     SNAPSHOT_INTERVALS,
     SNAPSHOT_VERSION,
@@ -28,7 +27,7 @@ from backend.utils.validators import validate_coin_symbol
 
 CURRENT_MARKET_CACHE = DataCache(
     ttl_minutes=65,
-    cache_dir=str(PROJECT_ROOT / ".cache" / "journal_current_market"),
+    persistent=False,  # Hourly UI context, never restored as a derived fact.
 )
 CURRENT_FRAME_CANDLES = {
     "1h": 245,

@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import math
-import threading
 from collections import defaultdict, deque
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 import pandas as pd
 
-from backend.config.settings import PROJECT_ROOT
 from backend.modules.journal import repository
-from backend.modules.journal.cache_keys import position_analysis_cache_key
 from backend.modules.journal.trade_selection import (
     closed_positions,
     finite_float,
@@ -21,7 +18,6 @@ from backend.modules.journal.trade_selection import (
     position_batches,
     timestamp_ms,
 )
-from backend.utils.cache import DataCache
 from backend.modules.journal.market_data import load_journal_ohlcv
 
 PATH_INTERVAL = "5m"
@@ -29,22 +25,12 @@ PATH_INTERVAL_MS = 5 * 60 * 1000
 MAX_PATH_CANDLES = 30_000
 TRAIN_RATIO = 0.7
 MAX_GRID_COMBINATIONS = 800
-SL_TP_CACHE_VERSION = 3
 SCORE_WEIGHTS = {
     "expectancy": 0.35,
     "profit_factor": 0.25,
     "average_r": 0.15,
     "drawdown": 0.25,
 }
-SL_TP_PATH_CACHE = DataCache(
-    ttl_minutes=60,
-    cache_dir=str(PROJECT_ROOT / ".cache" / "journal_sl_tp_paths"),
-)
-SL_TP_RESULT_CACHE = DataCache(
-    ttl_minutes=60,
-    cache_dir=str(PROJECT_ROOT / ".cache" / "journal_sl_tp_analysis"),
-)
-SL_TP_LOCK = threading.RLock()
 
 
 def grid_values(minimum: float, maximum: float, step: float) -> List[float]:
@@ -420,17 +406,6 @@ def _fee_pct(position: Dict[str, Any]) -> Optional[float]:
     return abs(fee) / notional * 100.0
 
 
-def _path_cache_key(start_time: int, end_time: int, positions: List[Dict[str, Any]]) -> str:
-    return position_analysis_cache_key(
-        "journal_sl_tp_paths",
-        SL_TP_CACHE_VERSION,
-        start_time,
-        end_time,
-        positions,
-        ("id", "datetime", "entry_datetime", "symbol", "direction", "entry_price", "exit_price", "fee", "leverage", "invested_amount"),
-    )
-
-
 def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
     by_market: Dict[tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
     for position in positions:
@@ -498,38 +473,6 @@ def _build_path_items(positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, A
     return sorted(items, key=lambda item: (item["entry_time"], item["journal_id"])), sorted(set(warnings))
 
 
-def _load_path_items(start_time: int, end_time: int, positions: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[str]]:
-    key = _path_cache_key(start_time, end_time, positions)
-    cached = SL_TP_PATH_CACHE.get(key)
-    if cached is not None:
-        return cached
-    with SL_TP_LOCK:
-        cached = SL_TP_PATH_CACHE.get(key)
-        if cached is not None:
-            return cached
-        built = _build_path_items(positions)
-        SL_TP_PATH_CACHE.set(key, built)
-        return built
-
-
-def _result_cache_key(
-    start_time: int,
-    end_time: int,
-    positions: List[Dict[str, Any]],
-    sl_values: List[float],
-    tp_values: List[float],
-) -> str:
-    base = position_analysis_cache_key(
-        "journal_sl_tp_analysis",
-        SL_TP_CACHE_VERSION,
-        start_time,
-        end_time,
-        positions,
-        ("id", "datetime", "entry_datetime", "symbol", "direction", "entry_price", "exit_price", "fee", "leverage", "invested_amount"),
-    )
-    return f"{base}:sl={','.join(map(str, sl_values))}:tp={','.join(map(str, tp_values))}"
-
-
 def run_journal_sl_tp_analysis_service(
     start_time: int,
     end_time: int,
@@ -549,49 +492,40 @@ def run_journal_sl_tp_analysis_service(
         raise ValueError(f"SL/TP grid must contain between 1 and {MAX_GRID_COMBINATIONS} combinations")
 
     positions = closed_positions(repository.list_entries(), start_time, end_time)
-    cache_key = _result_cache_key(start_time, end_time, positions, sl_values, tp_values)
-    cached = SL_TP_RESULT_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    with SL_TP_LOCK:
-        cached = SL_TP_RESULT_CACHE.get(cache_key)
-        if cached is not None:
-            return cached
-        items, warnings = _load_path_items(start_time, end_time, positions)
-        result = {
-            "success": True,
-            "data": {
-                "interval": PATH_INTERVAL,
-                "sl_values": sl_values,
-                "tp_values": tp_values,
-                "methodology": {
-                    "simulation_window": "entry_to_actual_exit",
-                    "same_candle_policy": "conservative_stop_and_ambiguous",
-                    "return_basis": "directional_price_return_after_recorded_fee_proxy",
-                    "funding_included": False,
-                    "slippage_included": False,
-                    "train_ratio": TRAIN_RATIO,
-                    "score_weights": SCORE_WEIGHTS,
-                    "max_grid_combinations": MAX_GRID_COMBINATIONS,
-                },
-                "direction_breakdown": {
-                    direction: _analysis_bundle(
-                        [item for item in items if item["direction"] == direction],
-                        sl_values,
-                        tp_values,
-                    )
-                    for direction in ("Long", "Short")
-                },
-                "coverage": {
-                    "closed_positions_considered": len(positions),
-                    "analyzed_positions": len(items),
-                    "fee_proxy_positions": sum(bool(item["fee_available"]) for item in items),
-                },
-                "warnings": warnings,
+    items, warnings = _build_path_items(positions)
+    result = {
+        "success": True,
+        "data": {
+            "interval": PATH_INTERVAL,
+            "sl_values": sl_values,
+            "tp_values": tp_values,
+            "methodology": {
+                "simulation_window": "entry_to_actual_exit",
+                "same_candle_policy": "conservative_stop_and_ambiguous",
+                "return_basis": "directional_price_return_after_recorded_fee_proxy",
+                "funding_included": False,
+                "slippage_included": False,
+                "train_ratio": TRAIN_RATIO,
+                "score_weights": SCORE_WEIGHTS,
+                "max_grid_combinations": MAX_GRID_COMBINATIONS,
             },
-        }
-        SL_TP_RESULT_CACHE.set(cache_key, result)
-        return result
+            "direction_breakdown": {
+                direction: _analysis_bundle(
+                    [item for item in items if item["direction"] == direction],
+                    sl_values,
+                    tp_values,
+                )
+                for direction in ("Long", "Short")
+            },
+            "coverage": {
+                "closed_positions_considered": len(positions),
+                "analyzed_positions": len(items),
+                "fee_proxy_positions": sum(bool(item["fee_available"]) for item in items),
+            },
+            "warnings": warnings,
+        },
+    }
+    return result
 
 
 def load_trade_path_items(
@@ -600,7 +534,7 @@ def load_trade_path_items(
     positions: List[Dict[str, Any]],
 ) -> tuple[List[Dict[str, Any]], List[str]]:
     """Public reuse point for analyses that need the canonical completed 5m path."""
-    return _load_path_items(start_time, end_time, positions)
+    return _build_path_items(positions)
 
 
 __all__ = ["load_trade_path_items", "run_journal_sl_tp_analysis_service", "simulate_trade_path"]

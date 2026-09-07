@@ -4,7 +4,7 @@ import math
 from datetime import date
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt, model_validator
+from pydantic import BaseModel, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
 
 class JournalEntry(BaseModel):
@@ -59,6 +59,9 @@ class JournalEntry(BaseModel):
 
 class JournalRecord(JournalEntry):
     id: int
+    # Read losslessly; write schemas still reject malformed psychology values.
+    fomo: Union[StrictBool, StrictInt, StrictFloat, StrictStr, None] = None
+    revenge_trade: Union[StrictBool, StrictInt, StrictFloat, StrictStr, None] = None
     indicators: List[str] = Field(default_factory=list)
     created_at: Optional[str] = None
 

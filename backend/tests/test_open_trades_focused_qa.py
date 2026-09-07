@@ -359,7 +359,6 @@ def test_open_trade_and_unlinked_in_trade_plan_are_isolated_from_closed_quant(mo
         assert variant["discovery"]["trade_count"] == 0
         assert variant["validation"]["trade_count"] == 0
 
-    quality_analysis.QUALITY_ANALYSIS_CACHE.clear()
     monkeypatch.setattr(quality_analysis.repository, "list_entries", lambda: [open_entry])
     monkeypatch.setattr(
         quality_analysis,

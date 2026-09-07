@@ -1,6 +1,3 @@
-import threading
-import time
-
 from backend.modules.journal import quality_analysis
 from backend.modules.journal.quality_analysis import (
     _analysis_bundle,
@@ -129,36 +126,18 @@ def test_return_filter_does_not_assume_unleveraged_margin_for_derivative_positio
     assert metadata["excluded_return_unavailable_count"] == 1
 
 
-def test_quality_analysis_lock_prevents_duplicate_uncached_calculation(monkeypatch):
-    cached = {}
+def test_quality_analysis_rebuilds_each_request_without_derived_cache(monkeypatch):
     calculation_count = 0
-    calculation_started = threading.Event()
-
-    monkeypatch.setattr(quality_analysis.repository, "list_entries", lambda: [{"id": 1}])
-    monkeypatch.setattr(quality_analysis, "closed_positions", lambda *_args: [{"id": 1}])
-    monkeypatch.setattr(quality_analysis, "_analysis_cache_key", lambda *_args: "same-scope")
-    monkeypatch.setattr(quality_analysis.QUALITY_ANALYSIS_CACHE, "get", lambda key: cached.get(key))
-    monkeypatch.setattr(quality_analysis.QUALITY_ANALYSIS_CACHE, "set", lambda key, value: cached.__setitem__(key, value))
+    monkeypatch.setattr(quality_analysis.repository, "list_entries", lambda: [])
 
     def calculate(*_args):
         nonlocal calculation_count
         calculation_count += 1
-        calculation_started.set()
-        time.sleep(0.03)
-        result = {"success": True, "data": {"items": []}}
-        cached["same-scope"] = result
-        return result
+        return {"success": True, "data": {"items": []}}
 
-    monkeypatch.setattr(quality_analysis, "_run_uncached_quality_analysis", calculate)
-    results = []
-    first = threading.Thread(target=lambda: results.append(quality_analysis.run_journal_quality_analysis_service(1, 2, 2)))
-    second = threading.Thread(target=lambda: results.append(quality_analysis.run_journal_quality_analysis_service(1, 2, 2)))
-
-    first.start()
-    assert calculation_started.wait(timeout=1)
-    second.start()
-    first.join(timeout=1)
-    second.join(timeout=1)
-
-    assert len(results) == 2
-    assert calculation_count == 1
+    monkeypatch.setattr(quality_analysis, "run_journal_excursions_service", calculate)
+    first = quality_analysis.run_journal_quality_analysis_service(1, 2, 2)
+    second = quality_analysis.run_journal_quality_analysis_service(1, 2, 2)
+    assert first == second
+    assert first is not second
+    assert calculation_count == 2

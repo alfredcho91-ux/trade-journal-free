@@ -510,7 +510,9 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         result["indicator_snapshot"] = None
     for column in ("fomo", "revenge_trade"):
         value = result.get(column)
-        result[column] = None if value is None else bool(value)
+        # SQLite 0/1 are booleans; retain every other raw historical value so
+        # consumers can distinguish INVALID from UNRECORDED without repair.
+        result[column] = value == 1 if type(value) is int and value in (0, 1) else value
     result["source"] = result.get("source") or "manual"
     return result
 
