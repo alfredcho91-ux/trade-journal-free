@@ -685,4 +685,67 @@ describe('Playbook frontend acceptance', () => {
     update.resolve(strategy(1, { description: 'updated A' }));
     await waitFor(() => expect(screen.getAllByText('Fade market extension').length).toBeGreaterThan(0));
   });
+
+  it('keeps a newer Strategy edit dirty when the submitted snapshot succeeds', async () => {
+    const update = deferred<Strategy>(); mockedUpdate.mockReturnValue(update.promise);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Edit Strategy' }));
+    const description = screen.getByLabelText('Strategy description');
+    await user.type(description, ' D1');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect((screen.getByRole('button', { name: 'Saving...' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(description, ' D2');
+    update.resolve(strategy(1, { description: 'Confirmed breakout continuation D1' }));
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith(1, { name: 'Breakout Momentum', description: 'Confirmed breakout continuation D1' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Saving...' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Edit Strategy' })).toBeTruthy();
+    expect((description as HTMLTextAreaElement).value).toBe('Confirmed breakout continuation D1 D2');
+    expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(false);
+    expect(confirm).toHaveBeenCalled();
+  });
+
+  it('preserves the exact newer Strategy draft when the submitted save fails', async () => {
+    const update = deferred<Strategy>(); mockedUpdate.mockReturnValue(update.promise);
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Edit Strategy' }));
+    const description = screen.getByLabelText('Strategy description');
+    await user.type(description, ' D1'); await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await user.type(description, ' D2'); update.reject(new Error('offline'));
+    expect((await screen.findByRole('alert')).textContent).toContain('offline');
+    expect((description as HTMLTextAreaElement).value).toBe('Confirmed breakout continuation D1 D2');
+  });
+
+  it('does not let an A save close or clean a newer A editor after A to B to A', async () => {
+    const update = deferred<Strategy>(); mockedUpdate.mockReturnValue(update.promise);
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Edit Strategy' }));
+    await user.type(screen.getByLabelText('Strategy description'), ' old submit');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await user.click(screen.getByRole('button', { name: /Mean Reversion/ }));
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await user.click(screen.getByRole('button', { name: /Breakout Momentum/ }));
+    await user.click(await screen.findByRole('button', { name: 'Edit Strategy' }));
+    await user.type(screen.getByLabelText('Strategy description'), ' newer A');
+    update.resolve(strategy(1, { description: 'Confirmed breakout continuation old submit' }));
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('dialog', { name: 'Edit Strategy' })).toBeTruthy();
+    expect((screen.getByLabelText('Strategy description') as HTMLTextAreaElement).value).toBe('Confirmed breakout continuation newer A');
+    await user.click(screen.getByRole('button', { name: /Mean Reversion/ }));
+    expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toBeTruthy();
+  });
+
+  it('keeps newer immutable-Version input when the older submitted Version succeeds', async () => {
+    const created = deferred<StrategyVersion>(); mockedCreateVersion.mockReturnValue(created.promise);
+    const user = userEvent.setup(); renderPage();
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.type(screen.getByLabelText('Version label'), 'v2');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    expect((screen.getByRole('button', { name: 'Creating...' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText('Version description'), 'newer definition');
+    created.resolve(version(1, 12, { version_label: 'v2' }));
+    await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('dialog', { name: 'New Version' })).toBeTruthy();
+    expect((screen.getByLabelText('Version description') as HTMLTextAreaElement).value).toContain('newer definition');
+  });
 });

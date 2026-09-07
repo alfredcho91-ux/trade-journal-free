@@ -69,21 +69,46 @@ it('keeps global adherence distinct from execution-rule evidence', () => {
   expect(screen.getByText('Global adherence (percent)')).toBeTruthy(); expect(screen.getByText('50')).toBeTruthy();
   expect(screen.getByText(/Diagnosis execution-rule adherence: 100%/)).toBeTruthy();
 });
-it('queries all official Review endpoints and excludes comparison on dedicated endpoints through API client contract', async () => {
+it('uses one Review snapshot for every panel and makes no redundant Pattern or Diagnosis request', async () => {
   setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
   fireEvent.click(screen.getByLabelText('Compare immediately preceding equal-length period')); fireEvent.click(screen.getByText('Run review'));
   await screen.findByRole('region', { name: 'Pattern findings' });
   expect(api.getReview).toHaveBeenCalledWith(expect.objectContaining({ compare_previous: true }), expect.any(AbortSignal));
-  expect(api.getPatterns).toHaveBeenCalledTimes(1); expect(api.getDiagnoses).toHaveBeenCalledTimes(1);
+  expect(api.getReview).toHaveBeenCalledTimes(1); expect(api.getPatterns).not.toHaveBeenCalled(); expect(api.getDiagnoses).not.toHaveBeenCalled();
+  expect(screen.getByRole('heading', { name: /Historical v1 · Positive Strategy · Healthy Execution/ })).toBeTruthy();
 });
 it('period A resolving after B cannot replace newer Review', async () => {
   const a = deferred<TradingReview>(); vi.mocked(api.getReview).mockReturnValueOnce(a.promise).mockResolvedValueOnce({ ...tradingFixture(), state: 'EMPTY_PERIOD' });
   setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
-  fireEvent.click(screen.getByText('Run review')); await screen.findByRole('region', { name: 'Pattern findings' });
+  fireEvent.click(screen.getByText('Run review')); await screen.findByText('Loading review evidence…');
   fireEvent.change(screen.getByLabelText('End time *'), { target: { value: '2026-01-31T23:59:59.999' } });
   fireEvent.change(screen.getByLabelText('Start time *'), { target: { value: '2026-01-01T00:00:00.000' } });
   fireEvent.click(screen.getByText('Run review')); await screen.findByText(/Empty period —/);
   await act(async () => a.resolve(tradingFixture())); expect(screen.getByText(/Empty period —/)).toBeTruthy();
+});
+it('refetch replaces Review, Pattern, and Diagnosis panels together from one response', async () => {
+  const first = tradingFixture();
+  const secondPattern = { ...patternFixture(), metric: 'net_return_pct' };
+  const secondDiagnosis = diagnosisFixture('STRATEGY_WEAK_EXECUTION_DRAG');
+  const second = { ...first, patterns: { ...first.patterns, candidates: [secondPattern] }, strategy_execution: { ...first.strategy_execution, diagnoses: [secondDiagnosis] } };
+  vi.mocked(api.getReview).mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+  setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
+  fireEvent.click(screen.getByText('Run review'));
+  await screen.findByRole('heading', { name: /Positive Strategy · Healthy Execution/ });
+  fireEvent.click(screen.getByText('Run review'));
+  await screen.findByRole('heading', { name: /Weak Strategy · Execution Drag/ });
+  expect(screen.getByRole('region', { name: 'Pattern findings' }).textContent).toContain('net_return_pct');
+  expect(screen.getByRole('region', { name: 'Pattern findings' }).textContent).not.toContain('average_r');
+  expect(api.getReview).toHaveBeenCalledTimes(2); expect(api.getPatterns).not.toHaveBeenCalled(); expect(api.getDiagnoses).not.toHaveBeenCalled();
+});
+it('a failed refetch hides the previous snapshot instead of mixing stale panels', async () => {
+  vi.mocked(api.getReview).mockResolvedValueOnce(tradingFixture()).mockRejectedValueOnce(new Error('offline'));
+  setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
+  fireEvent.click(screen.getByText('Run review')); await screen.findByRole('region', { name: 'Pattern findings' });
+  fireEvent.click(screen.getByText('Run review'));
+  expect((await screen.findByRole('alert')).textContent).toContain('offline');
+  expect(screen.queryByRole('region', { name: 'Pattern findings' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Strategy vs Execution diagnosis' })).toBeNull();
 });
 it('Review finding handoff prefills factual context without saving or creating a recommendation', async () => {
   setup(<AnalyticsWorkspace overview={<p>Overview</p>} />); fireEvent.click(await screen.findByRole('button', { name: 'Review' }));

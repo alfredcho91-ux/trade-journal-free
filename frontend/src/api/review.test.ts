@@ -25,6 +25,13 @@ it('rejects stale backend diagnosis evidence without substituting global adheren
   vi.spyOn(api, 'post').mockResolvedValue({ data: { success: true, data: { ...data, diagnoses: [legacy] } } } as AxiosResponse);
   await expect(getDiagnoses({ filters, compare_previous: false })).rejects.toThrow('backend execution-process evidence is missing');
 });
+it('rejects stale embedded diagnosis evidence from the single Review response', async () => {
+  const review = tradingFixture();
+  const { execution_rule_evidence: omitted, ...legacy } = review.strategy_execution.diagnoses[0];
+  expect(omitted.summary.coverage_pct).toBe('80');
+  vi.spyOn(api, 'post').mockResolvedValue({ data: { success: true, data: { ...review, strategy_execution: { ...review.strategy_execution, diagnoses: [legacy] } } } } as AxiosResponse);
+  await expect(getReview({ filters, compare_previous: false })).rejects.toThrow('backend execution-process evidence is missing');
+});
 it('uses bounded experiment resources, revision-protected mutations and fresh measurement', async () => {
   const row = experimentFixture(); const response = { data: { success: true, data: row } } as AxiosResponse;
   const get = vi.spyOn(api, 'get').mockResolvedValue(response); const post = vi.spyOn(api, 'post').mockResolvedValue(response); const patch = vi.spyOn(api, 'patch').mockResolvedValue(response);

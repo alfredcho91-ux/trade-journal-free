@@ -9,17 +9,24 @@ async function send<T>(path: string, payload: unknown, signal?: AbortSignal, pat
   try { return unwrapApiResponse(await api[patch ? 'patch' : 'post']<ApiResponse<T>>(path, payload, { signal }), 'Request failed.'); }
   catch (error) { throw toApiClientError(error, 'Request failed.'); }
 }
-export const getReview = (request: ReviewRequest, signal?: AbortSignal) => send<TradingReview>('/review/trading', request, signal);
-export const getPatterns = (request: ReviewRequest, signal?: AbortSignal) => send<Patterns>('/review/patterns', { ...request, compare_previous: false }, signal);
-export async function getDiagnoses(request: ReviewRequest, signal?: AbortSignal): Promise<Diagnoses> {
-  const data = await send<Diagnoses>('/review/strategy-execution', { ...request, compare_previous: false }, signal);
-  // An older running backend lacks the process-only evidence contract. Never
-  // fall back to its outcome-contaminated global adherence or render its axes.
+function requireProcessEvidence(data: Diagnoses): Diagnoses {
+  // Never render outcome-contaminated legacy diagnosis axes.
   if (!Array.isArray(data?.diagnoses) || data.diagnoses.some(item =>
     !item.execution_rule_evidence?.summary || !item.execution_rule_evidence.excluded_rule_counts_by_role)) {
     throw new Error('Diagnosis unavailable: backend execution-process evidence is missing. Restart the updated Trade Journal backend and retry.');
   }
   return data;
+}
+
+export async function getReview(request: ReviewRequest, signal?: AbortSignal): Promise<TradingReview> {
+  const data = await send<TradingReview>('/review/trading', request, signal);
+  requireProcessEvidence(data.strategy_execution);
+  return data;
+}
+export const getPatterns = (request: ReviewRequest, signal?: AbortSignal) => send<Patterns>('/review/patterns', { ...request, compare_previous: false }, signal);
+export async function getDiagnoses(request: ReviewRequest, signal?: AbortSignal): Promise<Diagnoses> {
+  const data = await send<Diagnoses>('/review/strategy-execution', { ...request, compare_previous: false }, signal);
+  return requireProcessEvidence(data);
 }
 export const listExperiments = (offset = 0, signal?: AbortSignal) => read<Experiment[]>(`/experiments?offset=${offset}&limit=50`, signal);
 export const getExperiment = (id: number, signal?: AbortSignal) => read<Experiment>(`/experiments/${id}`, signal);

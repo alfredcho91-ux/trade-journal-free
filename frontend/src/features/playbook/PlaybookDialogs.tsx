@@ -6,6 +6,7 @@ import UnsavedChangesDialog from '../journal/UnsavedChangesDialog';
 import RuleEvaluatorEditor from './RuleEvaluatorEditor';
 import { evaluatorForPayload, rulesAreValid } from './ruleAuthoring';
 import { cloneRules, emptyRules, newRule, normalizedDescription, type RuleGroup } from './strategyDraft';
+import { useEditorAuthority, type EditorSubmissionAuthority } from '../../hooks/useEditorAuthority';
 
 const inputClass = 'w-full border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none placeholder:text-dark-600 focus:border-primary-400';
 const secondaryButton = 'border border-dark-600 px-3 py-2 text-xs font-medium text-dark-200 hover:border-dark-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -170,20 +171,21 @@ export function NewStrategyDrawer({ metadata, metadataLoading, metadataError, is
   error: string | null;
   onDirtyChange: (dirty: boolean) => void;
   onClose: () => void;
-  onSubmit: (payload: StrategyCreateInput) => void;
+  onSubmit: (payload: StrategyCreateInput, authority: EditorSubmissionAuthority) => void;
 }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [version, setVersion] = useState<VersionDraft>({ version_label: '', description: '', rules: emptyRules() });
   const [confirmCancel, setConfirmCancel] = useState(false);
   const dirty = Boolean(name || description || version.version_label || version.description || allRules(version.rules).length);
+  const captureAuthority = useEditorAuthority('new-strategy', { name, description, version });
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   return <Drawer title={isKo ? '새 전략' : 'New Strategy'} subtitle={isKo ? '전략과 초기 버전을 함께 만듭니다.' : 'Create the strategy and its initial immutable version together.'} isKo={isKo} dirty={dirty} onClose={onClose}>
     <form className="space-y-5 p-5" onSubmit={(event) => {
       event.preventDefault();
       if (!name.trim() || !metadata || !validDraft(version, metadata)) return;
-      onSubmit({ name: name.trim(), description: normalizedDescription(description), initial_version: versionPayload(version, metadata) });
+      onSubmit({ name: name.trim(), description: normalizedDescription(description), initial_version: versionPayload(version, metadata) }, captureAuthority());
     }}>
       <div className="grid grid-cols-2 gap-4">
         <label className="text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input autoFocus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className={`mt-1.5 ${inputClass}`} /></label>
@@ -211,7 +213,7 @@ export function NewVersionDrawer({ strategy, versions, initialBase, metadata, me
   error: string | null;
   onDirtyChange: (dirty: boolean) => void;
   onClose: () => void;
-  onSubmit: (payload: StrategyVersionInput) => void;
+  onSubmit: (payload: StrategyVersionInput, authority: EditorSubmissionAuthority) => void;
 }) {
   const [baseId, setBaseId] = useState<number | null>(initialBase?.id ?? null);
   const [initial] = useState<VersionDraft>(() => ({ version_label: '', description: initialBase?.description ?? '', rules: initialBase ? cloneRules(initialBase.rules) : emptyRules() }));
@@ -220,6 +222,7 @@ export function NewVersionDrawer({ strategy, versions, initialBase, metadata, me
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [pendingBase, setPendingBase] = useState<{ id: number | null } | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const captureAuthority = useEditorAuthority(`new-version:${strategy.id}`, { baseId, draft });
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const applyBase = (nextId: number | null) => {
@@ -244,7 +247,7 @@ export function NewVersionDrawer({ strategy, versions, initialBase, metadata, me
   };
 
   return <Drawer title={isKo ? '새 버전' : 'New Version'} subtitle={`${strategy.name} · ${isKo ? '새 정의를 생성합니다. 기존 버전은 변경되지 않습니다.' : 'Creates a new definition. Existing versions stay unchanged.'}`} isKo={isKo} dirty={dirty} onClose={onClose}>
-    <form className="space-y-5 p-5" onSubmit={(event) => { event.preventDefault(); if (metadata && validDraft(draft, metadata)) onSubmit(versionPayload(draft, metadata)); }}>
+    <form className="space-y-5 p-5" onSubmit={(event) => { event.preventDefault(); if (metadata && validDraft(draft, metadata)) onSubmit(versionPayload(draft, metadata), captureAuthority()); }}>
       <div className="grid grid-cols-2 gap-4">
         <label className="text-xs text-dark-300">{isKo ? '버전 라벨' : 'Version label'}<input autoFocus aria-label={isKo ? '버전 라벨' : 'Version label'} value={draft.version_label} maxLength={80} onChange={(event) => setDraft({ ...draft, version_label: event.target.value })} className={`mt-1.5 ${inputClass}`} placeholder="v1.1" /></label>
         <label className="text-xs text-dark-300">{isKo ? '기준 버전' : 'Based on'}<select aria-label={isKo ? '기준 버전' : 'Based on'} value={baseId ?? ''} onChange={(event) => requestBaseChange(event.target.value ? Number(event.target.value) : null)} className={`mt-1.5 ${inputClass}`}><option value="">{isKo ? '빈 규칙 세트' : 'Empty rule set'}</option>{versions.map((version) => <option key={version.id} value={version.id}>{version.version_label}</option>)}</select></label>

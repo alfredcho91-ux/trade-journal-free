@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, BookMarked, Check, Edit3, Plus, RotateCcw, Search, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   activateStrategyVersion,
@@ -19,6 +19,7 @@ import UnsavedChangesDialog from '../features/journal/UnsavedChangesDialog';
 import { NewStrategyDrawer, NewVersionDrawer } from '../features/playbook/PlaybookDialogs';
 import { errorMessage, normalizedDescription } from '../features/playbook/strategyDraft';
 import { strategyQueryKeys } from '../features/playbook/strategyQueryKeys';
+import { useEditorAuthority, type EditorSubmissionAuthority } from '../hooks/useEditorAuthority';
 import { useLanguage } from '../store/useStore';
 import type { RuleEngineMetadata, Strategy, StrategyCreateInput, StrategyRuleV2, StrategyVersion, StrategyVersionInput } from '../types';
 
@@ -96,17 +97,18 @@ function EditStrategyDrawer({ strategy, isKo, pending, error, onDirtyChange, onC
   error: string | null;
   onDirtyChange: (dirty: boolean) => void;
   onClose: () => void;
-  onSubmit: (name: string, description: string | null) => void;
+  onSubmit: (name: string, description: string | null, authority: EditorSubmissionAuthority) => void;
 }) {
   const [name, setName] = useState(strategy.name);
   const [description, setDescription] = useState(strategy.description ?? '');
   const dirty = name !== strategy.name || description !== (strategy.description ?? '');
+  const captureAuthority = useEditorAuthority(`strategy:${strategy.id}`, { name, description });
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const [confirmClose, setConfirmClose] = useState(false);
   return <>
     <div className="pointer-events-none fixed inset-0 z-[70] bg-black/45"><aside className="pointer-events-auto absolute inset-y-0 right-0 w-[min(560px,58vw)] border-l border-dark-600 bg-dark-900 shadow-2xl" role="dialog" aria-modal="true" aria-label={isKo ? '전략 편집' : 'Edit Strategy'}>
       <header className="border-b border-dark-700 px-5 py-4"><h2 className="text-base font-semibold text-white">{isKo ? '전략 편집' : 'Edit Strategy'}</h2><p className="mt-1 text-xs text-dark-500">{isKo ? '이름과 설명만 변경합니다. 버전 정의는 읽기 전용입니다.' : 'Only name and description change. Version definitions remain read-only.'}</p></header>
-      <form className="space-y-4 p-5" onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSubmit(name.trim(), normalizedDescription(description)); }}>
+      <form className="space-y-4 p-5" onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSubmit(name.trim(), normalizedDescription(description), captureAuthority()); }}>
         <label className="block text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input autoFocus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-400" /></label>
         <label className="block text-xs text-dark-300">{isKo ? '전략 설명' : 'Strategy description'}<textarea aria-label={isKo ? '전략 설명' : 'Strategy description'} value={description} maxLength={2000} onChange={(event) => setDescription(event.target.value)} className="mt-1.5 min-h-28 w-full resize-y border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-400" /></label>
         {error && <p role="alert" className="border border-bear/40 bg-bear/10 px-3 py-2 text-xs text-bear">{error}</p>}
@@ -128,9 +130,6 @@ export default function PlaybookPage() {
   const [editorDirty, setEditorDirty] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<number | null>(null);
   const [confirmLifecycle, setConfirmLifecycle] = useState<LifecycleAction | null>(null);
-  const selectedStrategyRef = useRef<number | null>(null);
-  selectedStrategyRef.current = selectedStrategyId;
-
   const listQuery = useQuery({ queryKey: strategyQueryKeys.list(showArchived), queryFn: () => listStrategies(showArchived) });
   const metadataQuery = useQuery({
     queryKey: strategyQueryKeys.ruleMetadata(),
@@ -181,28 +180,30 @@ export default function PlaybookPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: (payload: StrategyCreateInput) => createStrategy(payload),
-    onSuccess: async (created) => {
+    mutationFn: ({ payload }: { payload: StrategyCreateInput; authority: EditorSubmissionAuthority }) => createStrategy(payload),
+    onSuccess: async (created, variables) => {
       queryClient.setQueriesData<Strategy[]>({ queryKey: strategyQueryKeys.lists() }, (current) => {
         if (!current) return current;
         return [...current.filter((strategy) => strategy.id !== created.id), created]
           .sort((a, b) => a.name.localeCompare(b.name));
       });
       queryClient.setQueryData(strategyQueryKeys.detail(created.id), created);
-      setEditor(null);
-      setEditorDirty(false);
-      setSelectedVersionId(null);
-      setSelectedStrategyId(created.id);
+      if (variables.authority.isCurrent()) {
+        setEditor(null);
+        setEditorDirty(false);
+        setSelectedVersionId(null);
+        setSelectedStrategyId(created.id);
+      }
       await queryClient.invalidateQueries({ queryKey: strategyQueryKeys.lists() });
     },
   });
   const updateMutation = useMutation({
-    mutationFn: ({ strategyId, name, description }: { strategyId: number; name: string; description: string | null }) => updateStrategy(strategyId, { name, description }),
-    onSuccess: async (_, variables) => { if (selectedStrategyRef.current === variables.strategyId) { setEditor(null); setEditorDirty(false); } await refreshStrategy(variables.strategyId); },
+    mutationFn: ({ strategyId, name, description }: { strategyId: number; name: string; description: string | null; authority: EditorSubmissionAuthority }) => updateStrategy(strategyId, { name, description }),
+    onSuccess: async (_, variables) => { if (variables.authority.isCurrent()) { setEditor(null); setEditorDirty(false); } await refreshStrategy(variables.strategyId); },
   });
   const versionMutation = useMutation({
-    mutationFn: ({ strategyId, payload }: { strategyId: number; payload: StrategyVersionInput }) => createStrategyVersion(strategyId, payload),
-    onSuccess: async (created, variables) => { if (selectedStrategyRef.current === variables.strategyId) { setEditor(null); setEditorDirty(false); } await refreshStrategy(variables.strategyId); if (selectedStrategyRef.current === variables.strategyId) setSelectedVersionId(created.id); },
+    mutationFn: ({ strategyId, payload }: { strategyId: number; payload: StrategyVersionInput; authority: EditorSubmissionAuthority }) => createStrategyVersion(strategyId, payload),
+    onSuccess: async (created, variables) => { const current = variables.authority.isCurrent(); if (current) { setEditor(null); setEditorDirty(false); } await refreshStrategy(variables.strategyId); if (current) setSelectedVersionId(created.id); },
   });
   const lifecycleMutation = useMutation<Strategy | StrategyVersion, Error, LifecycleVariables>({
     mutationFn: ({ action, strategyId, versionId }) => {
@@ -241,6 +242,18 @@ export default function PlaybookPage() {
       ? lifecycleMutation.variables.strategyName
       : lifecycleMutation.variables.versionLabel ?? lifecycleMutation.variables.strategyName
     : '';
+  const editorSavePending = [createMutation, updateMutation, versionMutation]
+    .some((mutation) => mutation.isPending && mutation.variables?.authority.isSameSession());
+  useEffect(() => {
+    if (!editorDirty && !editorSavePending) return;
+    const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    const navigate = (event: Event) => {
+      if (editorSavePending || !window.confirm(isKo ? '저장하지 않은 Playbook 변경을 버릴까요?' : 'Discard unsaved Playbook changes?')) event.preventDefault();
+    };
+    window.addEventListener('beforeunload', leave);
+    window.addEventListener('app-before-navigate', navigate);
+    return () => { window.removeEventListener('beforeunload', leave); window.removeEventListener('app-before-navigate', navigate); };
+  }, [editorDirty, editorSavePending, isKo]);
 
   return <div className="mx-auto max-w-[1420px]">
     <header className="mb-4 flex items-end justify-between gap-4 border-b border-dark-700 pb-4">
@@ -272,9 +285,9 @@ export default function PlaybookPage() {
       </section>
     </div>}
 
-    {editor === 'new-strategy' && <NewStrategyDrawer metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={createMutation.isPending} error={createMutation.error ? errorMessage(createMutation.error, 'Failed to create strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload: StrategyCreateInput) => createMutation.mutate(payload)} />}
-    {editor === 'edit-strategy' && selectedStrategy && <EditStrategyDrawer strategy={selectedStrategy} isKo={isKo} pending={updateMutation.isPending} error={updateMutation.error ? errorMessage(updateMutation.error, 'Failed to update strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(name, description) => updateMutation.mutate({ strategyId: selectedStrategy.id, name, description })} />}
-    {editor === 'new-version' && selectedStrategy && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={versionMutation.isPending} error={versionMutation.error ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload })} />}
+    {editor === 'new-strategy' && <NewStrategyDrawer metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={createMutation.isPending && Boolean(createMutation.variables?.authority.isSameSession())} error={createMutation.error && createMutation.variables?.authority.isSameSession() ? errorMessage(createMutation.error, 'Failed to create strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload, authority) => createMutation.mutate({ payload, authority })} />}
+    {editor === 'edit-strategy' && selectedStrategy && <EditStrategyDrawer strategy={selectedStrategy} isKo={isKo} pending={updateMutation.isPending && Boolean(updateMutation.variables?.authority.isSameSession())} error={updateMutation.error && updateMutation.variables?.authority.isSameSession() ? errorMessage(updateMutation.error, 'Failed to update strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(name, description, authority) => updateMutation.mutate({ strategyId: selectedStrategy.id, name, description, authority })} />}
+    {editor === 'new-version' && selectedStrategy && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={versionMutation.isPending && Boolean(versionMutation.variables?.authority.isSameSession())} error={versionMutation.error && versionMutation.variables?.authority.isSameSession() ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload, authority) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload, authority })} />}
 
     {pendingSelection !== null && <UnsavedChangesDialog isKo={isKo} onKeepEditing={() => setPendingSelection(null)} onDiscard={() => { const next = pendingSelection; setPendingSelection(null); setEditor(null); setEditorDirty(false); setSelectedVersionId(null); setSelectedStrategyId(next); }} />}
     {confirmLifecycle && selectedStrategy && <ConfirmDialog title={confirmLifecycle === 'archive' ? (isKo ? '전략 보관' : 'Archive Strategy') : confirmLifecycle === 'restore' ? (isKo ? '전략 복원' : 'Restore Strategy') : confirmLifecycle === 'activate' ? (isKo ? '버전 활성화' : 'Activate Version') : (isKo ? '버전 은퇴' : 'Retire Version')} body={confirmLifecycle === 'archive' ? (isKo ? '보관은 삭제가 아닙니다. 전략, 버전 기록과 규칙은 계속 열람할 수 있습니다.' : 'Archive does not delete anything. The strategy, version history, and rules remain viewable.') : confirmLifecycle === 'restore' ? (isKo ? '전략을 복원합니다. 활성 버전은 자동으로 선택되지 않습니다.' : 'Restore this strategy. No active version will be chosen automatically.') : confirmLifecycle === 'activate' ? (isKo ? `${selectedVersion?.version_label} 버전을 현재 활성 버전으로 지정합니다.` : `Make ${selectedVersion?.version_label} the current active version.`) : (isKo ? `${selectedVersion?.version_label} 버전을 은퇴 처리합니다. 기록은 유지됩니다.` : `Retire ${selectedVersion?.version_label}. Its history remains intact.`)} confirmLabel={confirmLifecycle === 'archive' ? (isKo ? '보관' : 'Archive') : confirmLifecycle === 'restore' ? (isKo ? '복원' : 'Restore') : confirmLifecycle === 'activate' ? (isKo ? '활성화' : 'Activate') : (isKo ? '은퇴' : 'Retire')} danger={confirmLifecycle === 'archive' || confirmLifecycle === 'retire'} onCancel={() => setConfirmLifecycle(null)} onConfirm={() => submitLifecycle(confirmLifecycle)} />}

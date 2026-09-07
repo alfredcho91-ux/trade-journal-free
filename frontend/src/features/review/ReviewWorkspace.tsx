@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getDiagnoses, getPatterns, getReview } from '../../api/review';
+import { getReview } from '../../api/review';
 import type { AnalyticsMetadata } from '../../types/analytics';
 import type { ReviewRequest } from '../../types/review';
 import { AnalyticsFilterInput } from '../analytics/AnalyticsFilters';
@@ -18,11 +18,9 @@ export default function ReviewWorkspace({ metadata, onExperiment }: { metadata: 
   const fingerprint = JSON.stringify(request);
   const enabled = request !== null && submitted === fingerprint;
   const review = useQuery({ queryKey: ['review','trading',request], queryFn: ({ signal }) => getReview(request!, signal), enabled, retry: false });
-  const patterns = useQuery({ queryKey: ['review','patterns',request], queryFn: ({ signal }) => getPatterns(request!, signal), enabled, retry: false });
-  const diagnoses = useQuery({ queryKey: ['review','diagnoses',request], queryFn: ({ signal }) => getDiagnoses(request!, signal), enabled, retry: false });
   return <div className="space-y-4">
     <header><h2 className="text-xl font-semibold">Trading Review 2.0</h2><p className="text-sm text-dark-300">What happened, where results differed, and which evidence deserves attention. Historical observations only.</p></header>
-    <form className={panel} onSubmit={event => { event.preventDefault(); setErrors(built.errors); if (request) { setSubmitted(fingerprint); if (enabled) { void review.refetch(); void patterns.refetch(); void diagnoses.refetch(); } } }}>
+    <form className={panel} onSubmit={event => { event.preventDefault(); setErrors(built.errors); if (request) { setSubmitted(fingerprint); if (enabled) void review.refetch(); } }}>
       <p className="text-xs">Close / exit time · UTC · Inclusive period boundaries</p>
       <div className="grid gap-4 md:grid-cols-2">{metadata.filters.filter(field => field.required).map(field => <AnalyticsFilterInput key={field.id} field={field} value={draft.filters[field.id] ?? ''} applicable onChange={v => { setDraft({ ...draft, filters: { ...draft.filters, [field.id]: v } }); setSubmitted(null); }} />)}</div>
       <details><summary>Recorded filters / exact StrategyVersion</summary><div className="mt-3 grid gap-4 md:grid-cols-2">{metadata.filters.filter(field => !field.required && field.id !== 'rule_statuses').map(field => <AnalyticsFilterInput key={field.id} field={field} value={draft.filters[field.id] ?? ''} applicable onChange={v => { setDraft({ ...draft, filters: { ...draft.filters, [field.id]: v } }); setSubmitted(null); }} />)}</div></details>
@@ -32,17 +30,15 @@ export default function ReviewWorkspace({ metadata, onExperiment }: { metadata: 
     </form>
     {!enabled && <p role="status">Choose a period and run review.</p>}
     {enabled && <>
-      {[review, patterns, diagnoses].some(query => query.isFetching) && <p role="status">Loading review evidence…</p>}
+      {review.isFetching && <p role="status">Loading review evidence…</p>}
       {review.isError && <p role="alert">Review: {analyticsError(review.error)}</p>}
-      {patterns.isError && <p role="alert">Patterns: {analyticsError(patterns.error)}</p>}
-      {diagnoses.isError && <p role="alert">Diagnosis: {analyticsError(diagnoses.error)}</p>}
-      {!review.isFetching && !review.isError && review.data && <ReviewSections data={review.data} />}
-      {!patterns.isFetching && !patterns.isError && patterns.data && <PatternFindings items={patterns.data.candidates} onExperiment={item => onExperiment(findingSeed(request!, item.metric, item.dimension, item.observed.identity))} />}
-      {!diagnoses.isFetching && !diagnoses.isError && diagnoses.data && <DiagnosisCards items={diagnoses.data.diagnoses} onExperiment={item => {
+      {!review.isFetching && !review.isError && review.data && <><ReviewSections data={review.data} />
+      <PatternFindings items={review.data.patterns.candidates} onExperiment={item => onExperiment(findingSeed(request!, item.metric, item.dimension, item.observed.identity))} />
+      <DiagnosisCards items={review.data.strategy_execution.diagnoses} onExperiment={item => {
         const seed = findingSeed(request!, 'average_r');
         if (item.identity.strategy_version_id !== null) seed.query.filters = { ...seed.query.filters, strategy_version_ids: [item.identity.strategy_version_id] };
         onExperiment(seed);
-      }} />}
+      }} /></>}
     </>}
   </div>;
 }
