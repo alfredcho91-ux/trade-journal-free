@@ -12,8 +12,6 @@ from backend.utils.error_handler import (
 )
 from backend.utils.response_builder import (
     success_response,
-    error_response,
-    paginated_response,
     wrap_response,
 )
 from backend.utils.validators import (
@@ -38,8 +36,6 @@ __all__ = [
     "handle_error",
     # Response building
     "success_response",
-    "error_response",
-    "paginated_response",
     "wrap_response",
     # Validation
     "validate_dataframe",
