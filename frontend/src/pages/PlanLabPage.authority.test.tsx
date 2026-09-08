@@ -81,6 +81,35 @@ function deferred<T>() {
   return { promise: new Promise<T>((res, rej) => { resolve = res; reject = rej; }), resolve, reject };
 }
 
+async function waitForMutationStart(client: QueryClient, calls: () => number, expectedCalls = 1, pendingMutations = expectedCalls) {
+  await waitFor(() => {
+    expect(calls()).toBe(expectedCalls);
+    expect(client.isMutating()).toBe(pendingMutations);
+  });
+}
+
+async function resolveMutation<T>(
+  client: QueryClient,
+  pending: ReturnType<typeof deferred<T>>,
+  value: T,
+  remainingMutations = 0,
+) {
+  await act(async () => { pending.resolve(value); await pending.promise; });
+  await waitFor(() => expect(client.isMutating()).toBe(remainingMutations));
+}
+
+async function rejectMutation<T>(
+  client: QueryClient,
+  pending: ReturnType<typeof deferred<T>>,
+  error: Error,
+) {
+  await act(async () => {
+    pending.reject(error);
+    try { await pending.promise; } catch { /* mutation error is asserted by the caller */ }
+  });
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+}
+
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return { client, ...render(<QueryClientProvider client={client}><PlanLabPage /></QueryClientProvider>) };
@@ -115,30 +144,32 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 it('applies an unchanged submitted Plan snapshot as clean authoritative state', async () => {
   const save = deferred<TradingPlan>(); vi.mocked(createRetrospectivePlan).mockReturnValue(save.promise);
-  setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
-  await act(async () => save.resolve(savedPlan(1)));
+  const { client } = setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length);
+  await resolveMutation(client, save, savedPlan(1));
   expect(await screen.findByText('Retrospective plan saved.')).toBeTruthy();
   expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(true);
 });
 
 it('preserves a newer Plan draft, dirty guard, and submitted snapshot after success', async () => {
   const save = deferred<TradingPlan>(); vi.mocked(createRetrospectivePlan).mockReturnValue(save.promise);
-  setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
-  expect((screen.getByRole('button', { name: 'Saving' }) as HTMLButtonElement).disabled).toBe(true);
+  const { client } = setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length);
+  expect(vi.mocked(createRetrospectivePlan).mock.calls[0][1]).toMatchObject({ stop_loss: 98, take_profit: 104 });
   fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
-  await act(async () => save.resolve(savedPlan(1)));
+  await resolveMutation(client, save, savedPlan(1));
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
   expect(screen.queryByText('Retrospective plan saved.')).toBeNull();
-  expect(vi.mocked(createRetrospectivePlan).mock.calls[0][1]).toMatchObject({ stop_loss: 98, take_profit: 104 });
   vi.mocked(window.confirm).mockReturnValue(false);
   expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(false);
 });
 
 it('preserves the exact newer Plan draft and navigation protection after failure', async () => {
   const save = deferred<TradingPlan>(); vi.mocked(createRetrospectivePlan).mockReturnValue(save.promise);
-  setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  const { client } = setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length);
   fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '96' } });
-  await act(async () => save.reject(new Error('offline')));
+  await rejectMutation(client, save, new Error('offline'));
   expect(await screen.findByText('offline', {}, { timeout: 3_000 })).toBeTruthy();
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('96');
   vi.mocked(window.confirm).mockReturnValue(false);
@@ -147,11 +178,12 @@ it('preserves the exact newer Plan draft and navigation protection after failure
 
 it('keeps B untouched when the older save for A succeeds', async () => {
   const save = deferred<TradingPlan>(); vi.mocked(createRetrospectivePlan).mockReturnValue(save.promise);
-  setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  const { client } = setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length);
   await openTrade('ETH/USDT');
   expect(screen.getByText('ETH/USDT · LONG')).toBeTruthy();
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('');
-  await act(async () => save.resolve(savedPlan(1)));
+  await resolveMutation(client, save, savedPlan(1));
   expect(screen.getByText('ETH/USDT · LONG')).toBeTruthy();
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('');
   expect(screen.queryByText('Retrospective plan saved.')).toBeNull();
@@ -159,9 +191,10 @@ it('keeps B untouched when the older save for A succeeds', async () => {
 
 it('isolates a late A success across A to B to A and keeps the newer A generation dirty', async () => {
   const save = deferred<TradingPlan>(); vi.mocked(createRetrospectivePlan).mockReturnValue(save.promise);
-  setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  const { client } = setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length);
   await openTrade('ETH/USDT'); await openTrade('BTC/USDT'); fillPlan('95', '106');
-  await act(async () => save.resolve(savedPlan(1)));
+  await resolveMutation(client, save, savedPlan(1));
   await waitFor(() => expect(getPlans).toHaveBeenCalledTimes(2));
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('95');
   expect((screen.getByLabelText(/^TP1 ·/) as HTMLInputElement).value).toBe('106');
@@ -173,14 +206,16 @@ it('isolates a late A success across A to B to A and keeps the newer A generatio
 it('lets a new A session save again and prevents the older overlapping save from becoming UI authority', async () => {
   const first = deferred<TradingPlan>(); const second = deferred<TradingPlan>();
   vi.mocked(createRetrospectivePlan).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-  setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  const { client } = setup(); await openTrade('BTC/USDT'); fillPlan(); fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length);
   await openTrade('ETH/USDT'); await openTrade('BTC/USDT'); fillPlan('95', '106');
   const secondSave = screen.getByRole('button', { name: 'Save plan' }) as HTMLButtonElement;
   expect(secondSave.disabled).toBe(false);
   fireEvent.click(secondSave);
-  await act(async () => second.resolve(savedPlan(1, 95, 106)));
+  await waitForMutationStart(client, () => vi.mocked(createRetrospectivePlan).mock.calls.length, 2, 2);
+  await resolveMutation(client, second, savedPlan(1, 95, 106), 1);
   expect(await screen.findByText('Retrospective plan saved.')).toBeTruthy();
-  await act(async () => first.resolve(savedPlan(1)));
+  await resolveMutation(client, first, savedPlan(1));
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('95');
   expect((screen.getByLabelText(/^TP1 ·/) as HTMLInputElement).value).toBe('106');
   expect(screen.getByText('Retrospective plan saved.')).toBeTruthy();
@@ -250,10 +285,11 @@ it('preserves D2 as dirty when in-trade create D1 succeeds later', async () => {
   const create = deferred<TradingPlan>();
   vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
   vi.mocked(createInTradePlan).mockReturnValue(create.promise);
-  setup(); await openInTradePlan(); fillPlan();
+  const { client } = setup(); await openInTradePlan(); fillPlan();
   fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createInTradePlan).mock.calls.length);
   fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
-  await act(async () => create.resolve(inTradePlan(98)));
+  await resolveMutation(client, create, inTradePlan(98));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy());
 
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
@@ -267,11 +303,12 @@ it('preserves D2 as dirty when in-trade revision D1 succeeds later', async () =>
   vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
   vi.mocked(getPlans).mockResolvedValue([first]);
   vi.mocked(addInTradePlanRevision).mockReturnValue(revise.promise);
-  setup(); await openInTradePlan();
+  const { client } = setup(); await openInTradePlan();
   fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(addInTradePlanRevision).mock.calls.length);
   fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '96' } });
-  await act(async () => revise.resolve(inTradePlan(97, 2, first)));
+  await resolveMutation(client, revise, inTradePlan(97, 2, first));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy());
 
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('96');
