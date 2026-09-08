@@ -735,6 +735,74 @@ describe('Playbook frontend acceptance', () => {
     expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toBeTruthy();
   });
 
+  function heldVersionRefresh() {
+    const base = version(1, 10, { version_label: 'v1.0' });
+    const b = version(1, 11, { version_label: 'v1.1', is_active: false });
+    const c = version(1, 12, { version_label: 'v1.2', is_active: false });
+    const created = version(1, 13, { version_label: 'v2.0', is_active: false });
+    const refresh = deferred<StrategyVersion[]>();
+    mockedVersions.mockImplementationOnce(async () => [base, b, c]).mockReturnValue(refresh.promise);
+    mockedCreateVersion.mockResolvedValue(created);
+    return { base, b, c, created, refresh };
+  }
+
+  async function submitVersion(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.type(screen.getByLabelText('Version label'), 'v2.0');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    await waitFor(() => expect(mockedVersions.mock.calls.length).toBeGreaterThanOrEqual(2));
+  }
+
+  it('selects the created Version when its refresh completes without newer selection intent', async () => {
+    const { created, refresh } = heldVersionRefresh();
+    const user = userEvent.setup(); renderPage();
+    await submitVersion(user);
+    refresh.resolve([version(1, 10), version(1, 11, { is_active: false }), version(1, 12, { is_active: false }), created]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /v2\.0/ }).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it('preserves an explicit Version B selection made while the created Version refreshes', async () => {
+    const { b, created, refresh } = heldVersionRefresh();
+    const user = userEvent.setup(); renderPage();
+    await submitVersion(user);
+    await user.click(screen.getByRole('button', { name: /v1\.1/ }));
+    refresh.resolve([version(1, 10), b, version(1, 12, { is_active: false }), created]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /v2\.0/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /v1\.1/ }).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it('preserves the newest of Version B then C selections while the created Version refreshes', async () => {
+    const { b, c, created, refresh } = heldVersionRefresh();
+    const user = userEvent.setup(); renderPage();
+    await submitVersion(user);
+    await user.click(screen.getByRole('button', { name: /v1\.1/ }));
+    await user.click(screen.getByRole('button', { name: /v1\.2/ }));
+    refresh.resolve([version(1, 10), b, c, created]);
+    await waitFor(() => expect(screen.getByRole('button', { name: /v1\.2/ }).getAttribute('aria-pressed')).toBe('true'));
+  });
+
+  it('does not let a created Version refresh for Strategy A affect a newer Strategy context', async () => {
+    const { refresh } = heldVersionRefresh();
+    mockedVersions.mockImplementation((strategyId) => strategyId === 2
+      ? Promise.resolve([version(2, 20, { version_label: 'v4.0' })])
+      : refresh.promise);
+    const user = userEvent.setup(); renderPage();
+    await submitVersion(user);
+    await user.click(screen.getByRole('button', { name: /Mean Reversion/ }));
+    refresh.resolve([version(1, 10), version(1, 11, { is_active: false }), version(1, 12, { is_active: false }), version(1, 13, { version_label: 'v2.0', is_active: false })]);
+    await waitFor(() => expect(screen.getAllByText('Fade market extension').length).toBeGreaterThan(0));
+    expect(screen.getAllByRole('button', { name: /v4\.0/ }).find((button) => button.textContent?.startsWith('v4.0'))?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not overwrite a newer Version selection when the refresh reports an error', async () => {
+    const { refresh } = heldVersionRefresh();
+    const user = userEvent.setup(); renderPage();
+    await submitVersion(user);
+    await user.click(screen.getByRole('button', { name: /v1\.1/ }));
+    refresh.reject(new Error('refresh failed'));
+    await waitFor(() => expect(screen.getByRole('button', { name: /v1\.1/ }).getAttribute('aria-pressed')).toBe('true'));
+  });
+
   it('keeps newer immutable-Version input when the older submitted Version succeeds', async () => {
     const created = deferred<StrategyVersion>(); mockedCreateVersion.mockReturnValue(created.promise);
     const user = userEvent.setup(); renderPage();
