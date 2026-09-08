@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import {
+  addInTradePlanRevision,
+  createInTradePlan,
   createRetrospectivePlan,
   getExchangeOpenPositions,
   getExchangeStatuses,
@@ -28,10 +30,40 @@ const trades: JournalEntry[] = [
   { id: 2, external_id: 'B', source: 'deepcoin_position', exchange: 'deepcoin', symbol: 'ETH/USDT', direction: 'Long', entry_datetime: '2026-09-03T10:00:00Z', datetime: '2026-09-04T10:00:00Z', entry_price: 200, exit_price: 206, realized_pnl: 60 },
 ];
 
-function savedPlan(journalId: number): TradingPlan {
-  const revision = { id: journalId, plan_id: journalId, version: 1, entry_price: null, entry_min: null, entry_max: null, stop_loss: 98, take_profit: 104, take_profit_2: null, received_at: '2026-09-05T00:00:00Z', created_at: '2026-09-05T00:00:00Z' };
+const livePosition = {
+  exchange: 'deepcoin' as const,
+  position_id: 'live-1',
+  symbol: 'BTC/USDT',
+  direction: 'Long' as const,
+  size: 1,
+  average_price: 100,
+  last_price: 101,
+  unrealized_pnl: 1,
+  opened_at: '2026-09-08T00:00:00Z',
+  lifecycle_available: true,
+};
+
+function savedPlan(journalId: number, stopLoss = 98, takeProfit = 104): TradingPlan {
+  const revision = { id: journalId, plan_id: journalId, version: 1, entry_price: null, entry_min: null, entry_max: null, stop_loss: stopLoss, take_profit: takeProfit, take_profit_2: null, received_at: '2026-09-05T00:00:00Z', created_at: '2026-09-05T00:00:00Z' };
   return { id: journalId, exchange: 'deepcoin', symbol: trades[journalId - 1].symbol!, symbol_key: trades[journalId - 1].symbol!.replace('/', ''), side: 'Long', status: 'linked', source: 'RETROSPECTIVE', received_at: revision.received_at, created_at: revision.created_at, updated_at: revision.created_at, revisions: [revision], latest_revision: revision,
     link: { id: journalId, plan_id: journalId, journal_entry_id: journalId, link_status: 'LINKED', linked_at: revision.created_at, updated_at: revision.created_at } };
+}
+
+function inTradePlan(stopLoss: number, version = 1, previous: TradingPlan | null = null): TradingPlan {
+  const revision = {
+    id: version, plan_id: 100, version, entry_price: null, entry_min: null, entry_max: null,
+    stop_loss: stopLoss, take_profit: 104, take_profit_2: null, max_hold_hours: null,
+    setup: null, entry_note: null, exit_note: null, memo: null,
+    received_at: `2026-09-08T00:0${version}:00Z`, created_at: `2026-09-08T00:0${version}:00Z`,
+  };
+  const revisions = [...(previous?.revisions ?? []), revision];
+  return {
+    id: 100, exchange: 'deepcoin', symbol: 'BTC/USDT', symbol_key: 'BTCUSDT', side: 'Long',
+    status: 'active', source: 'IN_TRADE', live_position_id: livePosition.position_id,
+    live_entry_at: livePosition.opened_at, received_at: revisions[0].received_at,
+    created_at: revisions[0].created_at, updated_at: revision.created_at,
+    revisions, latest_revision: revision, link: null,
+  };
 }
 
 const emptyAnalysis: PlanLabData = {
@@ -59,6 +91,11 @@ async function openTrade(symbol: string) {
   const row = matches.find((element) => element.tagName === 'TD')?.closest('tr');
   if (!row) throw new Error(`Missing row for ${symbol}`);
   fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
+}
+
+async function openInTradePlan() {
+  fireEvent.click(await screen.findByRole('button', { name: /Enter plan|Edit plan/ }));
+  await screen.findByRole('heading', { name: /Enter in-trade plan|Edit in-trade plan/ });
 }
 
 function fillPlan(stop = '98', target = '104') {
@@ -141,7 +178,7 @@ it('lets a new A session save again and prevents the older overlapping save from
   const secondSave = screen.getByRole('button', { name: 'Save plan' }) as HTMLButtonElement;
   expect(secondSave.disabled).toBe(false);
   fireEvent.click(secondSave);
-  await act(async () => second.resolve(savedPlan(1)));
+  await act(async () => second.resolve(savedPlan(1, 95, 106)));
   expect(await screen.findByText('Retrospective plan saved.')).toBeTruthy();
   await act(async () => first.resolve(savedPlan(1)));
   expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('95');
@@ -149,4 +186,112 @@ it('lets a new A session save again and prevents the older overlapping save from
   expect(screen.getByText('Retrospective plan saved.')).toBeTruthy();
   expect(vi.mocked(createRetrospectivePlan).mock.calls[0][1]).toMatchObject({ stop_loss: 98, take_profit: 104 });
   expect(vi.mocked(createRetrospectivePlan).mock.calls[1][1]).toMatchObject({ stop_loss: 95, take_profit: 106 });
+});
+
+it('keeps the created in-trade Plan as the target and persists the second save as revision 2', async () => {
+  const server = { authoritative: null as TradingPlan | null };
+  vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
+  vi.mocked(getPlans).mockImplementation(async () => server.authoritative ? [server.authoritative] : []);
+  vi.mocked(createInTradePlan).mockImplementation(async () => {
+    server.authoritative = inTradePlan(98);
+    return server.authoritative;
+  });
+  vi.mocked(addInTradePlanRevision).mockImplementation(async (_id, revision) => {
+    server.authoritative = inTradePlan(revision.stop_loss, 2, server.authoritative);
+    return server.authoritative;
+  });
+
+  setup(); await openInTradePlan(); fillPlan();
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitFor(() => expect(createInTradePlan).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy());
+
+  fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitFor(() => expect(addInTradePlanRevision).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy());
+
+  expect(createInTradePlan).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(addInTradePlanRevision).mock.calls[0][1]).toMatchObject({ stop_loss: 97, take_profit: 104 });
+  expect(server.authoritative?.latest_revision.stop_loss).toBe(97);
+  expect(server.authoritative?.revisions).toHaveLength(2);
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
+  vi.mocked(window.confirm).mockReturnValue(false);
+  expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(true);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit in-trade plan' })).toBeNull());
+  await openInTradePlan();
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
+});
+
+it('keeps a submitted draft dirty when idempotent create returns a different existing Plan', async () => {
+  const existing = inTradePlan(98);
+  vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
+  vi.mocked(createInTradePlan).mockResolvedValue(existing);
+  vi.mocked(addInTradePlanRevision).mockResolvedValue(inTradePlan(97, 2, existing));
+  setup(); await openInTradePlan(); fillPlan('97', '104');
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+
+  expect(await screen.findByText('The saved Plan differs from your submission. Your current input remains unsaved.')).toBeTruthy();
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
+  vi.mocked(window.confirm).mockReturnValue(false);
+  expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(false);
+  expect(window.confirm).toHaveBeenCalledTimes(1);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitFor(() => expect(addInTradePlanRevision).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByText('The saved Plan differs from your submission. Your current input remains unsaved.')).toBeNull());
+  expect(createInTradePlan).toHaveBeenCalledTimes(1);
+  expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(true);
+});
+
+it('preserves D2 as dirty when in-trade create D1 succeeds later', async () => {
+  const create = deferred<TradingPlan>();
+  vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
+  vi.mocked(createInTradePlan).mockReturnValue(create.promise);
+  setup(); await openInTradePlan(); fillPlan();
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
+  await act(async () => create.resolve(inTradePlan(98)));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy());
+
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
+  vi.mocked(window.confirm).mockReturnValue(false);
+  expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(false);
+});
+
+it('preserves D2 as dirty when in-trade revision D1 succeeds later', async () => {
+  const first = inTradePlan(98);
+  const revise = deferred<TradingPlan>();
+  vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
+  vi.mocked(getPlans).mockResolvedValue([first]);
+  vi.mocked(addInTradePlanRevision).mockReturnValue(revise.promise);
+  setup(); await openInTradePlan();
+  fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '96' } });
+  await act(async () => revise.resolve(inTradePlan(97, 2, first)));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save plan' })).toBeTruthy());
+
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('96');
+  vi.mocked(window.confirm).mockReturnValue(false);
+  expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(false);
+});
+
+it.each([
+  ['create', null],
+  ['revision', inTradePlan(98)],
+] as const)('preserves the draft and dirty guard after an in-trade %s failure', async (_operation, existing) => {
+  vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [livePosition], unavailable_exchanges: [] });
+  vi.mocked(getPlans).mockResolvedValue(existing ? [existing] : []);
+  if (existing) vi.mocked(addInTradePlanRevision).mockRejectedValue(new Error('revision failed'));
+  else vi.mocked(createInTradePlan).mockRejectedValue(new Error('create failed'));
+  setup(); await openInTradePlan(); fillPlan('97', '104');
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+
+  expect(await screen.findByText(existing ? 'revision failed' : 'create failed')).toBeTruthy();
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
+  vi.mocked(window.confirm).mockReturnValue(false);
+  expect(window.dispatchEvent(new Event('app-before-navigate', { cancelable: true }))).toBe(false);
 });

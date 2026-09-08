@@ -103,6 +103,19 @@ function draftFromPlan(plan: TradingPlan): PlanDraft {
   };
 }
 
+function draftMatchesPlan(draft: PlanDraft, plan: TradingPlan): boolean {
+  const authoritative = draftFromPlan(plan);
+  const withoutPlannedEntry = plan.source === 'RETROSPECTIVE' || plan.source === 'IN_TRADE';
+  const submittedRevision = revisionPayload(draft, withoutPlannedEntry);
+  const authoritativeRevision = revisionPayload(authoritative, withoutPlannedEntry);
+  return submittedRevision !== null
+    && authoritativeRevision !== null
+    && draft.exchange === authoritative.exchange
+    && normalizeSymbol(draft.symbol) === normalizeSymbol(authoritative.symbol)
+    && draft.side === authoritative.side
+    && JSON.stringify(submittedRevision) === JSON.stringify(authoritativeRevision);
+}
+
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value || '').toUpperCase().split(':', 1)[0].replace(/[^A-Z0-9]/g, '');
 }
@@ -532,10 +545,28 @@ export default function PlanLabPage() {
     onSuccess: async ({ plan, targetJournalId }, variables) => {
       const sameSession = variables.authority.isSameSession();
       const current = variables.authority.isCurrent();
-      if (sameSession) setDraftBaseline(variables.draft);
-      if (current) {
+      const authoritativeDraft = draftFromPlan(plan);
+      const responseBelongsToEditor = variables.revisionTarget
+        ? plan.id === variables.revisionTarget.id
+        : variables.historicalTradeId !== null
+          ? plan.link?.journal_entry_id === variables.historicalTradeId
+          : true;
+      const submittedDraftWasSaved = responseBelongsToEditor && draftMatchesPlan(variables.draft, plan);
+      if (sameSession && responseBelongsToEditor) {
+        setDraftBaseline(authoritativeDraft);
+        setRevisionTarget(plan);
+      }
+      if (current && submittedDraftWasSaved) {
+        setDraft(authoritativeDraft);
         if (variables.historicalTradeId) setAnalysisRequested(true);
-        setSavedTradeId(variables.historicalTradeId); setRevisionTarget(undefined); setShowPretrade(false); setFormError(null);
+        setSavedTradeId(variables.historicalTradeId);
+        if (!variables.historicalTradeId) setRevisionTarget(undefined);
+        setShowPretrade(false); setFormError(null);
+      } else if (current) {
+        setSavedTradeId(null);
+        setFormError(isKo
+          ? '서버에 저장된 계획이 제출 내용과 다릅니다. 현재 입력은 저장되지 않은 상태로 유지됩니다.'
+          : 'The saved Plan differs from your submission. Your current input remains unsaved.');
       }
       await invalidate(plan.link?.journal_entry_id ?? targetJournalId);
     },
@@ -560,8 +591,23 @@ export default function PlanLabPage() {
     onSuccess: async (plan, variables) => {
       const sameSession = variables.authority.isSameSession();
       const current = variables.authority.isCurrent();
-      if (sameSession) setDraftBaseline(variables.draft);
-      if (current) { setFormError(null); setInTradeRevisionTarget(undefined); }
+      const authoritativeDraft = draftFromPlan(plan);
+      const responseBelongsToEditor = plan.source === 'IN_TRADE'
+        && plan.live_position_id === variables.openPositionTarget.position_id
+        && plan.exchange.toLowerCase() === variables.openPositionTarget.exchange.toLowerCase();
+      const submittedDraftWasSaved = responseBelongsToEditor && draftMatchesPlan(variables.draft, plan);
+      if (sameSession && responseBelongsToEditor) {
+        setDraftBaseline(authoritativeDraft);
+        setInTradeRevisionTarget(plan);
+      }
+      if (current && submittedDraftWasSaved) {
+        setDraft(authoritativeDraft);
+        setFormError(null);
+      } else if (current) {
+        setFormError(isKo
+          ? '서버에 저장된 계획이 제출 내용과 다릅니다. 현재 입력은 저장되지 않은 상태로 유지됩니다.'
+          : 'The saved Plan differs from your submission. Your current input remains unsaved.');
+      }
       await Promise.all([
         invalidate(plan.link?.journal_entry_id),
         queryClient.invalidateQueries({ queryKey: exchangeQueryKeys.openPositions }),
