@@ -735,6 +735,82 @@ describe('Playbook frontend acceptance', () => {
     expect(screen.getByRole('dialog', { name: 'Unsaved changes' })).toBeTruthy();
   });
 
+  function deferredVersionCreate() {
+    const base = version(1, 10, { version_label: 'v1.0' });
+    const b = version(1, 11, { version_label: 'v1.1', is_active: false });
+    const c = version(1, 13, { version_label: 'v2.0', is_active: false });
+    const create = deferred<StrategyVersion>();
+    const refresh = deferred<StrategyVersion[]>();
+    let holdRefresh = false;
+    mockedCreateVersion.mockReturnValue(create.promise);
+    mockedVersions.mockImplementation((strategyId) => strategyId === 2
+      ? Promise.resolve([version(2, 20, { version_label: 'v4.0' })])
+      : holdRefresh ? refresh.promise : Promise.resolve([base, b]));
+    return {
+      base,
+      b,
+      c,
+      create,
+      refresh,
+      beginRefresh: () => { holdRefresh = true; },
+    };
+  }
+
+  async function beginDeferredVersionCreate(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'New Version' }));
+    await user.type(screen.getByLabelText('Version label'), 'v2.0');
+    await user.click(screen.getByRole('button', { name: 'Create Version' }));
+    await waitFor(() => expect(mockedCreateVersion).toHaveBeenCalledTimes(1));
+  }
+
+  async function resolveCreateAndRefresh(
+    create: ReturnType<typeof deferred<StrategyVersion>>,
+    refresh: ReturnType<typeof deferred<StrategyVersion[]>>,
+    created: StrategyVersion,
+    refreshed: StrategyVersion[],
+  ) {
+    await act(async () => { create.resolve(created); await create.promise; });
+    await act(async () => { refresh.resolve(refreshed); await refresh.promise; });
+    await waitFor(() => expect(screen.getByRole('button', { name: /v2\.0/ })).toBeTruthy());
+  }
+
+  it('does not let a discarded editor creation select over Version 11 chosen before create success', async () => {
+    const { base, b, c, create, refresh, beginRefresh } = deferredVersionCreate();
+    const user = userEvent.setup(); renderPage();
+    await beginDeferredVersionCreate(user);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await user.click(await screen.findByRole('button', { name: /v1\.1/ }));
+    beginRefresh();
+    await resolveCreateAndRefresh(create, refresh, c, [base, b, c]);
+    expect(screen.getByRole('button', { name: /v1\.1/ }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('does not let an A to B to A round-trip before create success select the created Version', async () => {
+    const { base, b, c, create, refresh, beginRefresh } = deferredVersionCreate();
+    const user = userEvent.setup(); renderPage();
+    await beginDeferredVersionCreate(user);
+    await user.click(screen.getByRole('button', { name: /Mean Reversion/ }));
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await user.click(screen.getByRole('button', { name: /Breakout Momentum/ }));
+    await user.click(await screen.findByRole('button', { name: /v1\.1/ }));
+    beginRefresh();
+    await resolveCreateAndRefresh(create, refresh, c, [base, b, c]);
+    expect(screen.getByRole('button', { name: /v1\.1/ }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('treats an A to B to A round-trip as newer selection intent without an explicit Version click', async () => {
+    const { base, b, c, create, refresh, beginRefresh } = deferredVersionCreate();
+    const user = userEvent.setup(); renderPage();
+    await beginDeferredVersionCreate(user);
+    await user.click(screen.getByRole('button', { name: /Mean Reversion/ }));
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    await user.click(screen.getByRole('button', { name: /Breakout Momentum/ }));
+    beginRefresh();
+    await resolveCreateAndRefresh(create, refresh, c, [base, b, c]);
+    expect(screen.getAllByRole('button', { name: /v1\.0/ }).find((button) => button.textContent?.startsWith('v1.0'))?.getAttribute('aria-pressed')).toBe('true');
+  });
+
   function heldVersionRefresh() {
     const base = version(1, 10, { version_label: 'v1.0' });
     const b = version(1, 11, { version_label: 'v1.1', is_active: false });
@@ -799,7 +875,11 @@ describe('Playbook frontend acceptance', () => {
     const user = userEvent.setup(); renderPage();
     await submitVersion(user);
     await user.click(screen.getByRole('button', { name: /v1\.1/ }));
-    refresh.reject(new Error('refresh failed'));
+    await act(async () => {
+      refresh.reject(new Error('refresh failed'));
+      try { await refresh.promise; } catch { /* query failure is asserted below */ }
+    });
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('refresh failed'));
     await waitFor(() => expect(screen.getByRole('button', { name: /v1\.1/ }).getAttribute('aria-pressed')).toBe('true'));
   });
 

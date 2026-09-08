@@ -28,6 +28,12 @@ const primaryButton = 'inline-flex items-center gap-1.5 border border-primary-40
 
 type Editor = 'new-strategy' | 'edit-strategy' | 'new-version' | null;
 type LifecycleAction = 'archive' | 'restore' | 'activate' | 'retire';
+interface VersionCreateVariables {
+  strategyId: number;
+  payload: StrategyVersionInput;
+  authority: EditorSubmissionAuthority;
+  selectionAtStart: number;
+}
 interface LifecycleVariables {
   action: LifecycleAction;
   strategyId: number;
@@ -205,12 +211,17 @@ export default function PlaybookPage() {
     onSuccess: async (_, variables) => { if (variables.authority.isCurrent()) { setEditor(null); setEditorDirty(false); } await refreshStrategy(variables.strategyId); },
   });
   const versionMutation = useMutation({
-    mutationFn: ({ strategyId, payload }: { strategyId: number; payload: StrategyVersionInput; authority: EditorSubmissionAuthority }) => createStrategyVersion(strategyId, payload),
+    mutationFn: ({ strategyId, payload }: VersionCreateVariables) => createStrategyVersion(strategyId, payload),
     onSuccess: async (created, variables) => {
-      const selectionAtSuccess = selectionIntent.current;
-      if (variables.authority.isCurrent()) { setEditor(null); setEditorDirty(false); }
+      if (!variables.authority.isCurrent()) {
+        await refreshStrategy(variables.strategyId);
+        return;
+      }
+      setEditor(null);
+      setEditorDirty(false);
       await refreshStrategy(variables.strategyId);
-      if (selectedStrategyRef.current === variables.strategyId && selectionIntent.current === selectionAtSuccess) setSelectedVersionId(created.id);
+      if (selectedStrategyRef.current === variables.strategyId
+        && selectionIntent.current === variables.selectionAtStart) setSelectedVersionId(created.id);
     },
   });
   const lifecycleMutation = useMutation<Strategy | StrategyVersion, Error, LifecycleVariables>({
@@ -230,7 +241,7 @@ export default function PlaybookPage() {
     setSelectedVersionId(null);
     setSelectedStrategyId(strategyId);
   };
-  const openEditor = (next: Editor) => { createMutation.reset(); updateMutation.reset(); versionMutation.reset(); setEditorDirty(false); setEditor(next); };
+  const openEditor = (next: Editor) => { selectionIntent.current += 1; createMutation.reset(); updateMutation.reset(); versionMutation.reset(); setEditorDirty(false); setEditor(next); };
   const openNewVersionEditor = () => openEditor('new-version');
   const submitLifecycle = (action: LifecycleAction) => {
     if (!selectedStrategy) return;
@@ -296,7 +307,7 @@ export default function PlaybookPage() {
 
     {editor === 'new-strategy' && <NewStrategyDrawer metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={createMutation.isPending && Boolean(createMutation.variables?.authority.isSameSession())} error={createMutation.error && createMutation.variables?.authority.isSameSession() ? errorMessage(createMutation.error, 'Failed to create strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload, authority) => createMutation.mutate({ payload, authority })} />}
     {editor === 'edit-strategy' && selectedStrategy && <EditStrategyDrawer strategy={selectedStrategy} isKo={isKo} pending={updateMutation.isPending && Boolean(updateMutation.variables?.authority.isSameSession())} error={updateMutation.error && updateMutation.variables?.authority.isSameSession() ? errorMessage(updateMutation.error, 'Failed to update strategy.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(name, description, authority) => updateMutation.mutate({ strategyId: selectedStrategy.id, name, description, authority })} />}
-    {editor === 'new-version' && selectedStrategy && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={versionMutation.isPending && Boolean(versionMutation.variables?.authority.isSameSession())} error={versionMutation.error && versionMutation.variables?.authority.isSameSession() ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload, authority) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload, authority })} />}
+    {editor === 'new-version' && selectedStrategy && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={versionMutation.isPending && Boolean(versionMutation.variables?.authority.isSameSession())} error={versionMutation.error && versionMutation.variables?.authority.isSameSession() ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload, authority) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload, authority, selectionAtStart: selectionIntent.current })} />}
 
     {pendingSelection !== null && <UnsavedChangesDialog isKo={isKo} onKeepEditing={() => setPendingSelection(null)} onDiscard={() => { const next = pendingSelection; setPendingSelection(null); setEditor(null); setEditorDirty(false); selectionIntent.current += 1; setSelectedVersionId(null); setSelectedStrategyId(next); }} />}
     {confirmLifecycle && selectedStrategy && <ConfirmDialog title={confirmLifecycle === 'archive' ? (isKo ? '전략 보관' : 'Archive Strategy') : confirmLifecycle === 'restore' ? (isKo ? '전략 복원' : 'Restore Strategy') : confirmLifecycle === 'activate' ? (isKo ? '버전 활성화' : 'Activate Version') : (isKo ? '버전 은퇴' : 'Retire Version')} body={confirmLifecycle === 'archive' ? (isKo ? '보관은 삭제가 아닙니다. 전략, 버전 기록과 규칙은 계속 열람할 수 있습니다.' : 'Archive does not delete anything. The strategy, version history, and rules remain viewable.') : confirmLifecycle === 'restore' ? (isKo ? '전략을 복원합니다. 활성 버전은 자동으로 선택되지 않습니다.' : 'Restore this strategy. No active version will be chosen automatically.') : confirmLifecycle === 'activate' ? (isKo ? `${selectedVersion?.version_label} 버전을 현재 활성 버전으로 지정합니다.` : `Make ${selectedVersion?.version_label} the current active version.`) : (isKo ? `${selectedVersion?.version_label} 버전을 은퇴 처리합니다. 기록은 유지됩니다.` : `Retire ${selectedVersion?.version_label}. Its history remains intact.`)} confirmLabel={confirmLifecycle === 'archive' ? (isKo ? '보관' : 'Archive') : confirmLifecycle === 'restore' ? (isKo ? '복원' : 'Restore') : confirmLifecycle === 'activate' ? (isKo ? '활성화' : 'Activate') : (isKo ? '은퇴' : 'Retire')} danger={confirmLifecycle === 'archive' || confirmLifecycle === 'retire'} onCancel={() => setConfirmLifecycle(null)} onConfirm={() => submitLifecycle(confirmLifecycle)} />}
