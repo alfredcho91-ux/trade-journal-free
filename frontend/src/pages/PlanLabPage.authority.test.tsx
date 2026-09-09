@@ -5,8 +5,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import {
+  addPlanRevision,
   addInTradePlanRevision,
   createInTradePlan,
+  createPlan,
   createRetrospectivePlan,
   getExchangeOpenPositions,
   getExchangeStatuses,
@@ -47,6 +49,33 @@ function savedPlan(journalId: number, stopLoss = 98, takeProfit = 104): TradingP
   const revision = { id: journalId, plan_id: journalId, version: 1, entry_price: null, entry_min: null, entry_max: null, stop_loss: stopLoss, take_profit: takeProfit, take_profit_2: null, received_at: '2026-09-05T00:00:00Z', created_at: '2026-09-05T00:00:00Z' };
   return { id: journalId, exchange: 'deepcoin', symbol: trades[journalId - 1].symbol!, symbol_key: trades[journalId - 1].symbol!.replace('/', ''), side: 'Long', status: 'linked', source: 'RETROSPECTIVE', received_at: revision.received_at, created_at: revision.created_at, updated_at: revision.created_at, revisions: [revision], latest_revision: revision,
     link: { id: journalId, plan_id: journalId, journal_entry_id: journalId, link_status: 'LINKED', linked_at: revision.created_at, updated_at: revision.created_at } };
+}
+
+function revisedPlan(previous: TradingPlan, stopLoss: number, version = 2): TradingPlan {
+  const revision = {
+    ...previous.latest_revision,
+    id: version,
+    version,
+    stop_loss: stopLoss,
+    created_at: `2026-09-05T00:0${version}:00Z`,
+  };
+  return { ...previous, updated_at: revision.created_at, revisions: [...previous.revisions, revision], latest_revision: revision };
+}
+
+function pretradePlan(stopLoss: number, version = 1, previous: TradingPlan | null = null): TradingPlan {
+  const revision = {
+    id: version, plan_id: 200, version, entry_price: 100, entry_min: null, entry_max: null,
+    stop_loss: stopLoss, take_profit: 104, take_profit_2: null, max_hold_hours: null,
+    setup: null, entry_note: null, exit_note: null, memo: null,
+    received_at: `2026-09-08T01:0${version}:00Z`, created_at: `2026-09-08T01:0${version}:00Z`,
+  };
+  const revisions = [...(previous?.revisions ?? []), revision];
+  return {
+    id: 200, exchange: 'deepcoin', symbol: 'BTC/USDT', symbol_key: 'BTCUSDT', side: 'Long',
+    status: 'active', source: 'VERIFIED_PRETRADE', received_at: revisions[0].received_at,
+    created_at: revisions[0].created_at, updated_at: revision.created_at,
+    revisions, latest_revision: revision, link: null,
+  };
 }
 
 function inTradePlan(stopLoss: number, version = 1, previous: TradingPlan | null = null): TradingPlan {
@@ -221,6 +250,51 @@ it('lets a new A session save again and prevents the older overlapping save from
   expect(screen.getByText('Retrospective plan saved.')).toBeTruthy();
   expect(vi.mocked(createRetrospectivePlan).mock.calls[0][1]).toMatchObject({ stop_loss: 98, take_profit: 104 });
   expect(vi.mocked(createRetrospectivePlan).mock.calls[1][1]).toMatchObject({ stop_loss: 95, take_profit: 106 });
+});
+
+it('keeps historical trade identity while adding a revision', async () => {
+  const existing = savedPlan(1);
+  vi.mocked(getPlans).mockResolvedValue([existing]);
+  vi.mocked(addPlanRevision).mockResolvedValue(revisedPlan(existing, 97));
+
+  setup();
+  const matches = await screen.findAllByText('BTC/USDT');
+  const row = matches.find((element) => element.tagName === 'TD')?.closest('tr');
+  if (!row) throw new Error('Missing historical trade row');
+  fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
+  fireEvent.click(await screen.findByRole('button', { name: /Add plan revision/ }));
+  fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+
+  await waitFor(() => expect(addPlanRevision).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(addPlanRevision).mock.calls[0][0]).toBe(existing.id);
+  expect(vi.mocked(addPlanRevision).mock.calls[0][1]).toMatchObject({ stop_loss: 97, take_profit: 104 });
+  expect(createRetrospectivePlan).not.toHaveBeenCalled();
+  expect(await screen.findByText('Retrospective plan saved.')).toBeTruthy();
+});
+
+it('promotes a pending pre-trade create to revision authority without overwriting D2', async () => {
+  const create = deferred<TradingPlan>();
+  const created = pretradePlan(98);
+  vi.mocked(createPlan).mockReturnValue(create.promise);
+  vi.mocked(addPlanRevision).mockResolvedValue(pretradePlan(97, 2, created));
+
+  const { client } = setup();
+  fireEvent.click(await screen.findByRole('button', { name: 'Record pre-trade' }));
+  fireEvent.change(screen.getByLabelText('Plan Entry'), { target: { value: '100' } });
+  fillPlan();
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitForMutationStart(client, () => vi.mocked(createPlan).mock.calls.length);
+  fireEvent.change(screen.getByLabelText('Stop Loss'), { target: { value: '97' } });
+  await resolveMutation(client, create, created);
+
+  expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('97');
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await waitFor(() => expect(addPlanRevision).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(client.isMutating()).toBe(0));
+  expect(vi.mocked(addPlanRevision).mock.calls[0][0]).toBe(created.id);
+  expect(vi.mocked(addPlanRevision).mock.calls[0][1]).toMatchObject({ stop_loss: 97, take_profit: 104 });
+  expect(createPlan).toHaveBeenCalledTimes(1);
 });
 
 it('keeps the created in-trade Plan as the target and persists the second save as revision 2', async () => {
