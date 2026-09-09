@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional
 
 from backend.modules.journal import repository
+from backend.modules.journal.closed_position_returns import (
+    closed_position_invested_amount,
+    closed_position_net_return_pct,
+)
 from backend.modules.journal.trade_selection import finite_float, timestamp_ms
 
 
@@ -31,19 +34,15 @@ def summarize_performance(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     losses = [value for value in pnl_values if value < 0]
     gross_profit = sum(wins)
     gross_loss = abs(sum(losses))
-    return_values = [
-        value for entry in evaluated
-        if (value := _net_return_pct(entry)) is not None
-    ]
-    total_invested = sum(
-        value for entry in evaluated
-        if (value := _invested_amount(entry)) is not None
-    )
-    return_net_pnl = sum(
-        float(entry["realized_pnl"])
+    return_samples = [
+        (float(entry["realized_pnl"]), invested, return_pct)
         for entry in evaluated
-        if _invested_amount(entry) is not None
-    )
+        if (invested := closed_position_invested_amount(entry)) is not None
+        if (return_pct := closed_position_net_return_pct(entry)) is not None
+    ]
+    return_values = [return_pct for _, _, return_pct in return_samples]
+    total_invested = sum(invested for _, invested, _ in return_samples)
+    return_net_pnl = sum(pnl for pnl, _, _ in return_samples)
     best = max(evaluated, key=lambda item: float(item["realized_pnl"]), default=None)
     worst = min(evaluated, key=lambda item: float(item["realized_pnl"]), default=None)
     max_win_streak, max_loss_streak = _streaks(pnl_values)
@@ -121,31 +120,6 @@ def _streaks(values: Iterable[float]) -> tuple[int, int]:
         else:
             current_win = current_loss = 0
     return max_win, max_loss
-
-
-def _invested_amount(entry: Dict[str, Any]) -> Optional[float]:
-    stored = finite_float(entry.get("invested_amount"))
-    if stored is not None and stored > 0:
-        return stored
-    entry_price = finite_float(entry.get("entry_price"))
-    exit_price = finite_float(entry.get("exit_price"))
-    net_pnl = finite_float(entry.get("realized_pnl"))
-    if None in (entry_price, exit_price, net_pnl) or entry_price <= 0:
-        return None
-    direction = -1.0 if entry.get("direction") == "Short" else 1.0
-    price_return = ((exit_price - entry_price) / entry_price) * direction
-    gross_pnl = net_pnl + abs(finite_float(entry.get("fee")) or 0.0) - (finite_float(entry.get("funding_fee")) or 0.0)
-    if abs(price_return) <= math.ulp(1.0) or abs(gross_pnl) <= math.ulp(1.0):
-        return None
-    notional = abs(gross_pnl / price_return)
-    leverage = finite_float(entry.get("leverage"))
-    return notional / leverage if leverage is not None and leverage > 0 else None
-
-
-def _net_return_pct(entry: Dict[str, Any]) -> Optional[float]:
-    invested = _invested_amount(entry)
-    pnl = finite_float(entry.get("realized_pnl"))
-    return pnl / invested * 100 if invested is not None and pnl is not None else None
 
 
 __all__ = ["run_journal_performance_service", "summarize_performance"]

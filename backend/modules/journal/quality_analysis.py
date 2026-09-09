@@ -9,6 +9,7 @@ import numpy as np
 
 from backend.modules.journal import repository
 from backend.modules.journal.analysis import run_journal_excursions_service
+from backend.modules.journal.closed_position_returns import closed_position_net_return_pct
 from backend.modules.journal.market_context import load_market_frames
 from backend.modules.journal.trade_selection import closed_positions, market_group_key
 from backend.modules.journal.quality_market import (
@@ -251,6 +252,9 @@ def _direction_breakdown(items: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any
 
 def _net_return_pct(entry: Dict[str, Any]) -> Optional[float]:
     """Match the journal UI's net-return basis without using price movement as a proxy."""
+    if str(entry.get("source") or "").endswith("_position"):
+        return closed_position_net_return_pct(entry)
+
     net_pnl = finite(entry.get("realized_pnl"))
     if net_pnl is None:
         return None
@@ -259,25 +263,12 @@ def _net_return_pct(entry: Dict[str, Any]) -> Optional[float]:
     if invested is None or invested <= 0:
         entry_price = finite(entry.get("entry_price"))
         size = finite(entry.get("size"))
-        source = str(entry.get("source") or "")
         notional: Optional[float] = None
-        if source.endswith("_position") and entry_price is not None and entry_price > 0:
-            exit_price = finite(entry.get("exit_price"))
-            direction = -1 if entry.get("direction") == "Short" else 1
-            if exit_price is not None:
-                price_return = ((exit_price - entry_price) / entry_price) * direction
-                fee = abs(finite(entry.get("fee")) or 0.0)
-                funding = finite(entry.get("funding_fee")) or 0.0
-                gross_pnl = net_pnl + fee - funding
-                if abs(price_return) > np.finfo(float).eps and abs(gross_pnl) > np.finfo(float).eps:
-                    notional = abs(gross_pnl / price_return)
-        elif entry_price is not None and entry_price > 0 and size is not None:
+        if entry_price is not None and entry_price > 0 and size is not None:
             notional = abs(entry_price * size)
 
         leverage = finite(entry.get("leverage"))
         if notional is None:
-            return None
-        if source.endswith("_position") and (leverage is None or leverage <= 0):
             return None
         invested = notional / leverage if leverage is not None and leverage > 0 else notional
 

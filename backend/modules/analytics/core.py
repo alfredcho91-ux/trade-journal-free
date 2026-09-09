@@ -8,7 +8,8 @@ from typing import Any, Mapping
 
 from backend.modules.analytics.registry import DIMENSION_REGISTRY, MAX_GROUPS, METRIC_REGISTRY
 from backend.modules.analytics.schemas import AnalyticsData, AnalyticsGroup, AnalyticsQuery, GroupIdentity
-from backend.modules.journal.performance import _net_return_pct, summarize_performance
+from backend.modules.journal.closed_position_returns import closed_position_net_return_pct
+from backend.modules.journal.performance import summarize_performance
 from backend.modules.journal.trade_selection import finite_float, timestamp_ms
 from backend.modules.rule_engine.models import Observation, RuleEvaluationResult
 from backend.modules.rule_engine.summary import summarize_results
@@ -146,7 +147,7 @@ def _trade_aggregate(facts, metric):
             value /= len(values)
         return value, len(values), reasons, None, False
     if metric == "average_return_pct":
-        values = [value for entry in entries if (value := finite_float(_net_return_pct(entry))) is not None]
+        values = [value for entry in entries if (value := finite_float(closed_position_net_return_pct(entry))) is not None]
         return (sum(values) / len(values) if values else None), len(values), {"MISSING_NET_RETURN": total - len(values)}, None, False
     stats = summarize_performance(entries)
     sample = stats["return_sample_count"] if metric == "net_return_pct" else stats["evaluated_trade_count"]
