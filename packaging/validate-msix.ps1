@@ -5,7 +5,7 @@ param(
 
     [string]$IdentityName,
     [string]$Publisher,
-    [string]$Version = '1.0.25.0'
+    [string]$Version = '1.0.26.0'
 )
 
 $ErrorActionPreference = 'Stop'

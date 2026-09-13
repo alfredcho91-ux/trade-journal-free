@@ -83,16 +83,17 @@ function StrategyRow({ strategy, selected, isKo, onSelect }: {
   </button>;
 }
 
-function ConfirmDialog({ title, body, confirmLabel, danger = false, onCancel, onConfirm }: {
+function ConfirmDialog({ title, body, confirmLabel, danger = false, onCancel, onConfirm, isKo }: {
   title: string;
   body: string;
   confirmLabel: string;
   danger?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  isKo: boolean;
 }) {
   return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="w-full max-w-md border border-dark-600 bg-dark-900 p-5 shadow-2xl"><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-dark-300">{body}</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onCancel} className={secondaryButton}>Cancel</button><button type="button" onClick={onConfirm} className={danger ? 'border border-bear/60 bg-bear/15 px-3 py-2 text-xs font-semibold text-bear' : primaryButton}>{confirmLabel}</button></div></div>
+    <div className="w-full max-w-md border border-dark-600 bg-dark-900 p-5 shadow-2xl"><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-dark-300">{body}</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onCancel} className={secondaryButton}>{isKo ? '취소' : 'Cancel'}</button><button type="button" onClick={onConfirm} className={danger ? 'border border-bear/60 bg-bear/15 px-3 py-2 text-xs font-semibold text-bear' : primaryButton}>{confirmLabel}</button></div></div>
   </div>;
 }
 
@@ -277,7 +278,7 @@ export default function PlaybookPage() {
 
   return <div className="mx-auto max-w-[1420px]">
     <header className="mb-4 flex items-end justify-between gap-4 border-b border-dark-700 pb-4">
-      <div><div className="flex items-center gap-2"><BookMarked className="h-5 w-5 text-primary-300" /><h1 className="text-xl font-semibold text-white">Playbook</h1></div><p className="mt-1 text-xs text-dark-500">{isKo ? '재사용 가능한 트레이딩 전략과 버전 기록' : 'Reusable trading strategies and version history.'}</p></div>
+      <div><div className="flex items-center gap-2"><BookMarked className="h-5 w-5 text-primary-300" /><h1 className="text-xl font-semibold text-white">{isKo ? '플레이북' : 'Playbook'}</h1></div><p className="mt-1 text-xs text-dark-500">{isKo ? '재사용 가능한 트레이딩 전략과 버전 기록' : 'Reusable trading strategies and version history.'}</p></div>
       <div className="flex items-center gap-2"><label className="relative"><Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-dark-500" /><span className="sr-only">{isKo ? '전략 검색' : 'Search strategies'}</span><input aria-label={isKo ? '전략 검색' : 'Search strategies'} value={search} onChange={(event) => setSearch(event.target.value)} className="h-9 w-64 border border-dark-600 bg-dark-950 pl-9 pr-3 text-xs text-white outline-none placeholder:text-dark-600 focus:border-primary-400" placeholder={isKo ? '전략 검색' : 'Search strategies'} /></label><button type="button" onClick={() => openEditor('new-strategy')} className={primaryButton}><Plus className="h-3.5 w-3.5" />{isKo ? '새 전략' : 'New Strategy'}</button></div>
     </header>
 
@@ -310,6 +311,6 @@ export default function PlaybookPage() {
     {editor === 'new-version' && selectedStrategy && <NewVersionDrawer strategy={selectedStrategy} versions={versions} initialBase={newVersionBase} metadata={metadataQuery.data as RuleEngineMetadata | undefined} metadataLoading={metadataQuery.isLoading} metadataError={metadataQuery.error ? errorMessage(metadataQuery.error, 'Metadata request failed.') : null} isKo={isKo} pending={versionMutation.isPending && Boolean(versionMutation.variables?.authority.isSameSession())} error={versionMutation.error && versionMutation.variables?.authority.isSameSession() ? errorMessage(versionMutation.error, 'Failed to create version.') : null} onDirtyChange={setEditorDirty} onClose={() => { setEditor(null); setEditorDirty(false); }} onSubmit={(payload, authority) => versionMutation.mutate({ strategyId: selectedStrategy.id, payload, authority, selectionAtStart: selectionIntent.current })} />}
 
     {pendingSelection !== null && <UnsavedChangesDialog isKo={isKo} onKeepEditing={() => setPendingSelection(null)} onDiscard={() => { const next = pendingSelection; setPendingSelection(null); setEditor(null); setEditorDirty(false); selectionIntent.current += 1; setSelectedVersionId(null); setSelectedStrategyId(next); }} />}
-    {confirmLifecycle && selectedStrategy && <ConfirmDialog title={confirmLifecycle === 'archive' ? (isKo ? '전략 보관' : 'Archive Strategy') : confirmLifecycle === 'restore' ? (isKo ? '전략 복원' : 'Restore Strategy') : confirmLifecycle === 'activate' ? (isKo ? '버전 활성화' : 'Activate Version') : (isKo ? '버전 은퇴' : 'Retire Version')} body={confirmLifecycle === 'archive' ? (isKo ? '보관은 삭제가 아닙니다. 전략, 버전 기록과 규칙은 계속 열람할 수 있습니다.' : 'Archive does not delete anything. The strategy, version history, and rules remain viewable.') : confirmLifecycle === 'restore' ? (isKo ? '전략을 복원합니다. 활성 버전은 자동으로 선택되지 않습니다.' : 'Restore this strategy. No active version will be chosen automatically.') : confirmLifecycle === 'activate' ? (isKo ? `${selectedVersion?.version_label} 버전을 현재 활성 버전으로 지정합니다.` : `Make ${selectedVersion?.version_label} the current active version.`) : (isKo ? `${selectedVersion?.version_label} 버전을 은퇴 처리합니다. 기록은 유지됩니다.` : `Retire ${selectedVersion?.version_label}. Its history remains intact.`)} confirmLabel={confirmLifecycle === 'archive' ? (isKo ? '보관' : 'Archive') : confirmLifecycle === 'restore' ? (isKo ? '복원' : 'Restore') : confirmLifecycle === 'activate' ? (isKo ? '활성화' : 'Activate') : (isKo ? '은퇴' : 'Retire')} danger={confirmLifecycle === 'archive' || confirmLifecycle === 'retire'} onCancel={() => setConfirmLifecycle(null)} onConfirm={() => submitLifecycle(confirmLifecycle)} />}
+    {confirmLifecycle && selectedStrategy && <ConfirmDialog title={confirmLifecycle === 'archive' ? (isKo ? '전략 보관' : 'Archive Strategy') : confirmLifecycle === 'restore' ? (isKo ? '전략 복원' : 'Restore Strategy') : confirmLifecycle === 'activate' ? (isKo ? '버전 활성화' : 'Activate Version') : (isKo ? '버전 은퇴' : 'Retire Version')} body={confirmLifecycle === 'archive' ? (isKo ? '보관은 삭제가 아닙니다. 전략, 버전 기록과 규칙은 계속 열람할 수 있습니다.' : 'Archive does not delete anything. The strategy, version history, and rules remain viewable.') : confirmLifecycle === 'restore' ? (isKo ? '전략을 복원합니다. 활성 버전은 자동으로 선택되지 않습니다.' : 'Restore this strategy. No active version will be chosen automatically.') : confirmLifecycle === 'activate' ? (isKo ? `${selectedVersion?.version_label} 버전을 현재 활성 버전으로 지정합니다.` : `Make ${selectedVersion?.version_label} the current active version.`) : (isKo ? `${selectedVersion?.version_label} 버전을 은퇴 처리합니다. 기록은 유지됩니다.` : `Retire ${selectedVersion?.version_label}. Its history remains intact.`)} confirmLabel={confirmLifecycle === 'archive' ? (isKo ? '보관' : 'Archive') : confirmLifecycle === 'restore' ? (isKo ? '복원' : 'Restore') : confirmLifecycle === 'activate' ? (isKo ? '활성화' : 'Activate') : (isKo ? '은퇴' : 'Retire')} danger={confirmLifecycle === 'archive' || confirmLifecycle === 'retire'} isKo={isKo} onCancel={() => setConfirmLifecycle(null)} onConfirm={() => submitLifecycle(confirmLifecycle)} />}
   </div>;
 }

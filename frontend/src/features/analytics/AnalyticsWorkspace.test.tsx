@@ -7,6 +7,7 @@ import { getAnalyticsMetadata, queryAnalytics } from '../../api/analytics';
 import { listStrategies, listStrategyVersions } from '../../api/strategies';
 import { ApiClientError } from '../../api/config';
 import App from '../../App';
+import { useStore } from '../../store/useStore';
 import type { AnalyticsResult } from '../../types/analytics';
 import AnalyticsWorkspace from './AnalyticsWorkspace';
 import AnalyticsResults from './AnalyticsResults';
@@ -22,6 +23,7 @@ function setup(element = <AnalyticsWorkspace overview={<p>Existing Trade Analysi
 }
 beforeEach(() => {
   vi.clearAllMocks(); sessionStorage.clear();
+  useStore.setState({ language: 'en' });
   vi.mocked(getAnalyticsMetadata).mockResolvedValue(metadataFixture());
   vi.mocked(queryAnalytics).mockResolvedValue(resultFixture());
   vi.mocked(listStrategies).mockResolvedValue([]); vi.mocked(listStrategyVersions).mockResolvedValue([]);

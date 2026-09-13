@@ -85,6 +85,7 @@ function RuleEditor({ rules, metadata, metadataLoading, metadataError, isKo, onC
             <RuleEvaluatorEditor
               rule={rule}
               label={`${label} ${index + 1}`}
+              isKo={isKo}
               metadata={metadata}
               metadataLoading={metadataLoading}
               metadataError={metadataError}

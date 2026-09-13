@@ -18,7 +18,7 @@ def client(tmp_path, monkeypatch):
     (tmp_path / "api").mkdir()
     (tmp_path / "api" / "health").write_text("must not shadow the API")
     mount = next(route for route in main.app.routes if route.name == "frontend")
-    monkeypatch.setattr(mount, "app", staticfiles.StaticFiles(directory=tmp_path, html=True))
+    monkeypatch.setattr(mount, "app", type(mount.app)(directory=tmp_path, html=True))
     initialized = []
     monkeypatch.setattr(main, "initialize_assignment_schema", lambda: initialized.append("assignments"))
     monkeypatch.setattr(main, "initialize_experiment_schema", lambda: initialized.append("experiments"))
@@ -65,6 +65,34 @@ def test_static_html_and_api_precedence(client):
     assert client.get("/missing.js").status_code == 404
     assert client.get("/unknown-client-route").status_code == 404
     assert client.get("/api/nonexistent").status_code == 404
+
+
+@pytest.mark.parametrize("path", [
+    "/journal", "/trade-analysis", "/risk-lab", "/plan-lab",
+    "/trade-explorer", "/hold-reentry", "/playbook",
+])
+def test_frontend_screen_direct_entry_and_reload(client, path):
+    for url in (path, path + "?coin=BTC", path + "/"):
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
+        assert response.text == "<html>journal shell</html>"
+        head = client.head(url)
+        assert head.status_code == 200
+        assert head.content == b""
+        assert head.headers["content-length"] == response.headers["content-length"]
+
+
+@pytest.mark.parametrize("path", ["/assets/missing.js", "/risk-lab/missing.js", "/api/risk-lab", "/unknown-client-route"])
+def test_missing_assets_and_api_paths_are_not_replaced_with_html(client, path):
+    response = client.get(path)
+    assert response.status_code == 404
+    assert "journal shell" not in response.text
+
+
+def test_frontend_entry_preserves_http_methods_and_host_policy(client):
+    assert client.post("/risk-lab").status_code == 405
+    assert client.get("/risk-lab", headers={"Host": "evil.invalid"}).status_code == 403
 
 
 def test_static_mount_remains_behind_local_security_and_cors(client):

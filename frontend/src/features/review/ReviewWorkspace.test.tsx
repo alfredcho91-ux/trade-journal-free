@@ -11,6 +11,7 @@ import AnalyticsWorkspace from '../analytics/AnalyticsWorkspace';
 import { group } from '../analytics/analyticsTestFixtures';
 import { BrowserRouter } from '../../router';
 import { useNavigate } from '../../router-context';
+import { useStore } from '../../store/useStore';
 import { DiagnosisCards, PatternFindings, ReviewSections } from './ReviewEvidence';
 import ReviewWorkspace from './ReviewWorkspace';
 import ExperimentsWorkspace, { MeasurementView } from './ExperimentsWorkspace';
@@ -30,6 +31,7 @@ const measurement = (state: Measurement['criterion_status'] = 'MET'): Measuremen
   reasons: ['BASELINE_UNAVAILABLE'], query: experimentFixture().definition.query, baseline_query: experimentFixture().definition.query, evidence_semantics: 'OBSERVED_ASSOCIATION', evaluation_basis: 'CURRENT_RECONSTRUCTED', warnings: ['User-defined criterion, not a causal conclusion.'] });
 beforeEach(() => {
   vi.clearAllMocks(); sessionStorage.clear(); vi.spyOn(window, 'confirm').mockReturnValue(true);
+  useStore.setState({ language: 'en' });
   vi.mocked(getAnalyticsMetadata).mockResolvedValue(reviewDiscovery());
   vi.mocked(listStrategies).mockResolvedValue([]); vi.mocked(listStrategyVersions).mockResolvedValue([]);
   vi.mocked(api.getReview).mockResolvedValue(tradingFixture()); vi.mocked(api.getPatterns).mockResolvedValue(tradingFixture().patterns); vi.mocked(api.getDiagnoses).mockResolvedValue(tradingFixture().strategy_execution);

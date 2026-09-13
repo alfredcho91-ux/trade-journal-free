@@ -22,7 +22,7 @@ const feedbackFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdGlwCDcOiTTch
 
 const routeFallback = (
   <div className="flex min-h-64 items-center justify-center text-sm text-dark-400">
-    Loading...
+    불러오는 중...
   </div>
 );
 
@@ -70,15 +70,15 @@ function Shell({ children }: { children: ReactNode }) {
   const tabs = [
     { path: '/journal', label: isKo ? '매매일지' : 'Journal', icon: BookOpen },
     { path: '/trade-analysis', label: isKo ? '매매분석' : 'Trade Analysis', icon: BarChart3 },
-    { path: '/risk-lab', label: 'Risk Lab', icon: ShieldAlert },
+    { path: '/risk-lab', label: isKo ? '리스크 랩' : 'Risk Lab', icon: ShieldAlert },
     { path: '/plan-lab', label: isKo ? '계획 분석' : 'Plan Lab', icon: ClipboardCheck },
-    { path: '/hold-reentry', label: isKo ? '홀딩 / 재진입' : 'Hold / Re-entry', icon: GitCompareArrows },
     { path: '/trade-explorer', label: isKo ? '거래 탐색' : 'Trade Explorer', icon: Search },
     { path: '/playbook', label: isKo ? '플레이북' : 'Playbook', icon: BookMarked },
+    { path: '/hold-reentry', label: isKo ? '홀딩 / 재진입' : 'Hold / Re-entry', icon: GitCompareArrows },
   ];
 
   const navigation = (vertical = false) => (
-    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-7 border border-dark-700'} aria-label="Primary">
+    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-7 border border-dark-700'} aria-label={isKo ? '주요 메뉴' : 'Primary'}>
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path;
         return (
@@ -110,7 +110,7 @@ function Shell({ children }: { children: ReactNode }) {
             aria-label={isKo ? '매매일지 홈' : 'Journal home'}
           >
             <div className="text-base font-bold text-white">Trade Journal</div>
-            <div className="text-[10px] text-dark-500">Read-only analytics</div>
+            <div className="text-[10px] text-dark-500">{isKo ? '읽기 전용 분석' : 'Read-only analytics'}</div>
           </button>
 
           <div className="ml-auto flex items-center gap-2">

@@ -17,11 +17,12 @@ function expectedText(expected: StrategyRuleExpected): string {
   return Array.isArray(expected) ? expected.join(', ') : String(expected);
 }
 
-function ExpectedEditor({ metric, rule, label, onChange }: {
+function ExpectedEditor({ metric, rule, label, onChange, isKo }: {
   metric: RuleMetricMetadata;
   rule: StrategyRuleV2;
   label: string;
   onChange: (rule: StrategyRuleV2) => void;
+  isKo: boolean;
 }) {
   const evaluator = rule.evaluation!;
   const updateExpected = (expected: StrategyRuleExpected) => onChange({
@@ -30,15 +31,15 @@ function ExpectedEditor({ metric, rule, label, onChange }: {
   });
 
   if (metric.value_type === 'boolean') {
-    return <label className="text-[10px] text-dark-400">Expected Value
-      <select aria-label={`${label} expected value`} value={String(evaluator.expected)} onChange={(event) => updateExpected(event.target.value === 'true')} className={`mt-1 ${compactInput}`}>
-        <option value="true">true</option><option value="false">false</option>
+    return <label className="text-[10px] text-dark-400">{isKo ? '기대값' : 'Expected Value'}
+      <select aria-label={`${label} ${isKo ? '기대값' : 'expected value'}`} value={String(evaluator.expected)} onChange={(event) => updateExpected(event.target.value === 'true')} className={`mt-1 ${compactInput}`}>
+        <option value="true">{isKo ? '참' : 'true'}</option><option value="false">{isKo ? '거짓' : 'false'}</option>
       </select>
     </label>;
   }
 
   if (metric.value_type === 'numeric') {
-    return <label className="text-[10px] text-dark-400">Expected Value
+    return <label className="text-[10px] text-dark-400">{isKo ? '기대값' : 'Expected Value'}
       <div className="mt-1 flex items-center gap-1.5">
         <input
           aria-label={`${label} expected value`}
@@ -57,7 +58,7 @@ function ExpectedEditor({ metric, rule, label, onChange }: {
   if (metric.value_type === 'enum' && evaluator.operator === 'in') {
     const selected = Array.isArray(evaluator.expected) ? evaluator.expected : [];
     return <fieldset className="text-[10px] text-dark-400">
-      <legend>Expected Values</legend>
+      <legend>{isKo ? '기대값' : 'Expected Values'}</legend>
       <div className="mt-1 flex min-h-8 flex-wrap gap-2 border border-dark-600 bg-dark-900 px-2 py-1.5">
         {metric.constraints.enum_values.map((value) => <label key={value} className="flex items-center gap-1 text-[11px] text-dark-200">
           <input
@@ -72,7 +73,7 @@ function ExpectedEditor({ metric, rule, label, onChange }: {
   }
 
   if (metric.value_type === 'enum') {
-    return <label className="text-[10px] text-dark-400">Expected Value
+    return <label className="text-[10px] text-dark-400">{isKo ? '기대값' : 'Expected Value'}
       <select aria-label={`${label} expected value`} value={Array.isArray(evaluator.expected) ? '' : String(evaluator.expected)} onChange={(event) => updateExpected(event.target.value)} className={`mt-1 ${compactInput}`}>
         {metric.constraints.enum_values.map((value) => <option key={value} value={value}>{value}</option>)}
       </select>
@@ -80,7 +81,7 @@ function ExpectedEditor({ metric, rule, label, onChange }: {
   }
 
   if (evaluator.operator === 'in') {
-    return <label className="text-[10px] text-dark-400">Expected Values
+    return <label className="text-[10px] text-dark-400">{isKo ? '기대값' : 'Expected Values'}
       <input
         aria-label={`${label} expected values`}
         value={expectedText(evaluator.expected)}
@@ -88,11 +89,11 @@ function ExpectedEditor({ metric, rule, label, onChange }: {
         className={`mt-1 ${compactInput}`}
         placeholder="BTCUSDT, ETHUSDT"
       />
-      <span className="mt-1 block text-[9px] text-dark-600">Comma-separated · max {metric.constraints.max_in_values ?? '—'}</span>
+      <span className="mt-1 block text-[9px] text-dark-600">{isKo ? '쉼표로 구분 · 최대' : 'Comma-separated · max'} {metric.constraints.max_in_values ?? '—'}</span>
     </label>;
   }
 
-  return <label className="text-[10px] text-dark-400">Expected Value
+  return <label className="text-[10px] text-dark-400">{isKo ? '기대값' : 'Expected Value'}
     <input
       aria-label={`${label} expected value`}
       value={Array.isArray(evaluator.expected) ? '' : String(evaluator.expected)}
@@ -104,13 +105,14 @@ function ExpectedEditor({ metric, rule, label, onChange }: {
   </label>;
 }
 
-export default function RuleEvaluatorEditor({ rule, label, metadata, metadataLoading, metadataError, onChange }: {
+export default function RuleEvaluatorEditor({ rule, label, metadata, metadataLoading, metadataError, onChange, isKo = false }: {
   rule: StrategyRuleV2;
   label: string;
   metadata?: RuleEngineMetadata;
   metadataLoading: boolean;
   metadataError: string | null;
   onChange: (rule: StrategyRuleV2) => void;
+  isKo?: boolean;
 }) {
   const evaluator = rule.evaluation;
   const metric = evaluator && metadata ? metricFor(metadata, evaluator.metric_id) : undefined;
@@ -128,18 +130,18 @@ export default function RuleEvaluatorEditor({ rule, label, metadata, metadataLoa
     <label className="flex items-center gap-2 text-[10px] text-dark-300">
       <input
         type="checkbox"
-        aria-label={`${label} evaluate automatically`}
+        aria-label={`${label} ${isKo ? '자동 판정' : 'evaluate automatically'}`}
         checked={Boolean(evaluator)}
         disabled={disabled}
         onChange={(event) => toggle(event.target.checked)}
       />
-      Evaluate automatically
+      {isKo ? '자동 판정' : 'Evaluate automatically'}
     </label>
     {evaluator && !metadata && <div className="mt-2 border border-dark-700 bg-dark-900/70 p-2 text-[10px] text-dark-400">
-      Preserved evaluator: <span className="font-mono text-dark-200">{evaluator.metric_id} · {evaluator.operator} · {expectedText(evaluator.expected)}</span>
+      {isKo ? '보존된 판정기' : 'Preserved evaluator'}: <span className="font-mono text-dark-200">{evaluator.metric_id} · {evaluator.operator} · {expectedText(evaluator.expected)}</span>
     </div>}
     {evaluator && metadata && <div className="mt-2 grid grid-cols-3 gap-2">
-      <label className="text-[10px] text-dark-400">Metric
+      <label className="text-[10px] text-dark-400">{isKo ? '지표' : 'Metric'}
         <select
           aria-label={`${label} metric`}
           value={evaluator.metric_id}
@@ -151,7 +153,7 @@ export default function RuleEvaluatorEditor({ rule, label, metadata, metadataLoa
           className={`mt-1 ${compactInput}`}
         >{metadata.metrics.map((item) => <option key={item.metric_id} value={item.metric_id}>{item.label}</option>)}</select>
       </label>
-      <label className="text-[10px] text-dark-400">Operator
+      <label className="text-[10px] text-dark-400">{isKo ? '연산자' : 'Operator'}
         <select
           aria-label={`${label} operator`}
           value={evaluator.operator}
@@ -164,7 +166,7 @@ export default function RuleEvaluatorEditor({ rule, label, metadata, metadataLoa
           className={`mt-1 ${compactInput}`}
         >{metric?.allowed_operators.map((operator) => <option key={operator} value={operator}>{operator}</option>)}</select>
       </label>
-      {metric && <ExpectedEditor metric={metric} rule={rule} label={label} onChange={onChange} />}
+      {metric && <ExpectedEditor metric={metric} rule={rule} label={label} isKo={isKo} onChange={onChange} />}
     </div>}
     {evaluator && metadata && evaluatorError(rule, metadata) && <p role="alert" className="mt-1 text-[10px] text-bear">{evaluatorError(rule, metadata)}</p>}
   </div>;

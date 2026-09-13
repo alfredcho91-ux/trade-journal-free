@@ -9,7 +9,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.staticfiles import StaticFiles
 
 from backend.config.settings import (
     CORS_ORIGINS,
@@ -33,6 +32,7 @@ from backend.modules.strategy_assignments.router import router as strategy_assig
 from backend.modules.strategies.router import router as strategies_router
 from backend.utils.log_redaction import install_log_redaction
 from backend.utils.local_request_security import LocalRequestSecurityMiddleware
+from backend.utils.frontend_static import FrontendStaticFiles
 
 install_log_redaction()
 
@@ -86,7 +86,7 @@ def verify_credentials(
 app = FastAPI(
     title="Trade Journal API",
     description="Read-only multi-exchange journal and personal trade analytics",
-    version="1.0.25",
+    version="1.0.26",
     default_response_class=ORJSONResponse,
     dependencies=[Depends(verify_credentials)],
     lifespan=lifespan,
@@ -158,7 +158,7 @@ if not FRONTEND_DIST_DIR.exists() and not IS_FROZEN:
     FRONTEND_DIST_DIR.mkdir(parents=True, exist_ok=True)
 if not FRONTEND_DIST_DIR.is_dir():
     raise RuntimeError("Trade Journal Free frontend files are missing from this installation.")
-app.mount("/", StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="frontend")
+app.mount("/", FrontendStaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="frontend")
 
 
 if __name__ == "__main__":

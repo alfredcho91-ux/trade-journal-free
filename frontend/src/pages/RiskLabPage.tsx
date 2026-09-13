@@ -143,7 +143,7 @@ export default function RiskLabPage() {
     <div className="space-y-4">
       <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold text-white"><ShieldAlert className="h-5 w-5 text-amber-300" />Risk Lab</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold text-white"><ShieldAlert className="h-5 w-5 text-amber-300" />{isKo ? '리스크 랩' : 'Risk Lab'}</h1>
           <div className="mt-1 text-xs text-dark-500">{period.start} ~ {period.end} · {isKo ? '연결 거래소 종료 포지션의 위험 관리 복기' : 'Risk review of connected exchange closed positions'}</div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
