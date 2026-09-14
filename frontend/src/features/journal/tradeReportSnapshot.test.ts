@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { KNOWN_SNAPSHOT_INDICATOR_KEYS, formatRvol20 } from './tradeReportSnapshot';
+import { KNOWN_SNAPSHOT_INDICATOR_KEYS, formatRvol20, formatSnapshotNumber } from './tradeReportSnapshot';
 
 describe('formatRvol20', () => {
+  it('caps requested display precision at two decimals while preserving missing values', () => {
+    expect(formatSnapshotNumber(1.235, 6)).toBe('1.24');
+    expect(formatSnapshotNumber(-1.235, 6)).toBe('-1.24');
+    expect(formatSnapshotNumber(null, 6)).toBe('-');
+  });
   it('formats the canonical backend value as a neutral relative-volume multiple', () => {
     expect(formatRvol20(1.82)).toBe('1.82x');
   });

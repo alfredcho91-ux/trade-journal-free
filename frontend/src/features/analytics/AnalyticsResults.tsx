@@ -59,6 +59,7 @@ export default function AnalyticsResults({ data, isKo = false }: { data: Analyti
         </td></tr>)}</tbody>
     </table></div>}
     <details className="text-xs text-dark-400"><summary className="cursor-pointer">{textFor(isKo, '정의 및 근거 메모', 'Definition & evidence notes')}</summary>
+      <p>{textFor(isKo, '숫자는 소수 둘째 자리까지 반올림해 표시합니다. 계산·판정에는 원래 값을 사용합니다.', 'Numbers are displayed rounded to two decimals. Calculations and evaluations use the original values.')}</p>
       <p className="mt-2">{data.metric.aggregation}</p><p>{data.metric.availability}</p><p>{data.dimension.semantics}</p>
       <p>{data.excluded_unavailable_close_count}{textFor(isKo, '건 종료 시각을 알 수 없는 포지션을 제외했습니다.', ' closed positions excluded for unavailable close time.')}</p>
       {data.warnings.map(w => <p key={w} className="mt-1">{w}</p>)}

@@ -37,7 +37,7 @@ import {
 
 function formatSignedNumber(value: number | null | undefined, maximumFractionDigits = 4): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits })}`;
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, maximumFractionDigits) })}`;
 }
 
 function macdCrossLabel(

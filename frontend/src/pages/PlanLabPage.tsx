@@ -136,12 +136,12 @@ function normalizeSymbol(value: string | null | undefined): string {
 
 function signed(value: number | null | undefined, digits = 2, suffix = ''): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}${suffix}`;
+  return `${value >= 0 ? '+' : ''}${value.toFixed(Math.min(2, digits))}${suffix}`;
 }
 
 function price(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value);
 }
 
 function positionKey(position: Pick<ExchangeOpenPosition, 'exchange' | 'position_id'>): string {

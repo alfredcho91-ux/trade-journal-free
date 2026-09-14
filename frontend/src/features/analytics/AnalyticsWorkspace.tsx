@@ -10,6 +10,8 @@ import ExperimentsWorkspace from '../review/ExperimentsWorkspace';
 import type { ExperimentSeed } from '../review/reviewHandoff';
 import { useLanguage } from '../../store/useStore';
 import { analyticsLabel, textFor } from '../../utils/localization';
+import { guidedQuestions } from './guidedPresets';
+import { GuidedAnswer, GuidedFilters, GuidedQuestions } from './GuidedAnalytics';
 
 const sections = ['Overview', 'Edge Explorer', 'Strategy', 'Psychology', 'Rules', 'Time', 'Review', 'Experiments'] as const;
 type Section = typeof sections[number];
@@ -26,7 +28,9 @@ function readState(): { draft?: BuilderDraft; section?: Section } {
 }
 function Builder({ metadata, overview, isKo }: { metadata: AnalyticsMetadata; overview: ReactNode; isKo: boolean }) {
   const [draft, setDraft] = useState<BuilderDraft>(() => readState().draft ?? initialDraft(metadata));
-  const [section, setSection] = useState<Section>(() => readState().section ?? 'Edge Explorer');
+  const [section, setSection] = useState<Section>('Edge Explorer');
+  const [guided, setGuided] = useState(true);
+  const [question, setQuestion] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -35,7 +39,7 @@ function Builder({ metadata, overview, isKo }: { metadata: AnalyticsMetadata; ov
   useEffect(() => { try { sessionStorage.setItem(storageKey, JSON.stringify({ draft, section })); } catch { /* Storage may be disabled. */ } }, [draft, section]);
   const built = buildRequest(metadata, draft);
   const fingerprint = built.request ? JSON.stringify(built.request) : null;
-  const active = section !== 'Overview' && section !== 'Review' && section !== 'Experiments' && fingerprint !== null && submitted === fingerprint;
+  const active = (!guided || question !== null) && section !== 'Overview' && section !== 'Review' && section !== 'Experiments' && fingerprint !== null && submitted === fingerprint;
   const result = useQuery({ queryKey: analyticsQueryKeys.result(built.request),
     queryFn: ({ signal }) => queryAnalytics(built.request!, signal), enabled: active, retry: false });
   const metric = metadata.metrics.find(m => m.id === draft.metric);
@@ -44,13 +48,32 @@ function Builder({ metadata, overview, isKo }: { metadata: AnalyticsMetadata; ov
   const category = section === 'Strategy' ? 'strategy' : section === 'Psychology' ? 'psychology' : section === 'Rules' ? 'rule' : section === 'Time' ? 'time' : null;
   const highlights = category ? metadata.dimensions.filter(d => d.category === category) : [];
   const update = (next: BuilderDraft) => { setDraft(next); setSubmitted(null); setShowErrors(false); };
+  const chooseQuestion = (id: string) => {
+    const preset = guidedQuestions(metadata).find(q => q.id === id);
+    if (!preset) return;
+    const next = { ...initialDraft(metadata), metric: preset.metric, dimension: preset.dimension };
+    update(next); setQuestion(id);
+    const request = buildRequest(metadata, next).request;
+    setSubmitted(request ? JSON.stringify(request) : null); setShowErrors(true);
+  };
   return <div className="space-y-4">
     <div className="flex flex-wrap gap-1 border-b border-dark-700 pb-2" aria-label={textFor(isKo, '분석 메뉴', 'Analytics sections')}>
-      {sections.map(s => <button type="button" key={s} aria-pressed={section === s} onClick={() => { if (s === section || !experimentDirty || window.confirm(textFor(isKo, '저장하지 않은 실험 변경사항을 버릴까요?', 'Discard unsaved experiment changes?'))) setSection(s); }}
-        className={`rounded px-4 py-2 text-sm ${section === s ? 'bg-primary-500/20 text-primary-200' : 'text-dark-300 hover:bg-dark-800'}`}>{analyticsLabel(s, isKo)}</button>)}
+      {sections.filter(s => !guided || ['Overview', 'Edge Explorer', 'Review', 'Experiments'].includes(s)).map(s => <button type="button" key={s} aria-pressed={section === s} onClick={() => { if (s === section || !experimentDirty || window.confirm(textFor(isKo, '저장하지 않은 실험 변경사항을 버릴까요?', 'Discard unsaved experiment changes?'))) setSection(s); }}
+        className={`rounded px-4 py-2 text-sm ${section === s ? 'bg-primary-500/20 text-primary-200' : 'text-dark-300 hover:bg-dark-800'}`}>{guided && s === 'Edge Explorer' ? textFor(isKo, '질문으로 분석', 'Explore questions') : analyticsLabel(s, isKo)}</button>)}
     </div>
     {section === 'Overview' ? overview : section === 'Review' ? <ReviewWorkspace metadata={metadata} isKo={isKo} onExperiment={seed => { setExperimentSeed(seed); setSection('Experiments'); }} /> : section === 'Experiments' ? <ExperimentsWorkspace metadata={metadata} isKo={isKo} seed={experimentSeed} onDirtyChange={setExperimentDirty} /> : <>
-      <p className="text-sm text-dark-300">{textFor(isKo, '지표, 그룹, 기록된 필터로 과거 결과를 살펴보세요.', 'Explore observed historical results by metric, group and recorded filters.')}</p>
+      <div className="flex flex-wrap gap-2" aria-label={textFor(isKo, '분석 모드', 'Analysis mode')}>
+        <button type="button" aria-pressed={guided} className="rounded border border-dark-600 px-4 py-2" onClick={() => { if (!guided) { setGuided(true); setQuestion(null); setSubmitted(null); setSection('Edge Explorer'); } }}>{textFor(isKo, '안내형 분석', 'Guided analytics')}</button>
+        <button type="button" aria-pressed={!guided} className="rounded border border-dark-600 px-4 py-2" onClick={() => setGuided(false)}>{textFor(isKo, '고급 분석', 'Advanced analytics')}</button>
+      </div>
+      {guided ? <>
+        <GuidedQuestions metadata={metadata} selected={question} onSelect={chooseQuestion} isKo={isKo} />
+        {question && <form onSubmit={e => { e.preventDefault(); setShowErrors(true); if (fingerprint) { setSubmitted(fingerprint); if (active) void result.refetch(); } }}>
+          <GuidedFilters metadata={metadata} draft={draft} update={update} isKo={isKo} />
+          {showErrors && built.errors.length > 0 && <div role="alert" className="text-sm text-amber-300">{built.errors.map(err => <p key={err}>{err}</p>)}</div>}
+        </form>}
+      </> : <>
+      <p className="text-sm text-dark-300">{textFor(isKo, '지표·분석 기준·필터를 직접 골라 나만의 분석을 구성하세요.', 'Build your own analysis using metrics, dimensions and filters.')}</p>
       {!!highlights.length && <div className="flex flex-wrap gap-2" aria-label={textFor(isKo, `${analyticsLabel(section, isKo)} 분석 기준`, `${section} dimensions`)}>
         {highlights.map(d => <button type="button" key={d.id} disabled={!metric?.supported_dimensions.includes(d.id)}
           title={d.semantics} onClick={() => update({ ...draft, dimension: d.id })}
@@ -80,10 +103,15 @@ function Builder({ metadata, overview, isKo }: { metadata: AnalyticsMetadata; ov
       </form>
       <details className="text-sm text-dark-300"><summary className="cursor-pointer">{textFor(isKo, '추천 분석', 'Suggested analyses')}</summary><div className="mt-2 flex flex-wrap gap-2">{presets.filter(p => metadata.metrics.some(m => m.id === p.metric && m.supported_dimensions.includes(p.dimension)) && metadata.dimensions.some(d => d.id === p.dimension)).map(p =>
         <button key={p.label} type="button" className="rounded border border-dark-700 px-3 py-2 text-xs" onClick={() => update({ ...draft, metric: p.metric, dimension: p.dimension })}>{p.label}</button>)}</div></details>
-      {!active && <p role="status" className="rounded border border-dark-700 p-5 text-sm text-dark-400">{textFor(isKo, '분석 조건을 설정한 뒤 분석 실행을 선택하세요.', 'Configure an analysis and select Run analysis.')}</p>}
+      </>}
+      {!active && (!guided || question) && <p role="status" className="rounded border border-dark-700 p-5 text-sm text-dark-400">{textFor(isKo, '분석 조건을 설정한 뒤 분석 실행을 선택하세요.', 'Configure an analysis and select Run analysis.')}</p>}
       {active && result.isFetching && <p role="status" className="rounded border border-dark-700 p-5 text-sm text-dark-300">{textFor(isKo, '분석을 불러오는 중…', 'Loading analysis…')}</p>}
       {active && result.isError && <p role="alert" className="rounded border border-bear/30 p-4 text-sm text-bear">{analyticsError(result.error)}</p>}
-      {active && !result.isFetching && !result.isError && result.data && <AnalyticsResults data={result.data} isKo={isKo} />}
+      {active && !result.isFetching && !result.isError && result.data && (guided ? <>
+        <GuidedAnswer data={result.data} isKo={isKo} />
+        <details><summary className="cursor-pointer py-2 text-sm">{textFor(isKo, '상세 표·차트·누락 이유 보기', 'Inspect table, chart and missing-data reasons')}</summary><AnalyticsResults data={result.data} isKo={isKo} /></details>
+      </> : <AnalyticsResults data={result.data} isKo={isKo} />)}
+      {guided && question && <button type="button" onClick={() => setGuided(false)} className="rounded border border-primary-400 px-4 py-2 text-sm text-primary-200">{textFor(isKo, '현재 조건으로 고급 분석 열기', 'Open current query in Advanced')}</button>}
     </>}
   </div>;
 }

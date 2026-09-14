@@ -55,12 +55,12 @@ type EvidenceKind = 'regime' | 'early_exit' | 'late_exit' | 'hold2' | 'condition
 const DEFAULT_ANALYSIS_DAYS = 90;
 function signed(value: number | null | undefined, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) })}`;
 }
 
 function plain(value: number | null | undefined, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) });
 }
 
 function exitHoldIntervalLabel(interval: ExitHoldInterval, isKo: boolean): string {

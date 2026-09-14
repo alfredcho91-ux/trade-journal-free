@@ -54,7 +54,7 @@ const STRATEGY_LABELS: Record<string, string> = {
 
 function number(value: number | null | undefined, digits = 1): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) });
 }
 
 function signed(value: number | null | undefined, digits = 2): string {

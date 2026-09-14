@@ -53,7 +53,7 @@ it('renders an empty Review period neutrally', () => { setup(<ReviewSections dat
 it.each(['ELIGIBLE','INSUFFICIENT_EVIDENCE'] as const)('shows backend pattern state %s, order, baseline/delta without a confidence score', status => {
   const second = { ...patternFixture(status), metric: 'net_return_pct' }; setup(<PatternFindings items={[patternFixture(status), second]} onExperiment={vi.fn()} />);
   expect(screen.getAllByRole('article')[0].textContent).toContain('average_r');
-  expect(screen.getAllByText(/Observed 1e-9 · Baseline 1 · Delta -0.999999999/)).toHaveLength(2);
+  expect(screen.getAllByText(/Observed 0 · Baseline 1 · Delta -1/)).toHaveLength(2);
   expect(screen.queryByText(/confidence|statistically significant|proven edge/i)).toBeNull();
   expect(screen.getAllByText(status === 'ELIGIBLE' ? 'Eligible evidence' : 'Insufficient evidence')).toHaveLength(2);
 });
@@ -306,7 +306,7 @@ it.each([['DRAFT','Start experiment','ACTIVE'],['ACTIVE','Complete experiment','
   expect(api.transitionExperiment).toHaveBeenCalledWith(1,1,next);
 });
 it.each(['MET','NOT_MET','NOT_EVALUABLE'] as const)('renders server criterion %s and unavailable evidence without calculating locally', state => {
-  setup(<MeasurementView data={measurement(state)} />); expect(screen.getByText(/Current 1e-9 · Baseline Unavailable · Observed delta Unavailable/)).toBeTruthy();
+  setup(<MeasurementView data={measurement(state)} />); expect(screen.getByText(/Current 0 · Baseline Unavailable · Observed delta Unavailable/)).toBeTruthy();
   expect(screen.getByText(/BASELINE_UNAVAILABLE/)).toBeTruthy();
 });
 it('Measure is explicit and selected experiment response stays isolated', async () => {

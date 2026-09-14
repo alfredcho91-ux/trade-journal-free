@@ -26,7 +26,7 @@ const DEFAULT_CONFIG: GridConfig = {
 
 function number(value?: number | null, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) });
 }
 
 function signed(value?: number | null, digits = 2): string {

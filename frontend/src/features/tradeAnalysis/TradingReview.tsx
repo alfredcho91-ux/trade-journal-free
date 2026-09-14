@@ -75,7 +75,7 @@ function finite(value: number | null | undefined): value is number {
 
 function signed(value: number | null | undefined, digits = 2): string {
   if (!finite(value)) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) })}`;
 }
 
 function regimeLabel(id: string, isKo: boolean): string {

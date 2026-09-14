@@ -6,7 +6,7 @@ import { anchoredVwapSampleLabel, anchoredVwapZoneLabel } from '../utils/indicat
 function formatPrice(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
   const digits = value >= 1_000 ? 2 : value >= 1 ? 4 : 6;
-  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) });
 }
 
 const ANCHOR_LABELS: Record<string, { ko: string; en: string }> = {

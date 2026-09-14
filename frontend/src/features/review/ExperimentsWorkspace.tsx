@@ -57,7 +57,7 @@ function Editor({ record, seed, metadata, onDirty, onMutationStart, onMutationPe
     const navigate = (event: Event) => { if (pending || !window.confirm(textFor(isKo, '저장하지 않은 실험 변경사항을 버릴까요?', 'Discard unsaved experiment changes?'))) event.preventDefault(); };
     window.addEventListener('beforeunload', leave); window.addEventListener('app-before-navigate', navigate);
     return () => { window.removeEventListener('beforeunload', leave); window.removeEventListener('app-before-navigate', navigate); };
-  }, [dirty, pending]);
+  }, [dirty, pending, isKo]);
   const [measureRequested, setMeasureRequested] = useState(false);
   const measurement = useQuery({ queryKey: ['experiments','measure',record?.id,record?.revision], queryFn: ({ signal }) => measureExperiment(record!.id, signal), enabled: !!record && measureRequested, retry: false });
   const run = async (operation: () => Promise<Experiment>) => {

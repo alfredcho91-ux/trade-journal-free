@@ -1,10 +1,6 @@
 import type { AnalyticsGroup } from '../../types/analytics';
 
-/**
- * Presentation only: canonicalise finite decimal text without doing analytics
- * arithmetic. In particular, a value smaller than the old fixed 8-digit
- * display precision must not become indistinguishable from zero.
- */
+/** Display-only half-up rounding to two decimal places; source values stay intact. */
 export function displayAnalyticsValue(value: AnalyticsGroup['value']): string {
   if (value === null || (typeof value === 'number' && !Number.isFinite(value))) return 'Unavailable';
   const source = typeof value === 'number' ? value.toString() : value.trim();
@@ -23,17 +19,15 @@ export function displayAnalyticsValue(value: AnalyticsGroup['value']): string {
   const significant = digits.slice(firstSignificant);
   const decimalAfter = whole.length + exponent - firstSignificant;
   const scientificExponent = decimalAfter - 1;
-  // Scientific notation keeps tiny values compact while retaining every
-  // backend-provided significant digit. Use the same policy for JSON numbers
-  // and decimal strings so equivalent values have equivalent display meaning.
-  if (scientificExponent < -8) {
-    const coefficient = `${significant[0]}${significant.length > 1 ? `.${significant.slice(1).replace(/0+$/, '')}` : ''}`.replace(/\.$/, '');
-    return `${sign}${coefficient}e${scientificExponent}`;
-  }
+  if (scientificExponent < -3) return '0';
   const plain = decimalAfter <= 0
     ? `0.${'0'.repeat(-decimalAfter)}${significant}`
     : decimalAfter >= significant.length
       ? `${significant}${'0'.repeat(decimalAfter - significant.length)}`
       : `${significant.slice(0, decimalAfter)}.${significant.slice(decimalAfter)}`;
-  return `${sign}${plain.replace(/\.(\d*?)0+$/, (_, fractional) => fractional ? `.${fractional}` : '')}`;
+  const [integer, decimals = ''] = plain.split('.');
+  // Round decimal strings directly, including amounts beyond Number's safe integer range.
+  const cents = BigInt(integer) * 100n + BigInt(decimals.padEnd(2, '0').slice(0, 2)) + (Number(decimals[2] ?? 0) >= 5 ? 1n : 0n);
+  const fractionDigits = String(cents % 100n).padStart(2, '0').replace(/0+$/, '');
+  return `${cents === 0n ? '' : sign}${cents / 100n}${fractionDigits ? `.${fractionDigits}` : ''}`;
 }

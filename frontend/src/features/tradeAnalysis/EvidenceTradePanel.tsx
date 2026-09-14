@@ -7,7 +7,7 @@ import type { AnalyzedTrade } from './tradeAnalysis';
 import type { EvidenceRequest } from './evidenceNavigation';
 
 function plain(value: number | null | undefined, digits = 2): string {
-  return value == null || !Number.isFinite(value) ? '-' : value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value == null || !Number.isFinite(value) ? '-' : value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) });
 }
 
 function signed(value: number | null | undefined, digits = 2): string {

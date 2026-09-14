@@ -29,7 +29,10 @@ beforeEach(() => {
   vi.mocked(listStrategies).mockResolvedValue([]); vi.mocked(listStrategyVersions).mockResolvedValue([]);
 });
 afterEach(() => { cleanup(); clients.splice(0).forEach(c => c.clear()); });
-async function ready() { await screen.findByRole('combobox', { name: 'Metric' }); }
+async function ready() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Advanced analytics' }));
+  await screen.findByRole('combobox', { name: 'Metric' });
+}
 
 describe('Analytics workspace behavior', () => {
   it('extends the existing Trade Analysis route and retains Journal/Playbook navigation', async () => {
@@ -122,30 +125,37 @@ describe('Analytics workspace behavior', () => {
 });
 
 describe('Authoritative result presentation', () => {
-  it('preserves small non-zero values and uses one display policy for numbers and decimal strings', () => {
-    expect(displayAnalyticsValue(0.000000001)).toBe('1e-9');
-    expect(displayAnalyticsValue(-0.000000001)).toBe('-1e-9');
-    expect(displayAnalyticsValue('0.000000001')).toBe('1e-9');
-    expect(displayAnalyticsValue('0.0000000001234567890123456789')).toBe('1.234567890123456789e-10');
+  it('rounds numbers and exact decimal strings to at most two places for display only', () => {
+    expect(displayAnalyticsValue(0.000000001)).toBe('0');
+    expect(displayAnalyticsValue(-0.000000001)).toBe('0');
+    expect(displayAnalyticsValue('0.000000001')).toBe('0');
+    expect(displayAnalyticsValue('0.0000000001234567890123456789')).toBe('0');
+    expect(displayAnalyticsValue('1.005')).toBe('1.01');
+    expect(displayAnalyticsValue('-1.005')).toBe('-1.01');
+    expect(displayAnalyticsValue('99.995')).toBe('100');
+    expect(displayAnalyticsValue('9007199254740993.125')).toBe('9007199254740993.13');
+    expect(displayAnalyticsValue('5e-3')).toBe('0.01');
     expect(displayAnalyticsValue(0)).toBe('0');
     expect(displayAnalyticsValue(-0)).toBe('0');
     expect(displayAnalyticsValue(null)).toBe('Unavailable');
-    expect(displayAnalyticsValue(12.3456)).toBe('12.3456');
+    expect(displayAnalyticsValue(12.3456)).toBe('12.35');
     expect(displayAnalyticsValue(-3.2)).toBe('-3.2');
   });
-  it('uses the same non-zero policy in KPI and grouped table values with units', () => {
-    const view = setup(<AnalyticsResults data={resultFixture({ groups: [group('tiny', 0.000000001)] })} />);
-    expect(document.querySelector('.text-3xl.tabular-nums')?.textContent).toBe('1e-9 R');
-    expect(screen.getByText('1e-9 R')).toBeTruthy();
+  it('rounds KPI and table display without changing the underlying result or null meaning', () => {
+    const data = resultFixture({ groups: [group('tiny', 0.000000001)] });
+    const view = setup(<AnalyticsResults data={data} />);
+    expect(document.querySelector('.text-3xl.tabular-nums')?.textContent).toBe('0 R');
+    expect(screen.getByText('0 R')).toBeTruthy();
+    expect(data.groups[0].value).toBe(0.000000001);
     view.unmount();
     setup(<AnalyticsResults data={resultFixture({ groups: [group('tiny negative', -0.000000001)] })} />);
-    expect(document.querySelector('.text-3xl.tabular-nums')?.textContent).toBe('-1e-9 R');
-    expect(screen.getByText('-1e-9 R')).toBeTruthy();
+    expect(document.querySelector('.text-3xl.tabular-nums')?.textContent).toBe('0 R');
+    expect(screen.getByText('0 R')).toBeTruthy();
   });
-  it('renders exact decimal strings, units, samples, unknown reasons and evidence without recalculation', () => {
+  it('renders rounded decimal strings, units, samples, unknown reasons and evidence without recalculation', () => {
     setup(<AnalyticsResults data={resultFixture()} />);
     const result = screen.getByRole('region', { name: 'Analysis result' });
-    expect(within(result).getAllByText(/1.234567890123456789/).length).toBe(2);
+    expect(within(result).getAllByText(/1.23/).length).toBe(2);
     expect(within(result).getByRole('columnheader', { name: 'Total sample' })).toBeTruthy();
     expect(within(result).getByText('MISSING_OBSERVATION: 3')).toBeTruthy();
     expect(result.textContent).toContain('Limited sample'); expect(result.textContent).toContain('Observed historical association');
@@ -163,7 +173,7 @@ describe('Authoritative result presentation', () => {
     for (const name of ['Adherence', 'Coverage']) {
       const view = setup(<AnalyticsResults data={resultFixture({ metric: { ...metadataFixture().metrics[1], label: name }, groups: ['FOLLOWED', 'VIOLATED', 'NOT_EVALUABLE'].map(label => group(label, '71.123456789')) })} />);
       expect(screen.getByText('NOT_EVALUABLE').className).not.toContain('bear');
-      expect(screen.getAllByText('71.123456789 percent').length).toBe(3);
+      expect(screen.getAllByText('71.12 percent').length).toBe(3);
       view.unmount();
     }
   });

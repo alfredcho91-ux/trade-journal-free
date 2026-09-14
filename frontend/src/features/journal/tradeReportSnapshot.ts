@@ -19,7 +19,7 @@ export function formatSnapshotNumber(
   maximumFractionDigits = 2,
 ): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return value.toLocaleString(undefined, { maximumFractionDigits });
+  return value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, maximumFractionDigits) });
 }
 
 export function formatRvol20(value: number | null | undefined): string {

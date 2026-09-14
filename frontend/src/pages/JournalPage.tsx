@@ -50,7 +50,7 @@ function formatSignedNumber(value: number | null | undefined, maximumFractionDig
   if (value == null || !Number.isFinite(value)) {
     return '-';
   }
-  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits })}`;
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, maximumFractionDigits) })}`;
 }
 
 function formatHoldingMinutes(minutes: number | null, isKo: boolean): string {
@@ -963,7 +963,7 @@ export default function JournalPage() {
                     <span className={`text-xs font-semibold ${entry.direction === 'Long' ? 'text-bull' : 'text-bear'}`}>{entry.direction || '-'}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 border-y border-dark-700 py-3 text-xs">
-                    <div><span className="block text-[10px] text-dark-500">{isKo ? '진입 / 청산' : 'Entry / Exit'}</span><span className="mt-1 block font-mono text-dark-200">{entry.entry_price?.toLocaleString() || '-'} / {entry.exit_price?.toLocaleString() || '-'}</span></div>
+                    <div><span className="block text-[10px] text-dark-500">{isKo ? '진입 / 청산' : 'Entry / Exit'}</span><span className="mt-1 block font-mono text-dark-200">{entry.entry_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '-'} / {entry.exit_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '-'}</span></div>
                     <div className="text-right"><span className="block text-[10px] text-dark-500">{isKo ? '순수익금' : 'Net Profit'}</span><span className={`mt-1 block font-mono font-semibold ${(entry.realized_pnl || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{entry.realized_pnl == null ? '-' : `${formatSignedNumber(entry.realized_pnl, 4)} USDT`}</span></div>
                     <div><span className="block text-[10px] text-dark-500">{isKo ? '투입금 대비 수익률' : 'Margin Return'}</span><span className={`mt-1 block font-mono ${(displayNetReturnPct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{displayNetReturnPct == null ? '-' : `${formatSignedNumber(displayNetReturnPct, 3)}%`}</span></div>
                     <div className="text-right"><span className="block text-[10px] text-dark-500">{isKo ? '손익 결과' : 'PnL Result'}</span><span className="mt-1 block text-dark-300">{entry.outcome || '-'}</span></div>
@@ -1063,10 +1063,10 @@ export default function JournalPage() {
                         {entry.direction || '-'}
                       </td>
                       <td className="py-2 px-3 text-right font-mono">
-                        {entry.entry_price?.toLocaleString() || '-'}
+                        {entry.entry_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '-'}
                       </td>
                       <td className="py-2 px-3 text-right font-mono">
-                        {entry.exit_price?.toLocaleString() || '-'}
+                        {entry.exit_price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '-'}
                       </td>
                       <td
                         className={`py-2 px-3 text-right font-mono ${

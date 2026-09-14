@@ -27,7 +27,7 @@ interface CurrentMarketSimilarityPanelProps {
 
 function percent(value: number | null, digits = 1): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}%`;
+  return `${value >= 0 ? '+' : ''}${value.toFixed(Math.min(2, digits))}%`;
 }
 
 function similarity(value: number | null): string {

@@ -13,7 +13,7 @@ type Field = keyof HoldReentryInputs;
 
 function money(value: number): string {
   const digits = Math.abs(value) >= 1_000 ? 0 : 2;
-  return `${value >= 0 ? '+' : '-'}$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: digits })}`;
+  return `${value >= 0 ? '+' : '-'}$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) })}`;
 }
 
 function pct(value: number): string { return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`; }

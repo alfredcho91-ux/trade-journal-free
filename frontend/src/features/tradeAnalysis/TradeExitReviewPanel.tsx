@@ -3,7 +3,7 @@ import { buildExitReview, exitReviewConclusion, type ExitReviewRow } from './tra
 
 function signed(value: number | null, digits = 2): string {
   if (value == null) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: digits })}%`;
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) })}%`;
 }
 
 function rowValue(row: ExitReviewRow): string {

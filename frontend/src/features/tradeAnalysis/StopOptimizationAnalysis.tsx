@@ -15,12 +15,12 @@ type Props = {
 };
 
 function number(value?: number | null, digits = 2): string {
-  return value == null || !Number.isFinite(value) ? '-' : value.toFixed(digits);
+  return value == null || !Number.isFinite(value) ? '-' : value.toFixed(Math.min(2, digits));
 }
 
 function signed(value?: number | null, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+  return `${value >= 0 ? '+' : ''}${value.toFixed(Math.min(2, digits))}`;
 }
 
 function regimeLabel(id: string): string {

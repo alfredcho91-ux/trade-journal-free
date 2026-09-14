@@ -60,7 +60,7 @@ interface DragState {
 
 function formatPrice(value: number): string {
   const digits = value >= 1_000 ? 0 : value >= 1 ? 2 : 4;
-  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return value.toLocaleString(undefined, { maximumFractionDigits: Math.min(2, digits) });
 }
 
 function candleTimeAt(data: OHLCV[], datetime: string | null): UTCTimestamp | null {

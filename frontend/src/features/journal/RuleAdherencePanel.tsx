@@ -11,17 +11,23 @@ import type {
 } from '../../types';
 import { errorMessage } from '../playbook/strategyDraft';
 import { journalQueryKeys } from './journalQueryKeys';
+import { displayAnalyticsValue } from '../analytics/analyticsDisplay';
 
 const CATEGORIES: RuleEvaluationCategory[] = ['ENTRY', 'RISK', 'EXIT'];
 
 function percentage(value: string | null, isKo: boolean) {
-  return value == null ? (isKo ? '사용 불가' : 'Unavailable') : `${value}%`;
+  if (value == null) return isKo ? '사용 불가' : 'Unavailable';
+  const rounded = displayAnalyticsValue(value);
+  if (rounded === 'Unavailable') return isKo ? '사용 불가' : 'Unavailable';
+  const [integer, fraction = ''] = rounded.split('.');
+  return `${integer}.${fraction.padEnd(2, '0')}%`;
 }
 
-function factValue(value: unknown) {
-  if (Array.isArray(value)) return value.join(', ');
+function factValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(factValue).join(', ');
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (value == null) return '-';
+  if (typeof value === 'number' || (typeof value === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value))) return displayAnalyticsValue(value);
   return String(value);
 }
 
