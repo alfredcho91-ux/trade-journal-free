@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import os
 import base64
+import pytest
+
+from backend.config import settings
 
 from backend.modules.exchanges import credentials, encrypted_store, keyring_store, legacy_env, service
 
@@ -21,6 +24,16 @@ class FakeKeyring:
         del self.values[(service_name, account)]
 
 
+@pytest.fixture(autouse=True)
+def owned_test_env(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "_local_env_owned", lambda: True)
+    monkeypatch.setattr(settings, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "JOURNAL_DIR", tmp_path / "journal")
+    monkeypatch.setattr(settings, "JOURNAL_DB_PATH", tmp_path / "journal" / "trade_journal.db")
+    monkeypatch.setattr(encrypted_store, "JOURNAL_DB_PATH", tmp_path / "journal" / "trade_journal.db")
+    monkeypatch.setattr(legacy_env, "ENV_FILE", tmp_path / ".env")
+
+
 def test_exchange_credentials_use_os_vault_and_scrub_legacy_file(monkeypatch, tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text("OTHER=value\nOKX_API_KEY=old\nOKX_SECRET_KEY=old-secret\n", encoding="utf-8")
@@ -30,7 +43,7 @@ def test_exchange_credentials_use_os_vault_and_scrub_legacy_file(monkeypatch, tm
 
     credentials.save_local_exchange_credentials("okx", "api key", "secret", "pass phrase")
 
-    saved = json.loads(keyring.values[(keyring_store.SERVICE_NAME, "okx")])
+    saved = json.loads(keyring.values[(keyring_store.service_name(), "okx")])
     assert saved == {"api_key": "api key", "secret_key": "secret", "passphrase": "pass phrase"}
     assert env_file.read_text(encoding="utf-8") == "OTHER=value\n"
     if os.name != "nt":
@@ -40,7 +53,7 @@ def test_exchange_credentials_use_os_vault_and_scrub_legacy_file(monkeypatch, tm
     )
 
 
-def test_legacy_environment_credentials_are_migrated(monkeypatch, tmp_path):
+def test_legacy_environment_credentials_remain_readable_without_automatic_cleanup(monkeypatch, tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text("BINANCE_API_KEY=api\nBINANCE_SECRET_KEY=secret\n", encoding="utf-8")
     keyring = FakeKeyring()
@@ -54,8 +67,8 @@ def test_legacy_environment_credentials_are_migrated(monkeypatch, tmp_path):
     loaded = credentials.load_exchange_credentials("binance")
 
     assert loaded == credentials.StoredCredentials("api", "secret", "")
-    assert env_file.read_text(encoding="utf-8") == ""
-    assert (keyring_store.SERVICE_NAME, "binance") in keyring.values
+    assert "BINANCE_SECRET_KEY=secret" in env_file.read_text(encoding="utf-8")
+    assert not keyring.values
 
 
 def test_ccxt_connection_is_verified_before_credentials_are_saved(monkeypatch):

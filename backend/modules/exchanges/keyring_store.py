@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from backend.config.settings import credential_profile_id
+
 SERVICE_NAME = "Trade Journal Free"
+
+
+def service_name() -> str:
+    profile = credential_profile_id()
+    return SERVICE_NAME if profile == "normal" else f"{SERVICE_NAME}:profile:{profile}"
 
 
 class KeyringStoreError(RuntimeError):
@@ -13,14 +20,14 @@ class KeyringStoreError(RuntimeError):
 
 def save_keyring_payload(exchange_id: str, payload: str) -> None:
     try:
-        _keyring_module().set_password(SERVICE_NAME, exchange_id.lower(), payload)
+        _keyring_module().set_password(service_name(), exchange_id.lower(), payload)
     except Exception as exc:
         raise KeyringStoreError("The operating-system credential vault is unavailable") from exc
 
 
 def load_keyring_payload(exchange_id: str) -> Optional[str]:
     try:
-        return _keyring_module().get_password(SERVICE_NAME, exchange_id.lower())
+        return _keyring_module().get_password(service_name(), exchange_id.lower())
     except Exception as exc:
         raise KeyringStoreError("The operating-system credential vault is unavailable") from exc
 
@@ -29,9 +36,10 @@ def delete_keyring_payload(exchange_id: str) -> bool:
     keyring: Any = None
     try:
         keyring = _keyring_module()
-        if not keyring.get_password(SERVICE_NAME, exchange_id.lower()):
+        namespace = service_name()
+        if not keyring.get_password(namespace, exchange_id.lower()):
             return False
-        keyring.delete_password(SERVICE_NAME, exchange_id.lower())
+        keyring.delete_password(namespace, exchange_id.lower())
         return True
     except Exception as exc:
         password_delete_error = getattr(getattr(keyring, "errors", None), "PasswordDeleteError", None)

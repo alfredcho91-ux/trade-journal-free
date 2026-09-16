@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
-from backend.config.settings import get_app_environment
+from backend.config.settings import get_app_environment, owns_local_credential_env
 from backend.modules.exchanges import legacy_env
 from backend.modules.exchanges.encrypted_store import (
     EncryptedCredentialStoreError,
@@ -120,35 +120,54 @@ def _resolve_exchange_credentials(exchange_id: str) -> CredentialResolution:
     if environment is not None and not loaded_keys:
         # Explicit deployment environment remains externally owned. Do not
         # write it into the vault just because an unrelated old .env exists.
-        return CredentialResolution(environment, "environment", _cleanup_error(exchange_id))
+        return CredentialResolution(environment, "environment")
 
     mode = credential_storage_mode()
     payload = _load_payload(mode, exchange_id)
     source: CredentialSource = mode if payload else "none"
     if payload is None and mode == "encrypted_db":
         payload = _load_keyring_for_migration(exchange_id)
-        if payload:
-            _save_payload("encrypted_db", exchange_id, payload)
-            _best_effort_keyring_delete(exchange_id)
-            source = "encrypted_db"
+        if payload is not None:
+            return _copy_to_encrypted_store(exchange_id, payload)
     credentials = _parse_payload(payload)
     if payload is not None and credentials is None:
         return CredentialResolution(None, "none", "Stored exchange credentials are invalid")
     if credentials is not None:
         # Store first: retry/restart must never overwrite newer protected values
         # from a stale .env loaded by settings at startup.
-        return CredentialResolution(credentials, source, _cleanup_error(exchange_id))
+        return CredentialResolution(credentials, source)
     if environment is not None:
         if loaded_keys != present_keys:
             return CredentialResolution(None, "none", "Mixed deployment and legacy credentials require explicit configuration in exchange settings.")
-        _save_payload(mode, exchange_id, _serialize(environment))
-        return CredentialResolution(environment, mode, _cleanup_error(exchange_id))
+        if mode == "encrypted_db":
+            return _copy_to_encrypted_store(exchange_id, _serialize(environment))
+        # OS keyring has no atomic insert-if-absent. Keep the owned legacy env
+        # readable until an explicit save; a status read must not race a newer
+        # vault save. Automatic migration never removes either legacy source.
+        return CredentialResolution(environment, "environment")
     try:
         if has_legacy_values(exchange_id):
             return CredentialResolution(None, "none", "Legacy credentials could not be loaded. Restart or configure credentials in exchange settings.")
     except legacy_env.LegacyCleanupError:
         return CredentialResolution(None, "none", "Legacy credential file could not be inspected. Retry from exchange settings.")
     return CredentialResolution(None, "none")
+
+
+def _copy_to_encrypted_store(exchange_id: str, payload: str) -> CredentialResolution:
+    source = _parse_payload(payload)
+    if source is None:
+        return CredentialResolution(None, "none", "Stored exchange credentials are invalid")
+    try:
+        # Key validity is checked by encryption, NOT key durability. Preserve
+        # the source even after readback; the key may exist only in this process.
+        inserted = save_encrypted_credentials(exchange_id, _serialize(source), if_absent=True)
+        destination = _parse_payload(load_encrypted_credentials(exchange_id))
+        if destination is None or (inserted and destination != source):
+            raise CredentialStorageError("Credential migration verification failed")
+        # A concurrent writer won: its valid destination remains authoritative.
+        return CredentialResolution(destination, "encrypted_db")
+    except (EncryptedCredentialStoreError, OSError, ValueError, TypeError):
+        raise CredentialStorageError("Credential migration verification failed") from None
 
 
 def _save_payload(mode: StorageMode, exchange_id: str, payload: str) -> None:
@@ -212,12 +231,17 @@ def _cleanup_error(exchange_id: str) -> Optional[str]:
 
 
 def _environment_credentials(exchange_id: str) -> Optional[StoredCredentials]:
+    if not owns_local_credential_env() and legacy_env.legacy_keys(exchange_id).intersection(legacy_env.LOCAL_ENV_KEYS_LOADED):
+        return None
     prefix = exchange_id.upper()
     api_key = os.getenv(f"{prefix}_API_KEY", "").strip()
     secret_key = os.getenv(f"{prefix}_SECRET_KEY", "")
     if not api_key or not secret_key:
         return None
-    return StoredCredentials(api_key, secret_key, os.getenv(f"{prefix}_PASSPHRASE", ""))
+    try:
+        return StoredCredentials(_value(api_key), _value(secret_key), _optional_value(os.getenv(f"{prefix}_PASSPHRASE", "")))
+    except ValueError:
+        raise CredentialStorageError("Invalid environment credentials") from None
 
 
 def _serialize(credentials: StoredCredentials) -> str:
@@ -229,6 +253,8 @@ def _parse_payload(payload: Optional[str]) -> Optional[StoredCredentials]:
         return None
     try:
         values = json.loads(payload)
+        if not isinstance(values, dict):
+            return None
         return StoredCredentials(
             _value(values.get("api_key", "")),
             _value(values.get("secret_key", "")),
@@ -239,14 +265,18 @@ def _parse_payload(payload: Optional[str]) -> Optional[StoredCredentials]:
 
 
 def _value(value: Any) -> str:
-    normalized = str(value or "").strip()
+    if not isinstance(value, str):
+        raise ValueError("Invalid credential value")
+    normalized = value.strip()
     if not normalized or "\n" in normalized or "\r" in normalized:
         raise ValueError("Invalid credential value")
     return normalized
 
 
 def _optional_value(value: Any) -> str:
-    normalized = str(value or "").strip()
+    if not isinstance(value, str):
+        raise ValueError("Invalid credential value")
+    normalized = value.strip()
     if "\n" in normalized or "\r" in normalized:
         raise ValueError("Invalid credential value")
     return normalized

@@ -23,22 +23,24 @@ class EncryptedCredentialStoreError(RuntimeError):
     """Raised when encrypted credential storage cannot be used safely."""
 
 
-def save_encrypted_credentials(exchange_id: str, payload: str, *, db_path: Optional[Path] = None) -> None:
+def save_encrypted_credentials(exchange_id: str, payload: str, *, db_path: Optional[Path] = None, if_absent: bool = False) -> bool:
     envelope = _encrypt(exchange_id, payload)
     try:
         with _connect(db_path) as connection:
             _ensure_table(connection)
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT INTO exchange_credentials (exchange_id, encrypted_payload, encryption_version, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """ + ("ON CONFLICT(exchange_id) DO NOTHING" if if_absent else """
                 ON CONFLICT(exchange_id) DO UPDATE SET
                     encrypted_payload = excluded.encrypted_payload,
                     encryption_version = excluded.encryption_version,
                     updated_at = CURRENT_TIMESTAMP
-                """,
+                """),
                 (exchange_id.lower(), envelope, _VERSION),
             )
+        return cursor.rowcount > 0
     except sqlite3.Error as exc:
         raise EncryptedCredentialStoreError("Encrypted credential database is unavailable") from exc
 

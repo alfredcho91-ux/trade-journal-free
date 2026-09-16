@@ -27,6 +27,10 @@ def state(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "LOCAL_ENV_PATH", path)
     monkeypatch.setattr(settings, "LOCAL_ENV_KEYS_LOADED", loaded)
     monkeypatch.setattr(legacy_env, "LOCAL_ENV_KEYS_LOADED", loaded)
+    monkeypatch.setattr(settings, "_local_env_owned", lambda: True)
+    monkeypatch.setattr(settings, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "JOURNAL_DIR", tmp_path / "journal")
+    monkeypatch.setattr(settings, "JOURNAL_DB_PATH", tmp_path / "journal" / "trade_journal.db")
 
     def save(exchange, payload):
         writes.append(payload)
@@ -77,16 +81,19 @@ def test_save_partial_failure_retry_and_restart_keep_vault_authoritative(state, 
             result = credentials.resolve_exchange_credentials("binance")
             assert result.credentials == credentials.StoredCredentials("fake-new-api", "fake-new-secret")
             assert result.source == "keyring"
-            assert result.storage_error == credentials.CLEANUP_PENDING
+            assert result.storage_error is None
             assert len(state.writes) == 1
             assert_no_temps(state)
     state.restart()
+    assert state.path.read_bytes() == original
+    # Only an explicit save retries cleanup; status reads leave the source alone.
+    credentials.save_local_exchange_credentials("binance", "fake-new-api", new_secret)
     for _ in range(3):
         result = credentials.resolve_exchange_credentials("binance")
         assert result.credentials.api_key == "fake-new-api"
         assert result.storage_error is None
         state.restart()
-    assert len(state.writes) == 1
+    assert len(state.writes) == 2
     assert state.path.read_text(encoding="utf-8") == "OTHER=keep\n"
     assert not state.loaded
     assert not os.getenv("BINANCE_SECRET_KEY")
@@ -94,44 +101,44 @@ def test_save_partial_failure_retry_and_restart_keep_vault_authoritative(state, 
     assert "fake-new-secret" not in caplog.text
 
 
-def test_automatic_migration_partial_failure_is_visible_and_idempotent(state, monkeypatch):
+def test_legacy_env_read_is_source_preserving_and_idempotent(state, monkeypatch):
     state.legacy()
+    original = state.path.read_bytes()
     with monkeypatch.context() as fault:
         fault.setattr(legacy_env.os, "replace", fail_replace)
         for _ in range(3):
             result = credentials.resolve_exchange_credentials("binance")
             assert result.credentials.api_key == "fake-old-api"
-            assert result.storage_error == credentials.CLEANUP_PENDING
+            assert result.storage_error is None
+            assert result.source == "environment"
             state.restart()
-        assert len(state.writes) == 1
+        assert len(state.writes) == 0
         assert_no_temps(state)
     result = credentials.resolve_exchange_credentials("binance")
     assert result.storage_error is None
-    assert len(state.writes) == 1
-    assert state.path.read_text(encoding="utf-8") == "OTHER=keep\n"
+    assert len(state.writes) == 0
+    assert state.path.read_bytes() == original
 
 
 def test_vault_write_failure_preserves_legacy_for_retry(state, monkeypatch, caplog):
     state.legacy()
     original = state.path.read_bytes()
+    secret = "fake-old-secret"
 
     def unavailable(*args):
         raise keyring_store.KeyringStoreError("fake-old-secret")
 
     with monkeypatch.context() as fault:
         fault.setattr(credentials, "save_keyring_payload", unavailable)
-        result = credentials.resolve_exchange_credentials("binance")
-        assert result.credentials is None
-        assert result.storage_error == "Protected credential storage is unavailable"
         with pytest.raises(credentials.CredentialStorageError) as error:
-            credentials.load_exchange_credentials("binance")
+            credentials.save_local_exchange_credentials("binance", "fake-old-api", secret)
         assert "fake-old-secret" not in "".join(traceback.format_exception(error.value))
         assert state.path.read_bytes() == original
         assert not state.values
         assert_no_temps(state)
     state.restart()
     assert credentials.load_exchange_credentials("binance").api_key == "fake-old-api"
-    assert len(state.writes) == 1
+    assert len(state.writes) == 0
     assert "fake-old-secret" not in caplog.text
 
 
@@ -258,26 +265,28 @@ def test_mixed_legacy_deployment_values_never_migrate_as_a_guessed_pair(state, m
             credentials.save_local_exchange_credentials("binance", "fake-new-api", "fake-new-secret")
         result = credentials.resolve_exchange_credentials("binance")
         assert result.credentials.api_key == "fake-new-api"
-        assert result.storage_error == credentials.CLEANUP_PENDING
+        assert result.storage_error is None
     result = credentials.resolve_exchange_credentials("binance")
     assert result.credentials.api_key == "fake-new-api"
     assert result.storage_error is None
     assert len(state.writes) == 1
 
 
-def test_quoted_assignments_accepted_by_real_loader_are_cleaned(state):
+def test_quoted_assignments_preserved_on_read_cleaned_on_explicit_save(state):
     state.path.write_text('"BINANCE_API_KEY=fake-api"\n"BINANCE_SECRET_KEY=fake-secret"\nOTHER=keep\n', encoding="utf-8")
     state.restart()
     assert credentials.load_exchange_credentials("binance").api_key == "fake-api"
+    assert 'BINANCE_SECRET_KEY' in state.path.read_text(encoding="utf-8")
+    credentials.save_local_exchange_credentials("binance", "fake-api", "fake-secret")
     assert state.path.read_text(encoding="utf-8") == "OTHER=keep\n"
-    assert not state.loaded
+    assert not state.loaded.intersection(legacy_env.legacy_keys("binance"))
 
 
 def test_missing_legacy_file_does_not_preserve_stale_loaded_environment(state):
     state.legacy()
     state.path.unlink()
     credentials.save_local_exchange_credentials("binance", "fake-new-api", "fake-new-secret")
-    assert not state.loaded
+    assert not state.loaded.intersection(legacy_env.legacy_keys("binance"))
     assert not os.getenv("BINANCE_SECRET_KEY")
     assert credentials.load_exchange_credentials("binance").api_key == "fake-new-api"
 

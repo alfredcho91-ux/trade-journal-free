@@ -9,7 +9,7 @@ import tempfile
 from functools import wraps
 from threading import RLock
 
-from backend.config.settings import LOCAL_ENV_KEYS_LOADED, LOCAL_ENV_PATH
+from backend.config.settings import LOCAL_ENV_KEYS_LOADED, LOCAL_ENV_PATH, owns_local_credential_env
 
 ENV_FILE = LOCAL_ENV_PATH
 _KEY_PATTERN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=")
@@ -49,11 +49,15 @@ def _line_key(line: str):
 
 
 def has_legacy_values(exchange_id: str) -> bool:
+    if not owns_local_credential_env():
+        return False
     return bool(legacy_keys(exchange_id).intersection(_env_file_keys()))
 
 
 @serialized_credential_lifecycle
 def remove_legacy_values(exchange_id: str) -> None:
+    if not owns_local_credential_env():
+        return
     secret_keys = legacy_keys(exchange_id)
     try:
         if ENV_FILE.is_file():

@@ -2,6 +2,7 @@
 """Application settings and configuration"""
 
 import os
+import hashlib
 import shlex
 import sys
 from dataclasses import dataclass
@@ -30,9 +31,23 @@ LOCAL_ENV_PATH = PROJECT_ROOT / ".env"
 LOCAL_ENV_KEYS_LOADED: set[str] = set()
 
 
+def _profile_path(value) -> str:
+    return os.path.normcase(str(Path(value).expanduser().resolve()))
+
+
+def _local_env_owned() -> bool:
+    """A redirected DB/profile must not inherit the default profile's .env."""
+    return (
+        _profile_path(APP_DATA_DIR) == _profile_path(_default_app_data_dir())
+        and _profile_path(os.getenv("TRADE_JOURNAL_DATA_DIR", str(APP_DATA_DIR))) == _profile_path(_default_app_data_dir())
+        and _profile_path(os.getenv("JOURNAL_DIR", str(PROJECT_ROOT / "journal"))) == _profile_path(PROJECT_ROOT / "journal")
+        and _profile_path(os.getenv("JOURNAL_DB_PATH", str(PROJECT_ROOT / "journal" / "trade_journal.db"))) == _profile_path(PROJECT_ROOT / "journal" / "trade_journal.db")
+    )
+
+
 def _load_local_env() -> None:
     """Load persisted credentials without overriding explicit environment values."""
-    if not LOCAL_ENV_PATH.is_file():
+    if not _local_env_owned() or not LOCAL_ENV_PATH.is_file():
         return
 
     for raw_line in LOCAL_ENV_PATH.read_text(encoding="utf-8").splitlines():
@@ -50,6 +65,15 @@ def _load_local_env() -> None:
             if key not in os.environ:
                 os.environ[key] = value
                 LOCAL_ENV_KEYS_LOADED.add(key)
+
+    # A path override loaded from this file also changes ownership. Do not let
+    # the former profile's credentials/key follow it into the new one. Retain
+    # non-secret configuration (especially APP_ENV; never downgrade auth mode).
+    if not _local_env_owned():
+        for key in tuple(LOCAL_ENV_KEYS_LOADED):
+            if key.endswith(("_API_KEY", "_SECRET_KEY", "_PASSPHRASE")) or key in {"CREDENTIAL_MASTER_KEY", "DEMO_USERNAME", "DEMO_PASSWORD"}:
+                os.environ.pop(key, None)
+                LOCAL_ENV_KEYS_LOADED.discard(key)
 
 
 _load_local_env()
@@ -92,6 +116,27 @@ JOURNAL_CSV_PATH = Path(
     os.getenv("JOURNAL_CSV_PATH", str(JOURNAL_DIR / "trade_journal.csv"))
 ).expanduser()
 JOURNAL_PATH = JOURNAL_CSV_PATH
+
+
+def credential_profile_id() -> str:
+    """Keep the legacy vault only for the canonical normal-user data profile.
+
+    Source checkouts and custom paths have their own stable namespace. Moving
+    one is deliberately not implicit permission to adopt another profile's keys.
+    """
+    normal = _default_app_data_dir()
+    identity = [_profile_path(APP_DATA_DIR), _profile_path(PROJECT_ROOT), _profile_path(JOURNAL_DIR), _profile_path(JOURNAL_DB_PATH)]
+    if _local_env_owned() and identity == [_profile_path(normal), _profile_path(normal), _profile_path(normal / "journal"), _profile_path(normal / "journal" / "trade_journal.db")]:
+        return "normal"
+    return hashlib.sha256("\0".join(identity).encode("utf-8")).hexdigest()
+
+
+def owns_local_credential_env() -> bool:
+    return _local_env_owned() and (
+        _profile_path(JOURNAL_DIR) == _profile_path(PROJECT_ROOT / "journal")
+        and _profile_path(JOURNAL_DB_PATH) == _profile_path(PROJECT_ROOT / "journal" / "trade_journal.db")
+    )
+
 JOURNAL_COLUMNS = [
     "id",
     "datetime",
