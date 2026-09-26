@@ -48,13 +48,13 @@ describe('TradeBehaviorEditor', () => {
 
   it('shows the four compact sections and bilingual labels', () => {
     renderEditor(false);
-    expect(screen.getByText('PLAN')).toBeTruthy();
+    expect(screen.getByText('Legacy Journal planning notes')).toBeTruthy();
     expect(screen.getByText('PSYCHOLOGY')).toBeTruthy();
     expect(screen.getByText('BEHAVIOR')).toBeTruthy();
     expect(screen.getByText('NOTES')).toBeTruthy();
     cleanup();
     renderEditor(true);
-    expect(screen.getByText('계획')).toBeTruthy();
+    expect(screen.getByText('기존 Journal 계획 메모')).toBeTruthy();
     expect(screen.getByText('심리')).toBeTruthy();
     expect(screen.getByText('행동')).toBeTruthy();
     expect(screen.getByText('메모')).toBeTruthy();

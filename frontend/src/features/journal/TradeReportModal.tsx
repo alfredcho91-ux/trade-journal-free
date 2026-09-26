@@ -16,6 +16,7 @@ import { isClosedPosition } from './journalEntries';
 import { tradeOutcomeAssessment } from './tradeOutcomeAssessment';
 import StrategyAssignmentEditor from './StrategyAssignmentEditor';
 import TradeBehaviorEditor from './TradeBehaviorEditor';
+import PlanningContextPanel from '../planLab/PlanningContextPanel';
 import RuleAdherencePanel from './RuleAdherencePanel';
 import UnsavedChangesDialog from './UnsavedChangesDialog';
 import {
@@ -157,19 +158,21 @@ export default function TradeReportModal({
   const [reportInterval, setReportInterval] = useState<ReportInterval>('4h');
   const [assignmentDirty, setAssignmentDirty] = useState(false);
   const [behaviorDirty, setBehaviorDirty] = useState(false);
-  const [pendingExit, setPendingExit] = useState<'close' | 'plan' | 'playbook' | null>(null);
+  type ExitTarget = 'close' | 'plan' | 'plan-prefill' | 'plan-prefill-price' | 'playbook';
+  const [pendingExit, setPendingExit] = useState<ExitTarget | null>(null);
   const hasUnsavedChanges = assignmentDirty || behaviorDirty;
   useEffect(() => {
     setAssignmentDirty(false);
     setBehaviorDirty(false);
     setPendingExit(null);
   }, [entry.id]);
-  const completeExit = (exit: 'close' | 'plan' | 'playbook') => {
+  const completeExit = (exit: ExitTarget) => {
     onClose();
     if (exit === 'plan' && entry.id != null) navigate(`/plan-lab?journalId=${entry.id}`);
+    if (exit.startsWith('plan-prefill') && entry.id != null) navigate(`/plan-lab?journalId=${entry.id}&prefill=1&pricePercent=${exit === 'plan-prefill-price' ? '1' : '0'}`);
     if (exit === 'playbook') navigate('/playbook');
   };
-  const requestExit = (exit: 'close' | 'plan' | 'playbook') => {
+  const requestExit = (exit: ExitTarget) => {
     if (hasUnsavedChanges) {
       setPendingExit(exit);
       return;
@@ -674,6 +677,9 @@ export default function TradeReportModal({
 
             {entry.id != null && <RuleAdherencePanel entryId={entry.id} isKo={isKo} />}
 
+            {isClosedPosition(entry) && entry.id != null && <PlanningContextPanel key={entry.id} entryId={entry.id} isKo={isKo}
+              onOpenPlan={() => requestExit('plan')}
+              onStartPlan={(_, confirmed) => requestExit(confirmed ? 'plan-prefill-price' : 'plan-prefill')} />}
             {isClosedPosition(entry) && <TradeBehaviorEditor
               entry={entry}
               isKo={isKo}

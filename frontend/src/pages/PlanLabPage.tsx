@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, ClipboardCheck, History, Link as LinkIcon, RefreshCw, X } from 'lucide-react';
 
@@ -39,6 +39,9 @@ import { journalDerivedQueryPrefixes, journalQueryKeys } from '../features/journ
 import { exchangeQueryKeys } from '../features/journal/exchangeQueryKeys';
 import { useEditorAuthority, type EditorSubmissionAuthority } from '../hooks/useEditorAuthority';
 import TradeReportModal from '../features/journal/TradeReportModal';
+import PlanningContextPanel from '../features/planLab/PlanningContextPanel';
+import { invalidatePlanningContexts, retrospectiveDraft, usePlanningContext } from '../features/planLab/planningContext';
+import type { PlanningContext } from '../api/planningContext';
 import { SampleBadge } from '../features/tradeAnalysis/SampleBadge';
 import { useLanguage } from '../store/useStore';
 import type {
@@ -293,8 +296,9 @@ function sourceLabel(source: PlanSource, isKo: boolean): string {
   return isKo ? '미연결' : 'Unlinked';
 }
 
-export function PlanForm({ draft, isKo, trade, openPosition, revisionTarget, pending, error, saved, evaluation, hasNextMissing, entries = [], onChange, onSubmit, onCancel, onViewAnalysis, onNextMissing }: {
+export function PlanForm({ planningContext, draft, isKo, trade, openPosition, revisionTarget, pending, error, saved, evaluation, hasNextMissing, entries = [], onChange, onSubmit, onCancel, onViewAnalysis, onNextMissing }: {
   draft: PlanDraft;
+  planningContext?: ReactNode;
   isKo: boolean;
   trade?: JournalEntry;
   openPosition?: ExchangeOpenPosition;
@@ -341,10 +345,10 @@ export function PlanForm({ draft, isKo, trade, openPosition, revisionTarget, pen
   </>;
   const content = <section className="min-h-full bg-dark-950">
     <header className="sticky top-0 z-10 border-b border-dark-700 bg-dark-950/95 px-5 py-5 backdrop-blur sm:px-7">
-      <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">{inTrade ? (revisionTarget ? (isKo ? `진행중 거래 계획 #${revisionTarget.id} 수정` : 'Edit in-trade plan') : (isKo ? '진행중 거래 계획 입력' : 'Enter in-trade plan')) : revisionTarget ? (isKo ? `계획 #${revisionTarget.id} 수정 이력 추가` : 'Add plan revision') : retrospective ? (isKo ? '과거 거래의 당시 계획 입력' : 'Enter the historical trade plan') : (isKo ? '사전 계획 기록' : 'Record a pre-trade plan')}</h2>{trade && <p className="mt-2 text-xs text-dark-300"><b className="text-white">{trade.symbol} · {trade.direction?.toUpperCase()}</b><span className="mx-2 text-dark-700">|</span>{dateLabel(trade.entry_datetime, isKo)}<span className="mx-2 text-dark-700">|</span>{isKo ? '실제 진입' : 'Actual entry'} <b className="font-mono text-white">{price(trade.entry_price)}</b>{saved && <><span className="mx-2 text-dark-700">|</span>{isKo ? '실제 청산' : 'Actual exit'} <b className="font-mono text-white">{price(trade.exit_price)}</b></>}</p>}{openPosition && <p className="mt-2 text-xs text-dark-300"><b className="text-white">{openPosition.symbol} · {openPosition.direction.toUpperCase()}</b><span className="mx-2 text-dark-700">|</span>{isKo ? '실제 진입' : 'Actual entry'} <b className="font-mono text-white">{price(openPosition.average_price)}</b><span className="mx-2 text-dark-700">|</span>{isKo ? '진행중 거래' : 'Open position'}</p>}</div><button type="button" onClick={onCancel} className="border border-dark-700 px-3 py-2 text-xs text-dark-300 hover:text-white">{isKo ? '닫기' : 'Close'}</button></div>
+      <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">{inTrade ? (revisionTarget ? (isKo ? `진행중 거래 계획 #${revisionTarget.id} 수정` : 'Edit in-trade plan') : (isKo ? '진행중 거래 계획 입력' : 'Enter in-trade plan')) : revisionTarget ? (isKo ? `계획 #${revisionTarget.id} 수정 이력 추가` : 'Add plan revision') : retrospective ? (isKo ? '과거 거래의 당시 계획 입력' : 'Enter the historical trade plan') : (isKo ? '사전 계획 기록' : 'Record a pre-trade plan')}</h2>{trade && <p className="mt-2 text-xs text-dark-300"><b className="text-white">{trade.symbol} · {trade.direction?.toUpperCase()}</b><span className="mx-2 text-dark-700">|</span>{dateLabel(trade.entry_datetime, isKo)}<span className="mx-2 text-dark-700">|</span>{isKo ? '실제 진입' : 'Actual entry'} <b className="font-mono text-white">{price(trade.entry_price)}</b>{saved && <><span className="mx-2 text-dark-700">|</span>{isKo ? '실제 청산' : 'Actual exit'} <b className="font-mono text-white">{price(trade.exit_price)}</b></>}</p>}{openPosition && <p className="mt-2 text-xs text-dark-300"><b className="text-white">{openPosition.symbol} · {openPosition.direction.toUpperCase()}</b><span className="mx-2 text-dark-700">|</span>{isKo ? '실제 진입' : 'Actual entry'} <b className="font-mono text-white">{price(openPosition.average_price)}</b><span className="mx-2 text-dark-700">|</span>{isKo ? '진행중 거래' : 'Open position'}</p>}</div><button type="button" onClick={onCancel} className="shrink-0 whitespace-nowrap border border-dark-700 px-3 py-2 text-xs text-dark-300 hover:text-white">{isKo ? '닫기' : 'Close'}</button></div>
       {retrospective && <div className="mt-5 flex gap-6"><button type="button" onClick={() => setActiveTab('comparison')} className={`border-b-2 pb-3 text-xs ${activeTab === 'comparison' ? 'border-primary-400 text-primary-200' : 'border-transparent text-dark-400'}`}>{isKo ? '계획 비교' : 'Plan comparison'}</button><button type="button" onClick={() => setActiveTab('analysis')} className={`border-b-2 pb-3 text-xs ${activeTab === 'analysis' ? 'border-primary-400 text-primary-200' : 'border-transparent text-dark-400'}`}>{isKo ? '거래 분석' : 'Trade analysis'}</button></div>}
     </header>
-    <div className="p-5 sm:p-7">{retrospective && activeTab === 'analysis' ? <TradeAnalysisSummary entry={trade} evaluation={evaluation} entries={entries} isKo={isKo} /> : <>
+    <div className="p-5 sm:p-7">{planningContext}{draft.memo.startsWith('Retrospective draft from Journal #') && <p className="mb-4 break-words border border-amber-300/30 p-3 text-xs text-amber-200">{draft.memo}</p>}{retrospective && activeTab === 'analysis' ? <TradeAnalysisSummary entry={trade} evaluation={evaluation} entries={entries} isKo={isKo} /> : <>
       {retrospective && <div className="mb-5 border border-amber-300/25 bg-amber-300/5 px-4 py-3 text-[11px] leading-5 text-amber-200">{saved ? (isKo ? '저장된 회고 계획과 실제 결과를 비교합니다.' : 'Comparing the saved retrospective plan with the actual result.') : (isKo ? '회고 입력입니다. 계획을 저장하기 전에는 실제 청산가와 손익을 숨깁니다.' : 'Retrospective input. Actual exit and result remain hidden until save.')}</div>}
       {inTrade && <div className="mb-5 border border-primary-400/25 bg-primary-500/5 px-4 py-3 text-[11px] leading-5 text-primary-100">{isKo ? '실제 진입 후 기록하는 계획입니다. 실제 진입가는 목표 손익비 기준으로만 사용하며, 사전 계획 진입가로 저장되지 않습니다.' : 'This plan is recorded after the actual entry. The actual entry is used only as the target R:R reference and is never stored as a planned entry.'}</div>}
       {retrospective && !saved ? <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
@@ -433,6 +437,7 @@ function OptimizerRows({ variants, isKo }: { variants: PlanOptimizerVariant[]; i
 export default function PlanLabPage() {
   const isKo = useLanguage() === 'ko';
   const queryClient = useQueryClient();
+  const initialIntent = useRef(new URLSearchParams(window.location.search));
   const [period, setPeriod] = useState<JournalPeriod>(() => buildJournalPeriod(DEFAULT_DAYS));
   const [draftPeriod, setDraftPeriod] = useState<JournalPeriod>(() => buildJournalPeriod(DEFAULT_DAYS));
   const [direction, setDirection] = useState<DirectionFilter>('ALL');
@@ -513,6 +518,8 @@ export default function PlanLabPage() {
   const openPositionTarget = editorMode.kind === 'in-trade' ? editorMode.position : undefined;
   const inTradeRevisionTarget = editorMode.kind === 'in-trade' ? editorMode.revisionTarget : undefined;
   const selectedTrade = entries.find((entry) => entry.id === historicalTradeId);
+  const contextTradeId = viewPlan ? viewPlan.link?.journal_entry_id ?? null : historicalTradeId ?? revisionTarget?.link?.journal_entry_id ?? null;
+  const planningQuery = usePlanningContext(contextTradeId);
   const planEditorKey = editorKeyForMode(editorMode);
   const capturePlanAuthority = useEditorAuthority(planEditorKey, draft);
   const planDraftDirty = planEditorKey !== 'closed' && JSON.stringify(draft) !== JSON.stringify(draftBaseline);
@@ -524,6 +531,7 @@ export default function PlanLabPage() {
 
   const invalidate = async (journalEntryId?: number | null) => {
     await Promise.all([
+      invalidatePlanningContexts(queryClient),
       queryClient.invalidateQueries({ queryKey: journalQueryKeys.plans }),
       queryClient.invalidateQueries({ queryKey: ['plan-lab'] }),
       ...(journalEntryId == null ? [] : [
@@ -686,6 +694,7 @@ export default function PlanLabPage() {
   const beginPlanDraft = (next: PlanDraft) => { setDraft(next); setDraftBaseline(next); setSavedTradeId(null); setFormError(null); };
   const closePlanEditor = () => {
     if (!mayReplacePlanEditor()) return;
+    initialIntent.current = new URLSearchParams();
     setEditorMode({ kind: 'closed' }); setSavedTradeId(null);
     setDraft(EMPTY_DRAFT); setDraftBaseline(EMPTY_DRAFT); setFormError(null);
   };
@@ -698,6 +707,7 @@ export default function PlanLabPage() {
   const openHistoricalTrade = (entry: JournalEntry | undefined) => {
     if (!entry?.id) return;
     if (planEditorKey === `historical:${entry.id}` || !mayReplacePlanEditor()) return;
+    initialIntent.current = new URLSearchParams();
     setEditorMode({ kind: 'historical', tradeId: entry.id });
     beginPlanDraft(draftFromHistoricalTrade(entry));
   };
@@ -721,6 +731,7 @@ export default function PlanLabPage() {
   };
   const openPretrade = () => {
     if (planEditorKey === 'pretrade:new' || !mayReplacePlanEditor()) return;
+    initialIntent.current = new URLSearchParams();
     setEditorMode({ kind: 'pretrade' });
     beginPlanDraft(EMPTY_DRAFT);
   };
@@ -734,6 +745,32 @@ export default function PlanLabPage() {
     beginPlanDraft(draftFromPlan(plan));
   };
   const openNextMissing = (current?: JournalEntry) => openHistoricalTrade(nextMissingTrade(current, missingPlans));
+  const startFromNotes = (context: PlanningContext, confirmed: boolean) => {
+    const entry = entries.find(item => item.id === context.journal_entry_id);
+    if (!entry || context.linked_plan || context.link_state === 'AMBIGUOUS' || !mayReplacePlanEditor()) return;
+    initialIntent.current = new URLSearchParams();
+    const base = draftFromHistoricalTrade(entry);
+    setEditorMode({ kind: 'historical', tradeId: context.journal_entry_id });
+    beginPlanDraft(base);
+    setDraft(retrospectiveDraft(context, base, confirmed));
+  };
+  useEffect(() => {
+    const intent = initialIntent.current;
+    if (!planningQuery.data || !selectedTrade || Number(intent.get('journalId')) !== historicalTradeId) return;
+    initialIntent.current = new URLSearchParams();
+    // Only the original navigation may initialize this draft; later reads never replace edits.
+    if (planDraftDirty || editorMode.kind !== 'historical') return;
+    const context = planningQuery.data;
+    if (context.link_state === 'AMBIGUOUS') return;
+    if (context.linked_plan) {
+      setViewPlan(context.linked_plan.plan);
+      setEditorMode({ kind: 'closed' });
+      return;
+    }
+    const base = draftFromHistoricalTrade(selectedTrade);
+    setDraftBaseline(base);
+    setDraft(intent.get('prefill') === '1' ? retrospectiveDraft(context, base, intent.get('pricePercent') === '1') : base);
+  }, [planningQuery.data, selectedTrade, historicalTradeId, planDraftDirty, editorMode.kind]);
   const applyPeriod = () => {
     const start = dateBoundaryTimestamp(draftPeriod.start);
     const end = dateBoundaryTimestamp(draftPeriod.end, true);
@@ -763,6 +800,11 @@ export default function PlanLabPage() {
   const evidenceEvaluations = evidence ? evaluations.filter((item) => evidence.ids.includes(item.journal_id)) : [];
   const selectedTradeEvaluation = selectedTrade?.id == null ? undefined : evaluations.find((item) => item.journal_id === selectedTrade.id);
   const hasNextMissing = nextMissingTrade(selectedTrade, missingPlans) != null;
+  const showPlanForm = editorMode.kind !== 'closed' && (historicalTradeId == null || (planningQuery.isSuccess && planningQuery.data.link_state !== 'AMBIGUOUS' && (revisionTarget || !planningQuery.data.linked_plan)));
+  const planningPanel = contextTradeId != null && <PlanningContextPanel key={contextTradeId} entryId={contextTradeId} isKo={isKo}
+      onOpenPlan={reviseViewedPlan}
+      onStartPlan={startFromNotes} onLinkPlan={plan => { if (mayReplacePlanEditor()) { const entry = entries.find(item => item.id === contextTradeId); if (entry) beginPlanDraft(draftFromHistoricalTrade(entry)); linkMutation.mutate({ planId: plan.id, journalId: contextTradeId }); } }}
+      linking={linkMutation.isPending} linkError={linkMutation.isError ? (isKo ? '연결하지 못했습니다. 다시 확인하세요.' : 'Could not link. Refresh and try again.') : undefined} />;
 
   return <div className="space-y-6">
     <header className="flex flex-col items-stretch justify-between gap-4 lg:flex-row lg:items-end"><div><h1 className="flex items-center gap-2 text-xl font-bold text-white"><ClipboardCheck className="h-5 w-5 text-primary-300" />{isKo ? '과거 거래 계획 입력' : 'Historical trade plan input'}</h1><p className="mt-1 text-xs text-dark-500">{isKo ? '과거 거래를 선택하고 당시 의도했던 계획을 직접 입력하세요.' : 'Select a closed trade and enter the plan you intended at the time.'}</p></div><div className="grid grid-cols-2 gap-2 sm:flex sm:items-end"><button type="button" onClick={() => { const next = buildJournalPeriod(DEFAULT_DAYS); setDraftPeriod(next); setPeriod(next); }} className="border border-dark-700 px-3 py-2 text-xs">90{isKo ? '일' : 'D'}</button><input type="date" value={draftPeriod.start} max={toDateInputValue(new Date())} onChange={(event) => setDraftPeriod({ ...draftPeriod, start: event.target.value })} className="min-w-0 border border-dark-700 bg-dark-900 px-2 py-2 text-xs" /><input type="date" value={draftPeriod.end} max={toDateInputValue(new Date())} onChange={(event) => setDraftPeriod({ ...draftPeriod, end: event.target.value })} className="min-w-0 border border-dark-700 bg-dark-900 px-2 py-2 text-xs" /><button type="button" onClick={applyPeriod} className="btn-primary px-3 py-2 text-xs">{isKo ? '적용' : 'Apply'}</button></div></header>
@@ -778,9 +820,10 @@ export default function PlanLabPage() {
 
     <section className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Kpi label={isKo ? '종료 거래' : 'Closed trades'} value={String(closedInPeriod.length)} detail={isKo ? '현재 목록 범위' : 'Current list scope'} /><Kpi label={isKo ? '계획 입력 완료' : 'Plans recorded'} value={String(closedInPeriod.length - missingPlans.length)} detail={isKo ? '현재 목록 범위' : 'Current list scope'} tone="positive" /><Kpi label={isKo ? '계획 미입력' : 'Plans missing'} value={String(missingPlans.length)} detail={isKo ? '현재 목록 범위' : 'Current list scope'} tone="primary" /></section>
 
-    <section className="border border-dark-700 bg-dark-900/25 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><SectionHeading title={isKo ? '종료 거래에서 계획 입력' : 'Enter plans from closed trades'} description={isKo ? '계획이 없는 거래는 분석 불가 상태일 뿐, 실패나 규칙 위반으로 처리하지 않습니다.' : 'A missing plan only means the trade is not yet comparable; it is not a failure or rule violation.'} /></div><button type="button" onClick={openPretrade} className="self-start border border-dark-700 px-3 py-2 text-xs text-dark-300">{isKo ? '사전 계획 기록' : 'Record pre-trade'}</button></div><div className="mt-4 flex flex-wrap gap-2">{([{ id: 'ALL', ko: '전체', en: 'All' }, { id: 'NO_PLAN', ko: '계획 미입력', en: 'Missing plans' }, { id: 'RECORDED', ko: '입력 완료', en: 'Recorded' }] as const).map((item) => <button key={item.id} type="button" onClick={() => setPlanStatus(item.id)} className={`border px-3 py-2 text-xs ${planStatus === item.id ? 'border-primary-400 bg-primary-500/10 text-primary-200' : 'border-dark-700 text-dark-400 hover:text-white'}`}>{isKo ? item.ko : item.en}</button>)}</div><div className="mt-4 overflow-x-auto"><table className="min-w-[900px] w-full text-left text-xs"><thead className="border-y border-dark-700 text-[10px] text-dark-500"><tr><th className="px-3 py-3 font-medium">{isKo ? '날짜' : 'Date'}</th><th className="px-3 py-3 font-medium">{isKo ? '코인' : 'Symbol'}</th><th className="px-3 py-3 font-medium">{isKo ? '방향' : 'Side'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 진입가' : 'Actual entry'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 청산가' : 'Actual exit'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 결과' : 'Actual result'}</th><th className="px-3 py-3 font-medium">{isKo ? 'Plan 상태' : 'Plan status'}</th><th className="px-3 py-3 text-right font-medium">{isKo ? '액션' : 'Action'}</th></tr></thead><tbody>{listedTrades.map((entry) => { const plan = entry.id == null ? undefined : planByJournalId.get(entry.id); return <tr key={entry.id} className="border-b border-dark-800/80"><td className="px-3 py-3 text-dark-300">{dateLabel(entry.entry_datetime, isKo)}</td><td className="px-3 py-3 font-mono text-dark-200">{entry.symbol || '-'}</td><td className="px-3 py-3"><b className={entry.direction === 'Long' ? 'text-bull' : 'text-bear'}>{entry.direction?.toUpperCase() || '-'}</b></td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.entry_price)}</td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.exit_price)}</td><td className={`px-3 py-3 font-mono ${(entry.r_multiple ?? entry.pnl_pct ?? entry.realized_pnl ?? 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{actualResultLabel(entry)}</td><td className="px-3 py-3">{plan ? <span className={`border px-2 py-1 text-[10px] ${plan.source === 'VERIFIED_PRETRADE' ? 'border-bull/40 text-bull' : 'border-amber-300/40 text-amber-200'}`}>{sourceLabel(plan.source, isKo)}</span> : <span className="border border-dark-700 px-2 py-1 text-[10px] text-dark-400">{isKo ? '미입력' : 'No plan'}</span>}</td><td className="px-3 py-3 text-right">{plan ? <button type="button" onClick={() => setViewPlan(plan)} className="border border-dark-700 px-3 py-1.5 text-xs text-dark-200 hover:border-primary-400 hover:text-white">{isKo ? '열기' : 'Open'}</button> : <button type="button" onClick={() => openHistoricalTrade(entry)} className="btn-primary px-3 py-1.5 text-xs">{isKo ? '열기' : 'Open'}</button>}</td></tr>; })}</tbody></table></div>{!listedTrades.length && <p className="py-10 text-center text-xs text-dark-500">{isKo ? '현재 조건에 맞는 종료 거래가 없습니다.' : 'No closed trades match these filters.'}</p>}</section>
+    <section className="border border-dark-700 bg-dark-900/25 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><SectionHeading title={isKo ? '종료 거래에서 계획 입력' : 'Enter plans from closed trades'} description={isKo ? '계획이 없는 거래는 분석 불가 상태일 뿐, 실패나 규칙 위반으로 처리하지 않습니다.' : 'A missing plan only means the trade is not yet comparable; it is not a failure or rule violation.'} /></div><button type="button" onClick={openPretrade} className="self-start border border-dark-700 px-3 py-2 text-xs text-dark-300">{isKo ? '사전 계획 기록' : 'Record pre-trade'}</button></div><div className="mt-4 flex flex-wrap gap-2">{([{ id: 'ALL', ko: '전체', en: 'All' }, { id: 'NO_PLAN', ko: '계획 미입력', en: 'Missing plans' }, { id: 'RECORDED', ko: '입력 완료', en: 'Recorded' }] as const).map((item) => <button key={item.id} type="button" onClick={() => setPlanStatus(item.id)} className={`border px-3 py-2 text-xs ${planStatus === item.id ? 'border-primary-400 bg-primary-500/10 text-primary-200' : 'border-dark-700 text-dark-400 hover:text-white'}`}>{isKo ? item.ko : item.en}</button>)}</div><div className="mt-4 overflow-x-auto"><table className="min-w-[900px] w-full text-left text-xs"><thead className="border-y border-dark-700 text-[10px] text-dark-500"><tr><th className="px-3 py-3 font-medium">{isKo ? '날짜' : 'Date'}</th><th className="px-3 py-3 font-medium">{isKo ? '코인' : 'Symbol'}</th><th className="px-3 py-3 font-medium">{isKo ? '방향' : 'Side'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 진입가' : 'Actual entry'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 청산가' : 'Actual exit'}</th><th className="px-3 py-3 font-medium">{isKo ? '실제 결과' : 'Actual result'}</th><th className="px-3 py-3 font-medium">{isKo ? 'Plan 상태' : 'Plan status'}</th><th className="px-3 py-3 text-right font-medium">{isKo ? '액션' : 'Action'}</th></tr></thead><tbody>{listedTrades.map((entry) => { const plan = entry.id == null ? undefined : planByJournalId.get(entry.id); return <tr key={entry.id} className="border-b border-dark-800/80"><td className="px-3 py-3 text-dark-300">{dateLabel(entry.entry_datetime, isKo)}</td><td className="px-3 py-3 font-mono text-dark-200">{entry.symbol || '-'}</td><td className="px-3 py-3"><b className={entry.direction === 'Long' ? 'text-bull' : 'text-bear'}>{entry.direction?.toUpperCase() || '-'}</b></td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.entry_price)}</td><td className="px-3 py-3 font-mono text-dark-200">{price(entry.exit_price)}</td><td className={`px-3 py-3 font-mono ${(entry.r_multiple ?? entry.pnl_pct ?? entry.realized_pnl ?? 0) >= 0 ? 'text-bull' : 'text-bear'}`}>{actualResultLabel(entry)}</td><td className="px-3 py-3">{plan ? <span className={`border px-2 py-1 text-[10px] ${plan.source === 'VERIFIED_PRETRADE' ? 'border-bull/40 text-bull' : 'border-amber-300/40 text-amber-200'}`}>{sourceLabel(plan.source, isKo)}</span> : <span className="border border-dark-700 px-2 py-1 text-[10px] text-dark-400">{plansQuery.isError ? (isKo ? '계획 정보를 불러올 수 없습니다.' : 'Unable to load planning context') : plansQuery.isPending ? (isKo ? '계획 확인 중…' : 'Checking plans…') : entry.planned_stop_pct != null || entry.planned_target_pct != null || entry.planned_entry_reason ? (isKo ? 'Journal 계획 메모 있음' : 'Journal planning notes recorded') : (isKo ? '연결된 계획 없음' : 'No linked plan')}</span>}</td><td className="px-3 py-3 text-right">{plan ? <button type="button" onClick={() => setViewPlan(plan)} className="border border-dark-700 px-3 py-1.5 text-xs text-dark-200 hover:border-primary-400 hover:text-white">{isKo ? '열기' : 'Open'}</button> : <button type="button" onClick={() => openHistoricalTrade(entry)} className="btn-primary px-3 py-1.5 text-xs">{isKo ? '열기' : 'Open'}</button>}</td></tr>; })}</tbody></table></div>{!listedTrades.length && <p className="py-10 text-center text-xs text-dark-500">{isKo ? '현재 조건에 맞는 종료 거래가 없습니다.' : 'No closed trades match these filters.'}</p>}</section>
 
-    {editorMode.kind !== 'closed' && <PlanForm draft={draft} isKo={isKo} trade={selectedTrade} openPosition={openPositionTarget} revisionTarget={inTradeRevisionTarget ?? revisionTarget} pending={currentPlanSavePending} error={formError} saved={selectedTrade?.id != null && savedTradeId === selectedTrade.id && !planDraftDirty} evaluation={selectedTradeEvaluation} hasNextMissing={hasNextMissing} entries={entries} onChange={setDraft} onSubmit={submitPlan} onCancel={closePlanEditor} onViewAnalysis={viewPlanAnalysis} onNextMissing={() => openNextMissing(selectedTrade)} />}
+    {!showPlanForm && !viewPlan && planningPanel}
+    {showPlanForm && <PlanForm planningContext={planningPanel} draft={draft} isKo={isKo} trade={selectedTrade} openPosition={openPositionTarget} revisionTarget={inTradeRevisionTarget ?? revisionTarget} pending={currentPlanSavePending} error={formError} saved={selectedTrade?.id != null && savedTradeId === selectedTrade.id && !planDraftDirty} evaluation={selectedTradeEvaluation} hasNextMissing={hasNextMissing} entries={entries} onChange={setDraft} onSubmit={submitPlan} onCancel={closePlanEditor} onViewAnalysis={viewPlanAnalysis} onNextMissing={() => openNextMissing(selectedTrade)} />}
 
     {!analysisRequested && <section id="plan-lab-analysis" className="border border-dark-700 bg-dark-900/25 p-5"><SectionHeading title={isKo ? '기존 Plan Lab 분석' : 'Existing Plan Lab analysis'} description={isKo ? '가격 경로·품질·Optimizer 계산은 목록을 보는 동안 실행하지 않습니다. 필요할 때만 공식 분석을 불러옵니다.' : 'Path, quality, and optimizer calculations stay idle while browsing the list and load only on request.'} /><button type="button" onClick={requestAnalysis} className="btn-primary mt-4 px-4 py-2 text-xs">{isKo ? '공식 분석 불러오기' : 'Load official analysis'}</button></section>}
 
@@ -827,6 +870,6 @@ export default function PlanLabPage() {
     {evidence && <EvidenceDrawer title={evidence.title} evaluations={evidenceEvaluations} entries={entries} isKo={isKo} onClose={() => setEvidence(null)} onSelect={(evaluation) => { setEvidence(null); setSelectedEvaluation(evaluation); }} />}
     {selectedEvaluation && <EvaluationModal evaluation={selectedEvaluation} entry={entries.find((entry) => entry.id === selectedEvaluation.journal_id)} entries={entries} isKo={isKo} onClose={() => setSelectedEvaluation(null)} />}
     </>}
-    {viewPlan && <LargePlanDetailsDrawer plan={viewPlan} entry={entries.find((entry) => entry.id === viewPlan.link?.journal_entry_id)} evaluation={evaluations.find((item) => item.journal_id === viewPlan.link?.journal_entry_id)} entries={entries} analysisRequested={analysisRequested} analysisLoading={analysisQuery.isLoading} isKo={isKo} onClose={() => setViewPlan(null)} onLoadAnalysis={requestAnalysis} onRevise={viewPlan.source === 'IN_TRADE' ? undefined : () => reviseViewedPlan(viewPlan)} />}
+    {viewPlan && <LargePlanDetailsDrawer planningContext={planningPanel} plan={viewPlan} entry={entries.find((entry) => entry.id === viewPlan.link?.journal_entry_id)} evaluation={evaluations.find((item) => item.journal_id === viewPlan.link?.journal_entry_id)} entries={entries} analysisRequested={analysisRequested} analysisLoading={analysisQuery.isLoading} isKo={isKo} onClose={() => setViewPlan(null)} onLoadAnalysis={requestAnalysis} onRevise={viewPlan.source === 'IN_TRADE' ? undefined : () => reviseViewedPlan(viewPlan)} />}
   </div>;
 }

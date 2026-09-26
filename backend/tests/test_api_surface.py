@@ -13,6 +13,7 @@ def test_free_edition_exposes_only_journal_analysis_routes():
         ("GET", "/api/health"),
         ("POST", "/api/desktop/shutdown"),
         ("GET", "/api/journal"),
+        ("GET", "/api/journal/{entry_id}/planning-context"),
         ("GET", "/api/journal/daily"),
         ("GET", "/api/journal/daily/{trade_date}"),
         ("PUT", "/api/journal/daily/{trade_date}"),

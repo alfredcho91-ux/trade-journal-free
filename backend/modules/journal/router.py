@@ -63,8 +63,15 @@ from backend.modules.journal.service import (
     update_journal_behavior_service,
 )
 from backend.utils.decorators import handle_api_errors
+from backend.modules.journal.planning_context import PlanningContextEnvelope, get_planning_context
 
 router = APIRouter(prefix="/api", tags=["journal"])
+
+
+@router.get("/journal/{entry_id}/planning-context", response_model=PlanningContextEnvelope)
+@handle_api_errors()
+async def api_planning_context(entry_id: int):
+    return (await run_in_threadpool(get_planning_context, entry_id)).model_dump(mode="json")
 
 
 @router.get("/journal", response_model=JournalListEnvelope)

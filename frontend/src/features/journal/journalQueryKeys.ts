@@ -1,4 +1,6 @@
 export const journalQueryKeys = {
+  planningContexts: ['planning-context'] as const,
+  planningContext: (id: number | null) => ['planning-context', id] as const,
   entries: ['journal'] as const,
   daily: ['daily-journal'] as const,
   dailyDate: (tradeDate: string) => ['daily-journal', 'date', tradeDate] as const,

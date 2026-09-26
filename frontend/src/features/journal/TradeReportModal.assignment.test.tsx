@@ -16,6 +16,12 @@ import { RouterContext } from '../../router-context';
 import type { JournalEntry, JournalStrategyAssignment, Strategy, StrategyVersion } from '../../types';
 import TradeReportModal from './TradeReportModal';
 import { journalQueryKeys } from './journalQueryKeys';
+import { getPlanningContext } from '../../api/planningContext';
+
+vi.mock('../../api/planningContext', () => ({ getPlanningContext: vi.fn(async (id: number) => ({
+  journal_entry_id: id, journal_notes: { source: 'journal_entries', journal_entry_id: id, planned_stop_pct: null, planned_target_pct: null, planned_entry_reason: null, plan_recorded_at: null, has_notes: false, timing_verified: false },
+  actual_execution: {}, link_state: 'NO_LINKED_PLAN', linked_plan: null, candidate_plans: [], candidates_truncated: false, issues: [],
+})) }));
 
 vi.mock('../../api/journal', () => ({
   getDeepcoinTradeMarkers: vi.fn(),
@@ -122,6 +128,10 @@ async function makeAssignmentDirty(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+  vi.mocked(getPlanningContext).mockImplementation(async id => ({ journal_entry_id: id,
+    journal_notes: { source: 'journal_entries', journal_entry_id: id, planned_stop_pct: null, planned_target_pct: null, planned_entry_reason: null, plan_recorded_at: null, has_notes: false, timing_verified: false },
+    actual_execution: {}, link_state: 'NO_LINKED_PLAN', linked_plan: null, candidate_plans: [], candidates_truncated: false, issues: [],
+  }));
   mockedEvaluationGet.mockResolvedValue(null);
   mockedAssignmentGet.mockResolvedValue(null);
   mockedAssignmentPut.mockImplementation(async (entryId) => assignment(entryId));
@@ -134,6 +144,19 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+});
+
+it('shows Journal planning notes and navigates to the shared retrospective editor without writing', async () => {
+  vi.mocked(getPlanningContext).mockResolvedValue({ journal_entry_id: 101,
+    journal_notes: { source: 'journal_entries', journal_entry_id: 101, planned_stop_pct: 2, planned_target_pct: 4, planned_entry_reason: 'Support held', plan_recorded_at: null, has_notes: true, timing_verified: false },
+    actual_execution: { entry_price: 100, direction: 'Long' }, link_state: 'NO_LINKED_PLAN', linked_plan: null, candidate_plans: [], candidates_truncated: false, issues: [],
+  });
+  const { navigate } = renderModal(); const user = userEvent.setup();
+  await screen.findByText('Planning notes recorded — not saved as a Trade Plan.');
+  await user.click(screen.getByRole('checkbox'));
+  await user.click(screen.getByText('Start retrospective plan from these notes'));
+  expect(navigate).toHaveBeenCalledWith('/plan-lab?journalId=101&prefill=1&pricePercent=1');
+  expect(mockedBehaviorUpdate).not.toHaveBeenCalled();
 });
 
 describe('Trade Report combined unsaved-change boundary', () => {

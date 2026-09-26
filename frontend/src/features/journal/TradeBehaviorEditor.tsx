@@ -14,6 +14,7 @@ import {
   type TradeBehaviorDraft,
 } from './tradeBehaviorForm';
 import { journalQueryKeys } from './journalQueryKeys';
+import { invalidatePlanningContexts } from '../planLab/planningContext';
 
 const EMOTION_SUGGESTIONS = ['Calm', 'Confident', 'Focused', 'Anxious', 'Fearful', 'Greedy', 'Frustrated', 'Tired', 'Neutral'];
 
@@ -115,6 +116,7 @@ export default function TradeBehaviorEditor({ entry, isKo, onUpdated, onDirtyCha
   const saveMutation = useMutation({
     mutationFn: (request: TradeBehaviorSaveRequest) => updateJournalBehavior(request.entryId, request.payload),
     onSuccess: (updatedEntry, request) => {
+      void invalidatePlanningContexts(queryClient, request.entryId);
       void queryClient.invalidateQueries({ queryKey: journalQueryKeys.strategyEvaluation(request.entryId) });
       if (entryIdRef.current !== request.entryId) return;
       const next = tradeBehaviorDraftFromEntry(updatedEntry);
@@ -141,14 +143,14 @@ export default function TradeBehaviorEditor({ entry, isKo, onUpdated, onDirtyCha
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h3 className="text-sm font-semibold text-white">{isKo ? '거래 행동 기록' : 'Trade Behavior Journal'}</h3>
-        <p className="mt-1 text-[11px] text-dark-500">{isKo ? '계획, 심리, 행동과 메모를 한 곳에서 기록합니다.' : 'Capture the plan, psychology, behavior, and notes in one place.'}</p>
+        <p className="mt-1 text-[11px] text-dark-500">{isKo ? '심리, 행동과 회고를 기록합니다. 거래 계획은 위의 계획 열기에서 관리합니다.' : 'Record psychology, behavior and reflection. Manage structured plans through Open plan above.'}</p>
       </div>
       {entry.plan_recorded_at && <span className="text-[10px] text-dark-500">{isKo ? '계획 기록 시각' : 'Plan recorded'} {new Date(entry.plan_recorded_at).toLocaleString()}</span>}
     </div>
 
     {entry.id == null ? <div className="mt-3 text-xs text-dark-500">{isKo ? '저장된 거래만 편집할 수 있습니다.' : 'Only saved journal trades can be edited.'}</div> : <>
       <div className="mt-3 space-y-2">
-        <EditorSection title={isKo ? '계획' : 'PLAN'} summary={isKo ? '손절·목표·진입 근거' : 'Stop, target, rationale'} defaultOpen>
+        <EditorSection title={isKo ? '기존 Journal 계획 메모' : 'Legacy Journal planning notes'} summary={isKo ? '거래 계획과 별도 · 선택 입력' : 'Separate from Trade Plan · optional'}>
           <div className="grid gap-3 md:grid-cols-3">
             <label className="text-xs text-dark-400">{isKo ? '계획 손절률 (%)' : 'Planned stop (%)'}
               <input aria-label={isKo ? '계획 손절률' : 'Planned stop percentage'} aria-invalid={numberErrors.planned_stop_pct || undefined} aria-describedby={numberErrors.planned_stop_pct ? 'planned-stop-error' : undefined} value={draft.planned_stop_pct} min="0" max="100" step="0.1" type="number" onChange={(event) => updateField('planned_stop_pct', event.target.value)} className="mt-1 w-full border border-dark-700 bg-dark-950 px-2.5 py-2 font-mono text-sm text-white" />
@@ -163,11 +165,10 @@ export default function TradeBehaviorEditor({ entry, isKo, onUpdated, onDirtyCha
           <label className="mt-3 block text-xs text-dark-400">{isKo ? '계획 진입 근거' : 'Planned entry rationale'}
             <input value={draft.planned_entry_reason} maxLength={500} onChange={(event) => updateField('planned_entry_reason', event.target.value)} className="mt-1 w-full border border-dark-700 bg-dark-950 px-2.5 py-2 text-sm text-white" />
           </label>
+        </EditorSection>
           <label className="mt-3 block text-xs text-dark-400">{isKo ? 'Setup 태그' : 'Setup tags'}
             <input value={draft.setup_tags} onChange={(event) => updateField('setup_tags', event.target.value)} placeholder={isKo ? '추세추종, VPVR 지지' : 'Trend follow, VPVR support'} className="mt-1 w-full border border-dark-700 bg-dark-950 px-2.5 py-2 text-sm text-white" />
           </label>
-        </EditorSection>
-
         <EditorSection title={isKo ? '심리' : 'PSYCHOLOGY'} summary={isKo ? '감정·자신감·집중도' : 'Emotion, confidence, focus'}>
           <datalist id={emotionListId}>{EMOTION_SUGGESTIONS.map((emotion) => <option key={emotion} value={emotion} />)}</datalist>
           <div className="grid gap-3 md:grid-cols-3">

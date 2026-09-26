@@ -15,10 +15,14 @@ import {
   getJournal,
   getPlanLab,
   getPlans,
+  linkPlanToTrade,
 } from '../api/client';
 import { useStore } from '../store/useStore';
 import type { JournalEntry, PlanLabData, TradingPlan } from '../types';
 import PlanLabPage from './PlanLabPage';
+import { getPlanningContext } from '../api/planningContext';
+
+vi.mock('../api/planningContext', () => ({ getPlanningContext: vi.fn() }));
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('../api/client')>(),
@@ -149,6 +153,7 @@ async function openTrade(symbol: string) {
   const row = matches.find((element) => element.tagName === 'TD')?.closest('tr');
   if (!row) throw new Error(`Missing row for ${symbol}`);
   fireEvent.click(within(row).getByRole('button', { name: 'Open' }));
+  await screen.findByLabelText('Stop Loss');
 }
 
 async function openInTradePlan() {
@@ -165,11 +170,61 @@ beforeEach(() => {
   vi.clearAllMocks(); useStore.setState({ language: 'en' }); window.history.replaceState(null, '', '/plan-lab');
   vi.spyOn(window, 'confirm').mockReturnValue(true); vi.stubGlobal('scrollTo', vi.fn());
   vi.mocked(getJournal).mockResolvedValue(trades); vi.mocked(getPlans).mockResolvedValue([]);
+  vi.mocked(getPlanningContext).mockImplementation(async id => ({ journal_entry_id: id,
+    journal_notes: { source: 'journal_entries', journal_entry_id: id, planned_stop_pct: null, planned_target_pct: null, planned_entry_reason: null, plan_recorded_at: null, has_notes: false, timing_verified: false },
+    actual_execution: trades.find(trade => trade.id === id)!, link_state: 'NO_LINKED_PLAN', linked_plan: null, candidate_plans: [], candidates_truncated: false, issues: [],
+  }));
   vi.mocked(getPlanLab).mockResolvedValue(emptyAnalysis);
   vi.mocked(getExchangeStatuses).mockResolvedValue([]); vi.mocked(getExchangeOpenPositions).mockResolvedValue({ positions: [], unavailable_exchanges: [] });
 });
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('prefills only a draft from explicit Journal navigation and refreshes context after an explicit save', async () => {
+  window.history.replaceState(null, '', '/plan-lab?journalId=1&prefill=1&pricePercent=1');
+  const notes = { source: 'journal_entries' as const, journal_entry_id: 1, planned_stop_pct: 2, planned_target_pct: 4, planned_entry_reason: 'Support held', plan_recorded_at: '1999-01-01', has_notes: true, timing_verified: false as const };
+  const source = { journal_entry_id: 1, journal_notes: notes, actual_execution: trades[0], link_state: 'NO_LINKED_PLAN' as const, linked_plan: null, candidate_plans: [], candidates_truncated: false, issues: [] };
+  vi.mocked(getPlanningContext).mockResolvedValue(source);
+  const saved = savedPlan(1); saved.latest_revision.entry_note = 'Support held';
+  vi.mocked(createRetrospectivePlan).mockImplementation(async (_id, revision) => {
+    Object.assign(saved.latest_revision, revision);
+    vi.mocked(getPlanningContext).mockResolvedValue({ ...source, link_state: 'LINKED', linked_plan: { plan: saved, entry_time_revision: null, analysis_revision: saved.latest_revision, analysis_basis: 'RETROSPECTIVE' } });
+    return saved;
+  });
+  setup();
+  await waitFor(() => expect((screen.getByLabelText('Stop Loss') as HTMLInputElement).value).toBe('98'));
+  expect((screen.getByLabelText(/^TP1 ·/) as HTMLInputElement).value).toBe('104');
+  expect(screen.getByRole('region', { name: 'Trade planning context' }).closest('aside')).not.toBeNull();
+  expect(createRetrospectivePlan).not.toHaveBeenCalled();
+  const readsBeforeSave = vi.mocked(getPlanningContext).mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+  await screen.findByText('Latest revision · v1');
+  expect(createRetrospectivePlan).toHaveBeenCalledWith(1, expect.objectContaining({ entry_price: null, entry_min: null, entry_max: null, stop_loss: 98, take_profit: 104, take_profit_2: null }));
+  expect(vi.mocked(getPlanningContext).mock.calls.length).toBeGreaterThan(readsBeforeSave);
+  expect(source.journal_notes).toEqual(notes);
+});
+
+it('uses the newly opened Plan context after linking a different historical trade', async () => {
+  const linkedA = savedPlan(1), linkedB = savedPlan(2);
+  const candidate = { ...linkedA, source: 'UNLINKED' as const, status: 'active' as const, link: null };
+  let linked = false;
+  vi.mocked(getPlans).mockImplementation(async () => linked ? [linkedA, linkedB] : [candidate, linkedB]);
+  vi.mocked(getPlanningContext).mockImplementation(async id => ({ journal_entry_id: id,
+    journal_notes: { source: 'journal_entries', journal_entry_id: id, planned_stop_pct: null, planned_target_pct: null, planned_entry_reason: `Notes for trade ${id}`, plan_recorded_at: null, has_notes: true, timing_verified: false },
+    actual_execution: trades[id - 1], link_state: id === 1 && !linked ? 'CANDIDATES' : 'LINKED',
+    candidate_plans: id === 1 && !linked ? [candidate] : [], candidates_truncated: false, issues: [],
+    linked_plan: id === 1 && !linked ? null : { plan: id === 1 ? linkedA : linkedB, entry_time_revision: null, analysis_revision: (id === 1 ? linkedA : linkedB).latest_revision, analysis_basis: 'RETROSPECTIVE' },
+  }));
+  vi.mocked(linkPlanToTrade).mockImplementation(async () => { linked = true; return linkedA; });
+  setup(); await openTrade('BTC/USDT');
+  fireEvent.change(screen.getByLabelText('Select an existing plan to link'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Link selected plan' }));
+  await waitFor(() => expect(screen.queryByLabelText('Stop Loss')).toBeNull());
+  const rowB = screen.getAllByText('ETH/USDT').find(element => element.tagName === 'TD')!.closest('tr')!;
+  fireEvent.click(within(rowB).getByRole('button', { name: 'Open' }));
+  await screen.findByText('Notes for trade 2');
+  expect(screen.queryByText('Notes for trade 1')).toBeNull();
+});
 
 it('applies an unchanged submitted Plan snapshot as clean authoritative state', async () => {
   const save = deferred<TradingPlan>(); vi.mocked(createRetrospectivePlan).mockReturnValue(save.promise);
