@@ -74,10 +74,11 @@ it('keeps global adherence distinct from execution-rule evidence', () => {
 it('uses one Review snapshot for every panel and makes no redundant Pattern or Diagnosis request', async () => {
   setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
   fireEvent.click(screen.getByLabelText('Compare immediately preceding equal-length period')); fireEvent.click(screen.getByText('Run review'));
-  await screen.findByRole('region', { name: 'Pattern findings' });
+  await screen.findByRole('region', { name: 'Review summary' });
   expect(api.getReview).toHaveBeenCalledWith(expect.objectContaining({ compare_previous: true }), expect.any(AbortSignal));
   expect(api.getReview).toHaveBeenCalledTimes(1); expect(api.getPatterns).not.toHaveBeenCalled(); expect(api.getDiagnoses).not.toHaveBeenCalled();
-  expect(screen.getByRole('heading', { name: /Historical v1 · Positive Strategy · Healthy Execution/ })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Positive results alongside healthy execution' })).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Pattern findings' })).toBeNull();
 });
 it('period A resolving after B cannot replace newer Review', async () => {
   const a = deferred<TradingReview>(); vi.mocked(api.getReview).mockReturnValueOnce(a.promise).mockResolvedValueOnce({ ...tradingFixture(), state: 'EMPTY_PERIOD' });
@@ -85,8 +86,8 @@ it('period A resolving after B cannot replace newer Review', async () => {
   fireEvent.click(screen.getByText('Run review')); await screen.findByText('Loading review evidence…');
   fireEvent.change(screen.getByLabelText('End time *'), { target: { value: '2026-01-31T23:59:59.999' } });
   fireEvent.change(screen.getByLabelText('Start time *'), { target: { value: '2026-01-01T00:00:00.000' } });
-  fireEvent.click(screen.getByText('Run review')); await screen.findByText(/Empty period —/);
-  await act(async () => a.resolve(tradingFixture())); expect(screen.getByText(/Empty period —/)).toBeTruthy();
+  fireEvent.click(screen.getByText('Run review')); await screen.findByText('No closed trades match');
+  await act(async () => a.resolve(tradingFixture())); expect(screen.getByText('No closed trades match')).toBeTruthy();
 });
 it('refetch replaces Review, Pattern, and Diagnosis panels together from one response', async () => {
   const first = tradingFixture();
@@ -96,9 +97,10 @@ it('refetch replaces Review, Pattern, and Diagnosis panels together from one res
   vi.mocked(api.getReview).mockResolvedValueOnce(first).mockResolvedValueOnce(second);
   setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
   fireEvent.click(screen.getByText('Run review'));
-  await screen.findByRole('heading', { name: /Positive Strategy · Healthy Execution/ });
+  await screen.findByRole('heading', { name: 'Positive results alongside healthy execution' });
   fireEvent.click(screen.getByText('Run review'));
-  await screen.findByRole('heading', { name: /Weak Strategy · Execution Drag/ });
+  await screen.findByRole('heading', { name: 'Weak results alongside execution drag' });
+  fireEvent.click(screen.getByRole('button', { name: 'Open full review — all findings and evidence' }));
   expect(screen.getByRole('region', { name: 'Pattern findings' }).textContent).toContain('net_return_pct');
   expect(screen.getByRole('region', { name: 'Pattern findings' }).textContent).not.toContain('average_r');
   expect(api.getReview).toHaveBeenCalledTimes(2); expect(api.getPatterns).not.toHaveBeenCalled(); expect(api.getDiagnoses).not.toHaveBeenCalled();
@@ -106,7 +108,7 @@ it('refetch replaces Review, Pattern, and Diagnosis panels together from one res
 it('a failed refetch hides the previous snapshot instead of mixing stale panels', async () => {
   vi.mocked(api.getReview).mockResolvedValueOnce(tradingFixture()).mockRejectedValueOnce(new Error('offline'));
   setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
-  fireEvent.click(screen.getByText('Run review')); await screen.findByRole('region', { name: 'Pattern findings' });
+  fireEvent.click(screen.getByText('Run review')); await screen.findByRole('region', { name: 'Review summary' });
   fireEvent.click(screen.getByText('Run review'));
   expect((await screen.findByRole('alert')).textContent).toContain('offline');
   expect(screen.queryByRole('region', { name: 'Pattern findings' })).toBeNull();
@@ -114,7 +116,7 @@ it('a failed refetch hides the previous snapshot instead of mixing stale panels'
 });
 it('Review finding handoff prefills factual context without saving or creating a recommendation', async () => {
   setup(<AnalyticsWorkspace overview={<p>Overview</p>} />); fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
-  fireEvent.click(screen.getByText('Run review')); fireEvent.click(await screen.findByText('Create experiment from finding'));
+  fireEvent.click(screen.getByText('Run review')); fireEvent.click(await screen.findByText('Open experiment draft for this comparison'));
   expect(await screen.findByRole('heading', { name: 'New experiment draft' })).toBeTruthy();
   expect((screen.getByLabelText('Measurement dimension') as HTMLSelectElement).value).toBe('fomo');
   expect((screen.getByLabelText('Hypothesis') as HTMLInputElement).value).toBe(''); expect(api.createExperiment).not.toHaveBeenCalled();

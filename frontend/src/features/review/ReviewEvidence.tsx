@@ -3,7 +3,7 @@ import type { Diagnosis, ObservationEvidence, Pattern, TradingReview } from '../
 import { displayAnalyticsValue as value } from '../analytics/analyticsDisplay';
 import { analyticsLabel, textFor } from '../../utils/localization';
 
-export const panel = 'space-y-3 rounded border border-dark-700 bg-dark-900 p-4';
+export const panel = 'min-w-0 space-y-3 break-words rounded border border-dark-700 bg-dark-900 p-4';
 export function Samples({ group, isKo = false }: { group: AnalyticsGroup | null; isKo?: boolean }) {
   return group ? <span className="text-xs text-dark-300">{group.trade_sample}{textFor(isKo, '건 거래 · ', ' trades · ')}{group.total_sample}{textFor(isKo, '개 표본 · ', ' samples · ')}{group.evaluable_sample}{textFor(isKo, '개 판정 가능 · ', ' evaluable · ')}{group.unavailable_sample}{textFor(isKo, '개 판정 불가 ', ' unavailable ')}{group.unavailable_reason && `· ${group.unavailable_reason}`}{group.profit_factor_infinite && textFor(isKo, ' · 손실 없음; 비제한 비율', ' · No losses; unbounded ratio')}</span> : <span>{textFor(isKo, '판정 불가 그룹', 'Unavailable group')}</span>;
 }
@@ -28,7 +28,7 @@ export function PatternFindings({ items, onExperiment, isKo = false }: { items: 
       <h3>{item.dimension} · {item.observed.identity.label} · {item.metric}</h3><p className="text-xs text-amber-200">{item.status === 'ELIGIBLE' ? textFor(isKo, '적격 근거', 'Eligible evidence') : textFor(isKo, '근거 부족', 'Insufficient evidence')}</p>
       <p>{textFor(isKo, '관찰', 'Observed')} {value(item.observed.value)} · {textFor(isKo, '기준선', 'Baseline')} {value(item.baseline.value)} · {textFor(isKo, '차이', 'Delta')} {value(item.signed_delta)}</p>
       <div>{textFor(isKo, '관찰', 'Observed')}: <Samples group={item.observed} isKo={isKo} /></div><div>{textFor(isKo, '기준선', 'Baseline')}: <Samples group={item.baseline} isKo={isKo} /></div>
-      <p className="text-xs">{item.reasons.join(' · ')}</p><button type="button" className="mt-2 text-sm text-primary-300" onClick={() => onExperiment(item)}>{textFor(isKo, '발견에서 실험 만들기', 'Create experiment from finding')}</button>
+      <p className="text-xs">{item.reasons.join(' · ')}</p>{item.status === 'ELIGIBLE' && <button type="button" className="mt-2 min-h-11 text-sm text-primary-300" onClick={() => onExperiment(item)}>{textFor(isKo, '발견에서 실험 만들기', 'Create experiment from finding')}</button>}
     </article>)}</section>;
 }
 const classifications = {
@@ -52,7 +52,7 @@ export function DiagnosisCards({ items, onExperiment, isKo = false }: { items: D
           <p className="text-xs">{textFor(isKo, '제외 역할', 'Excluded roles')}: {Object.entries(item.execution_rule_evidence.excluded_rule_counts_by_role).map(([role, count]) => `${role} ${count}`).join(' · ') || textFor(isKo, '없음', 'None')}</p>
           <Observations items={[item.entry_deviation]} isKo={isKo} />
         </section></div>
-      <button type="button" className="text-primary-300" onClick={() => onExperiment(item)}>{textFor(isKo, '진단에서 실험 만들기', 'Create experiment from diagnosis')}</button>
+      {item.classification !== 'INCONCLUSIVE' && item.identity.strategy_version_id !== null && <button type="button" className="min-h-11 text-primary-300" onClick={() => onExperiment(item)}>{textFor(isKo, '진단에서 실험 만들기', 'Create experiment from diagnosis')}</button>}
     </article>)}</section>;
 }
 export function ReviewSections({ data, isKo = false }: { data: TradingReview; isKo?: boolean }) {

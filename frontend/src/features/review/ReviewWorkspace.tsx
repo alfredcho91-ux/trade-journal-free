@@ -5,7 +5,8 @@ import type { AnalyticsMetadata } from '../../types/analytics';
 import type { ReviewRequest } from '../../types/review';
 import { AnalyticsFilterInput } from '../analytics/AnalyticsFilters';
 import { analyticsError, buildRequest, initialDraft } from '../analytics/analyticsBuilder';
-import { DiagnosisCards, panel, PatternFindings, ReviewSections } from './ReviewEvidence';
+import { panel } from './ReviewEvidence';
+import ReviewSummary from './ReviewSummary';
 import { findingSeed, type ExperimentSeed } from './reviewHandoff';
 import { textFor } from '../../utils/localization';
 
@@ -33,13 +34,13 @@ export default function ReviewWorkspace({ metadata, onExperiment, isKo = false }
     {enabled && <>
       {review.isFetching && <p role="status">{textFor(isKo, '복기 근거를 불러오는 중…', 'Loading review evidence…')}</p>}
       {review.isError && <p role="alert">{textFor(isKo, '복기', 'Review')}: {analyticsError(review.error)}</p>}
-      {!review.isFetching && !review.isError && review.data && <><ReviewSections data={review.data} isKo={isKo} />
-      <PatternFindings items={review.data.patterns.candidates} isKo={isKo} onExperiment={item => onExperiment(findingSeed(request!, item.metric, item.dimension, item.observed.identity))} />
-      <DiagnosisCards items={review.data.strategy_execution.diagnoses} isKo={isKo} onExperiment={item => {
+      {!review.isFetching && !review.isError && review.data && <ReviewSummary data={review.data} metadata={metadata} isKo={isKo}
+      onPattern={item => onExperiment(findingSeed(request!, item.metric, item.dimension, item.observed.identity))}
+      onDiagnosis={item => {
         const seed = findingSeed(request!, 'average_r');
         if (item.identity.strategy_version_id !== null) seed.query.filters = { ...seed.query.filters, strategy_version_ids: [item.identity.strategy_version_id] };
         onExperiment(seed);
-      }} /></>}
+      }} />}
     </>}
   </div>;
 }
