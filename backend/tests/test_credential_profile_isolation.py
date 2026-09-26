@@ -255,12 +255,21 @@ def test_namespace_stable_for_resolved_alias_and_distinct_for_source_checkout(st
 
 @pytest.mark.parametrize("override", ["none", "root", "db", "journal"])
 def test_frozen_startup_profile_selection_precedes_env_loading(tmp_path, override):
-    roaming = tmp_path / "roaming"
-    normal = roaming / "Trade Journal Free"
+    env = os.environ.copy()
+    if sys.platform == "win32":
+        platform_root = tmp_path / "roaming"
+        env["APPDATA"] = str(platform_root)
+        normal = platform_root / "Trade Journal Free"
+    elif sys.platform == "darwin":
+        platform_root = tmp_path / "home"
+        env["HOME"] = str(platform_root)
+        normal = platform_root / "Library" / "Application Support" / "Trade Journal Free"
+    else:
+        platform_root = tmp_path / "xdg-data"
+        env["XDG_DATA_HOME"] = str(platform_root)
+        normal = platform_root / "trade-journal-free"
     normal.mkdir(parents=True)
     (normal / ".env").write_text("DEEPCOIN_API_KEY=synthetic-env-api\nDEEPCOIN_SECRET_KEY=synthetic-env-secret\n")
-    env = os.environ.copy()
-    env["APPDATA"] = str(roaming)
     for name in ("TRADE_JOURNAL_DATA_DIR", "JOURNAL_DIR", "JOURNAL_DB_PATH", "DEEPCOIN_API_KEY", "DEEPCOIN_SECRET_KEY"):
         env.pop(name, None)
     if override != "none":
@@ -271,12 +280,29 @@ import os, sys
 sys.frozen = True
 from backend.config import settings
 normal = sys.argv[1] == 'none'
-assert (settings.credential_profile_id() == 'normal') == normal
-assert ('DEEPCOIN_API_KEY' in os.environ) == normal
-assert settings.owns_local_credential_env() == normal
+diagnostics = {
+    'sys_frozen': bool(getattr(sys, 'frozen', False)),
+    'sys_executable': sys.executable,
+    'profile_environment': {key: os.getenv(key) for key in ('APPDATA', 'XDG_DATA_HOME', 'HOME', 'TRADE_JOURNAL_DATA_DIR', 'JOURNAL_DIR', 'JOURNAL_DB_PATH')},
+    'app_data_dir': str(settings.APP_DATA_DIR),
+    'project_root': str(settings.PROJECT_ROOT),
+    'journal_dir': str(settings.JOURNAL_DIR),
+    'journal_db_path': str(settings.JOURNAL_DB_PATH),
+    'local_env_path': str(settings.LOCAL_ENV_PATH),
+    'expected_profile_identity': 'normal' if normal else 'isolated',
+    'actual_profile_identity': settings.credential_profile_id(),
+    'expected_credential_env_loaded': normal,
+    'actual_credential_env_loaded': 'DEEPCOIN_API_KEY' in os.environ,
+    'expected_local_env_owned': normal,
+    'actual_local_env_owned': settings.owns_local_credential_env(),
+}
+print(diagnostics)
+assert (diagnostics['actual_profile_identity'] == 'normal') == normal, diagnostics
+assert diagnostics['actual_credential_env_loaded'] == normal, diagnostics
+assert diagnostics['actual_local_env_owned'] == normal, diagnostics
 """
     result = subprocess.run([sys.executable, "-B", "-c", code, override], env=env, cwd=settings.SOURCE_ROOT, capture_output=True)
-    assert result.returncode == 0, "Synthetic packaged-settings probe failed"
+    assert result.returncode == 0, f"Synthetic packaged-settings probe failed\nstdout:\n{result.stdout.decode(errors='replace')}\nstderr:\n{result.stderr.decode(errors='replace')}"
 
 
 def test_path_override_inside_env_does_not_carry_credentials_into_new_profile(state):
