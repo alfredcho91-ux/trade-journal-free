@@ -9,6 +9,7 @@ import type { AnalyticsMetadata, AnalyticsResult } from '../../types/analytics';
 import AnalyticsWorkspace from './AnalyticsWorkspace';
 import { GuidedAnswer } from './GuidedAnalytics';
 import { dimension, filter, group, metadataFixture, resultFixture } from './analyticsTestFixtures';
+import { setWorkspace } from '../onboarding/workspaceSession';
 
 vi.mock('../../api/analytics', () => ({ getAnalyticsMetadata: vi.fn(), queryAnalytics: vi.fn() }));
 vi.mock('../../api/strategies', () => ({ listStrategies: vi.fn().mockResolvedValue([]), listStrategyVersions: vi.fn().mockResolvedValue([]) }));
@@ -39,7 +40,18 @@ beforeEach(() => {
   vi.mocked(getAnalyticsMetadata).mockResolvedValue(supportedMetadata());
   vi.mocked(queryAnalytics).mockImplementation(async request => resultFor(request.metric, request.dimension));
 });
-afterEach(() => { cleanup(); clients.splice(0).forEach(c => c.clear()); });
+afterEach(() => { cleanup(); clients.splice(0).forEach(c => c.clear()); setWorkspace(null); window.history.replaceState(null, '', '/'); });
+
+it('sample entry opens the real Guided query with the fixture period and confidence comparison', async () => {
+  setWorkspace({ mode: 'sample', profile_id: 'sample:test', first_run: false, trade_count: 36, return_url: null, period: { start: '2026-01-01', end: '2026-01-31' }, credential_backend: 'disabled', fixture_version: 1 });
+  window.history.replaceState(null, '', '/trade-analysis?sampleStep=guided');
+  setup();
+  await screen.findByRole('region', { name: 'Answer summary' });
+  expect(queryAnalytics).toHaveBeenCalledWith({ metric: 'average_return_pct', dimension: 'confidence_score', filters: { start_time: 1767225600000, end_time: 1769903999999 } }, expect.any(AbortSignal));
+  expect(screen.getByRole('heading', { name: 'Did results differ with my confidence?' })).toBeTruthy();
+  expect(screen.getByText(/not evidence of cause or future performance/)).toBeTruthy();
+  expect(screen.queryByRole('combobox', { name: 'Metric' })).toBeNull();
+});
 
 const cases = [
   ['How did results differ across strategies?', 'average_return_pct', 'strategy'],

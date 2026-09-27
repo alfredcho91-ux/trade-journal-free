@@ -5,11 +5,13 @@ import { guidedMetricNames, guidedQuestions } from './guidedPresets';
 import type { BuilderDraft } from './analyticsBuilder';
 import { displayAnalyticsValue } from './analyticsDisplay';
 import { textFor } from '../../utils/localization';
+import { isSampleWorkspace } from '../onboarding/workspaceSession';
 
 export function GuidedQuestions({ metadata, selected, onSelect, isKo }: {
   metadata: AnalyticsMetadata; selected: string | null; onSelect: (id: string) => void; isKo: boolean;
 }) {
   const available = guidedQuestions(metadata);
+  const sample = isSampleWorkspace();
   const current = available.find(q => q.id === selected);
   const cards = <div className="grid gap-3 sm:grid-cols-2">{available.map(q => <button key={q.id} type="button" aria-pressed={selected === q.id}
       onClick={() => onSelect(q.id)} className={`min-w-0 rounded border p-4 text-left ${selected === q.id ? 'border-primary-400 bg-primary-500/10' : 'border-dark-700 bg-dark-900 hover:border-primary-400'}`}>
@@ -17,8 +19,8 @@ export function GuidedQuestions({ metadata, selected, onSelect, isKo }: {
     </button>)}</div>;
   return <section className="space-y-4" aria-label={textFor(isKo, '분석 질문', 'Analysis questions')}>
     <h2 className="text-xl font-semibold">{current?.title[isKo ? 0 : 1] ?? textFor(isKo, '내 거래에서 무엇을 알아보고 싶나요?', 'What would you like to learn about your trading?')}</h2>
-    <p className="text-sm text-dark-300">{current ? textFor(isKo, '그룹별 결과를 비교합니다. 아래에서 기간과 표시할 값을 바꿀 수 있습니다.', 'Compare the group results. Adjust the period or displayed value below.') : textFor(isKo, '질문을 선택하면 최근 90일의 종료 거래를 분석합니다. 결과에서 기간을 바꿀 수 있습니다.', 'Choose a question to analyse closed trades from the last 90 days. You can adjust the period afterwards.')}</p>
-    {current ? <details key={current.id}><summary className="mb-3 cursor-pointer text-sm text-primary-300">{textFor(isKo, '다른 질문 선택 · 최근 90일로 새 분석', 'Choose another question · start fresh with 90 days')}</summary>{cards}</details> : cards}
+    <p className="text-sm text-dark-300">{current ? textFor(isKo, '그룹별 결과를 비교합니다. 아래에서 기간과 표시할 값을 바꿀 수 있습니다.', 'Compare the group results. Adjust the period or displayed value below.') : sample ? textFor(isKo, '질문을 선택하면 2026년 1월의 샘플 거래를 분석합니다.', 'Choose a question to analyse the January 2026 sample trades.') : textFor(isKo, '질문을 선택하면 최근 90일의 종료 거래를 분석합니다. 결과에서 기간을 바꿀 수 있습니다.', 'Choose a question to analyse closed trades from the last 90 days. You can adjust the period afterwards.')}</p>
+    {current ? <details key={current.id}><summary className="mb-3 cursor-pointer text-sm text-primary-300">{sample ? textFor(isKo, '다른 질문 선택 · 샘플 기간으로 새 분석', 'Choose another question · start fresh with the sample period') : textFor(isKo, '다른 질문 선택 · 최근 90일로 새 분석', 'Choose another question · start fresh with 90 days')}</summary>{cards}</details> : cards}
     {!available.length && <p role="status">{textFor(isKo, '현재 분석 정의에서 지원되는 안내형 질문이 없습니다. 고급 분석에서 가능한 조합을 선택하세요.', 'No guided questions are supported by these definitions. Open Advanced analytics to choose an available combination.')}</p>}
   </section>;
 }

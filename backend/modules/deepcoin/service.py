@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import requests
+from backend.config.sample_policy import require_exchange_access
 
 from backend.config.settings import (
     DeepcoinCredentials,
@@ -63,6 +64,7 @@ class DeepcoinClient:
     """Minimal Deepcoin private REST client used only for account-history reads."""
 
     def __init__(self, credentials: DeepcoinCredentials, base_url: Optional[str] = None):
+        require_exchange_access()
         self._credentials = credentials
         self._base_url = (base_url or get_deepcoin_api_base_url()).rstrip("/")
         self.truncated = False

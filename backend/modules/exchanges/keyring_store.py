@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from backend.config.settings import credential_profile_id
+from backend.config.sample_policy import require_exchange_access
 
 SERVICE_NAME = "Trade Journal Free"
 
@@ -49,6 +50,7 @@ def delete_keyring_payload(exchange_id: str) -> bool:
 
 
 def _keyring_module() -> Any:
+    require_exchange_access()
     try:
         import keyring
     except ImportError as exc:

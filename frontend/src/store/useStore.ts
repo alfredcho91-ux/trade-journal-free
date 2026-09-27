@@ -4,6 +4,7 @@ import { persist } from 'zustand/middleware';
 import { DEFAULT_MARKET_COIN, isMarketCoin } from '../constants/market';
 import { isTradingStyle, type TradingStyle } from '../features/preferences/tradingStyle';
 import type { Coin, Language } from '../types';
+import { isSampleWorkspace } from '../features/onboarding/workspaceSession';
 
 interface AppState {
   language: Language;
@@ -25,7 +26,7 @@ export const useStore = create<AppState>()(
       setTradingStyle: (tradingStyle) => set({ tradingStyle }),
     }),
     {
-      name: 'trade-journal-free-settings',
+      name: isSampleWorkspace() ? 'trade-journal-sample-settings-v1' : 'trade-journal-free-settings',
       partialize: ({ language, selectedCoin, tradingStyle }) => ({ language, selectedCoin, tradingStyle }),
       merge: (persisted, current) => {
         const incoming = (persisted as Partial<AppState>) ?? {};

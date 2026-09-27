@@ -1,5 +1,6 @@
 import { ApiClientError } from '../../api/config';
 import type { AnalyticsMetadata, AnalyticsRequest, FilterValue } from '../../types/analytics';
+import { samplePeriod } from '../onboarding/workspaceSession';
 
 export interface BuilderDraft { metric: string; dimension: string; filters: Record<string, string | string[]> }
 export const analyticsQueryKeys = {
@@ -13,8 +14,9 @@ export function canonicalRequest(request: AnalyticsRequest): AnalyticsRequest {
   ) };
 }
 export function initialDraft(metadata: AnalyticsMetadata): BuilderDraft {
-  const end = new Date();
-  const start = new Date(end.getTime() - 90 * 86400000);
+  const sample = samplePeriod();
+  const end = sample ? new Date(sample.end + 'T23:59:59.999Z') : new Date();
+  const start = sample ? new Date(sample.start + 'T00:00:00.000Z') : new Date(end.getTime() - 90 * 86400000);
   const timestamps = metadata.filters.filter(f => f.value_type === 'timestamp_ms');
   return { metric: metadata.metrics[0]?.id ?? '', dimension: metadata.metrics[0]?.supported_dimensions[0] ?? '',
     filters: Object.fromEntries(timestamps.map((f, i) => [f.id, (i === 0 ? start : end).toISOString().slice(0, 23)])) };

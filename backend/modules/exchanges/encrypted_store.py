@@ -13,6 +13,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from backend.config.settings import JOURNAL_DB_PATH
+from backend.config.sample_policy import require_exchange_access
 
 MASTER_KEY_ENV = "CREDENTIAL_MASTER_KEY"
 _ALGORITHM = "AES-256-GCM"
@@ -24,6 +25,7 @@ class EncryptedCredentialStoreError(RuntimeError):
 
 
 def save_encrypted_credentials(exchange_id: str, payload: str, *, db_path: Optional[Path] = None, if_absent: bool = False) -> bool:
+    require_exchange_access()
     envelope = _encrypt(exchange_id, payload)
     try:
         with _connect(db_path) as connection:
@@ -46,6 +48,7 @@ def save_encrypted_credentials(exchange_id: str, payload: str, *, db_path: Optio
 
 
 def load_encrypted_credentials(exchange_id: str, *, db_path: Optional[Path] = None) -> Optional[str]:
+    require_exchange_access()
     try:
         with _connect(db_path) as connection:
             _ensure_table(connection)
@@ -61,6 +64,7 @@ def load_encrypted_credentials(exchange_id: str, *, db_path: Optional[Path] = No
 
 
 def delete_encrypted_credentials(exchange_id: str, *, db_path: Optional[Path] = None) -> bool:
+    require_exchange_access()
     try:
         with _connect(db_path) as connection:
             _ensure_table(connection)

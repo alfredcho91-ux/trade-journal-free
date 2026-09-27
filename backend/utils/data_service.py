@@ -18,6 +18,7 @@ from functools import wraps
 from typing import Any, Optional, Sequence
 
 from backend.utils.cache import DataCache
+from backend.config.sample_policy import IS_SAMPLE, SAMPLE_ROOT
 
 # 로깅 설정
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ BINANCE_USDT_M_KLINE_COLUMNS = (
     "ignore",
 )
 
-BASE_DIR = Path(__file__).parent.parent.parent / "binance_klines"
+BASE_DIR = SAMPLE_ROOT / "market" if IS_SAMPLE else Path(__file__).parent.parent.parent / "binance_klines"
 
 
 def _tf_weight(tf: str) -> int:
@@ -117,6 +118,8 @@ def discover_timeframes(coin_name: str, base_dir: Path = BASE_DIR):
 @cached(ttl_seconds=300)
 def get_fear_and_greed_index():
     """Get Fear & Greed Index from alternative.me API"""
+    if IS_SAMPLE:
+        return None
     try:
         r = requests.get("https://api.alternative.me/fng/", timeout=5)
         r.raise_for_status()
@@ -130,6 +133,8 @@ def get_fear_and_greed_index():
 @cached(ttl_seconds=30)
 def get_market_prices():
     """Get market prices from Binance"""
+    if IS_SAMPLE:
+        return None
     try:
         ex = ccxt.binance()
         return ex.fetch_tickers(list(MARKET_TICKER_SYMBOLS))
@@ -161,6 +166,8 @@ def fetch_binance_klines(
     ``end_time`` is a Unix timestamp in milliseconds.  It permits historical
     point-in-time analyses without changing the recent-candle callers.
     """
+    if IS_SAMPLE:
+        return None
     if timeframe not in BINANCE_TFS:
         raise ValueError(f"Unsupported Binance interval: {timeframe}")
 

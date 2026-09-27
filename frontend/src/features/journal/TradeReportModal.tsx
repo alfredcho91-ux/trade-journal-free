@@ -19,6 +19,7 @@ import TradeBehaviorEditor from './TradeBehaviorEditor';
 import PlanningContextPanel from '../planLab/PlanningContextPanel';
 import RuleAdherencePanel from './RuleAdherencePanel';
 import UnsavedChangesDialog from './UnsavedChangesDialog';
+import { isSampleWorkspace } from '../onboarding/workspaceSession';
 import {
   buildTradePathSummary,
   tradePathMarkerLabel,
@@ -154,6 +155,7 @@ export default function TradeReportModal({
   onBehaviorUpdated?: () => void;
 }) {
   const navigate = useNavigate();
+  const sample = isSampleWorkspace();
   const [reviewMoment, setReviewMoment] = useState<ReviewMoment>('entry');
   const [reportInterval, setReportInterval] = useState<ReportInterval>('4h');
   const [assignmentDirty, setAssignmentDirty] = useState(false);
@@ -294,7 +296,7 @@ export default function TradeReportModal({
       exchange: reportExchange,
       instrument_type: reportInstrumentType,
     }),
-    enabled: Boolean(coin && endTime),
+    enabled: !sample && Boolean(coin && endTime),
     staleTime: 5 * 60_000,
   });
   const pathQuery = useQuery({
@@ -307,7 +309,7 @@ export default function TradeReportModal({
       exchange: reportExchange,
       instrument_type: reportInstrumentType,
     }),
-    enabled: Boolean(
+    enabled: !sample && Boolean(
       isClosedPosition(entry)
       && coin
       && pathConfig
@@ -609,14 +611,14 @@ export default function TradeReportModal({
         <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,2.2fr)_minmax(340px,1fr)]">
           <main className="min-w-0 space-y-4 p-3 sm:p-5 lg:border-r lg:border-dark-700">
             <section>
-              <div className="mb-3 flex flex-col gap-3 border-y border-dark-700 py-3 sm:flex-row sm:items-center sm:justify-between">
+              {!sample && <div className="mb-3 flex flex-col gap-3 border-y border-dark-700 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="grid grid-cols-3 border border-dark-700 bg-dark-900/40 p-1 sm:grid-cols-9">
                   {REPORT_INTERVALS.map((interval) => <button key={interval} type="button" onClick={() => setReportInterval(interval)} className={`min-w-0 px-2.5 py-1.5 text-xs font-semibold uppercase transition-colors sm:min-w-14 ${reportInterval === interval ? 'bg-primary-500 text-white' : 'text-dark-400 hover:text-white'}`}>{interval}</button>)}
                 </div>
                 <div className="text-[11px] text-dark-500">{reportQuery.data?.source || 'Binance USDT-M Futures'} · {candleLimit}{isKo ? '봉' : ' bars'}{reportQuery.data?.profile_as_of ? ` · VPVR/VWAP ${new Date(reportQuery.data.profile_as_of).toLocaleString()}` : ''}</div>
-              </div>
+              </div>}
 
-              {reportQuery.isLoading ? (
+              {sample ? <div className="rounded border border-dark-700 p-5 text-sm text-dark-300">{isKo ? '가상의 샘플 거래입니다. 실시간 가격 차트는 제공하지 않습니다. 거래의 전략, 심리와 계획 기록을 살펴보세요.' : 'This is a synthetic sample trade. Live price charts are unavailable. Explore the recorded strategy, psychology and plan.'}</div> : reportQuery.isLoading ? (
                 <div className="flex h-[520px] items-center justify-center gap-2 border border-dark-700 bg-[#0b1220] text-sm text-dark-400"><Loader2 className="h-4 w-4 animate-spin" />{isKo ? '거래 리포트 불러오는 중' : 'Loading trade report'}</div>
               ) : reportQuery.isError ? (
                 <div className="flex h-48 items-center justify-center border border-dark-700 bg-[#0b1220] px-5 text-sm text-bear"><AlertCircle className="mr-2 h-4 w-4" />{isKo ? '거래 리포트 데이터를 불러오지 못했습니다.' : 'Could not load trade report data.'}</div>

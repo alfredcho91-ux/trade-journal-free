@@ -9,11 +9,12 @@ import { panel } from './ReviewEvidence';
 import ReviewSummary from './ReviewSummary';
 import { findingSeed, type ExperimentSeed } from './reviewHandoff';
 import { textFor } from '../../utils/localization';
+import { isSampleWorkspace } from '../onboarding/workspaceSession';
 
 export default function ReviewWorkspace({ metadata, onExperiment, isKo = false }: { metadata: AnalyticsMetadata; onExperiment: (seed: ExperimentSeed) => void; isKo?: boolean }) {
   const [draft, setDraft] = useState(() => ({ ...initialDraft(metadata), metric: 'trade_count', dimension: 'all' }));
   const [compare, setCompare] = useState(false);
-  const [submitted, setSubmitted] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<string | null>(() => isSampleWorkspace() ? JSON.stringify({ filters: buildRequest(metadata, draft).request?.filters, compare_previous: false }) : null);
   const [errors, setErrors] = useState<string[]>([]);
   const built = buildRequest(metadata, draft);
   const request: ReviewRequest | null = built.request ? { filters: built.request.filters, compare_previous: compare } : null;

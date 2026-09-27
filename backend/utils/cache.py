@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+from backend.config.sample_policy import IS_SAMPLE
 
 try:
     from diskcache import Cache
@@ -92,7 +93,7 @@ class DataCache:
             return
 
         cache_backend = os.getenv("DATA_CACHE_BACKEND", "disk").strip().lower()
-        prefer_memory = not self._persistent or cache_backend in {"memory", "mem", "off", "disabled", "none"}
+        prefer_memory = IS_SAMPLE or not self._persistent or cache_backend in {"memory", "mem", "off", "disabled", "none"}
 
         if DISKCACHE_AVAILABLE and not prefer_memory:
             try:

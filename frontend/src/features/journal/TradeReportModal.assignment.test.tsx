@@ -17,6 +17,8 @@ import type { JournalEntry, JournalStrategyAssignment, Strategy, StrategyVersion
 import TradeReportModal from './TradeReportModal';
 import { journalQueryKeys } from './journalQueryKeys';
 import { getPlanningContext } from '../../api/planningContext';
+import * as clientApi from '../../api/client';
+import { setWorkspace } from '../onboarding/workspaceSession';
 
 vi.mock('../../api/planningContext', () => ({ getPlanningContext: vi.fn(async (id: number) => ({
   journal_entry_id: id, journal_notes: { source: 'journal_entries', journal_entry_id: id, planned_stop_pct: null, planned_target_pct: null, planned_entry_reason: null, plan_recorded_at: null, has_notes: false, timing_verified: false },
@@ -143,7 +145,19 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  setWorkspace(null);
+  vi.restoreAllMocks();
   vi.resetAllMocks();
+});
+
+it('sample Journal keeps strategy, behavior and planning panels without requesting a live chart', async () => {
+  setWorkspace({ mode: 'sample', profile_id: 'sample:test', first_run: false, trade_count: 36, return_url: null, period: { start: '2026-01-01', end: '2026-01-31' }, credential_backend: 'disabled', fixture_version: 1 });
+  const report = vi.spyOn(clientApi, 'getTradeReport');
+  renderModal(trade(1, { symbol: 'BTC/USDT', entry_datetime: '2026-01-02T09:00:00Z', datetime: '2026-01-02T11:00:00Z', confidence_score: 4, notes: 'Synthetic reflection' }));
+  await screen.findByText('No Strategy Version assigned');
+  expect(screen.getByText(/This is a synthetic sample trade/)).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Trade planning context' })).toBeTruthy();
+  expect(report).not.toHaveBeenCalled();
 });
 
 it('shows Journal planning notes and navigates to the shared retrospective editor without writing', async () => {

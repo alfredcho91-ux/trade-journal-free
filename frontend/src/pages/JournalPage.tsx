@@ -1,5 +1,5 @@
 // Trading Journal Page
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart3, CandlestickChart, RefreshCw, Trash2 } from 'lucide-react';
 
@@ -11,7 +11,8 @@ import {
   getPlanLab,
   syncExchange,
 } from '../api/client';
-import { useNavigate } from '../router-context';
+import { useLocation, useNavigate } from '../router-context';
+import { isSampleWorkspace, samplePeriod } from '../features/onboarding/workspaceSession';
 import { useLanguage, useTradingStyle } from '../store/useStore';
 import type { ExchangeId, JournalEntry, JournalPerformanceData, TradeQualityItem } from '../types';
 import ExchangeConnectionModal from '../features/journal/ExchangeConnectionModal';
@@ -226,10 +227,10 @@ function PeriodAnalysis({
 }) {
   const selectedTradingStyle = useTradingStyle();
   const selectedStyleConfig = TRADING_STYLE_CONFIGS[selectedTradingStyle];
-  const [initialPeriod] = useState(() => buildJournalPeriod());
+  const [initialPeriod] = useState(() => samplePeriod() ?? buildJournalPeriod());
   const [analysisStart, setAnalysisStart] = useState(initialPeriod.start);
   const [analysisEnd, setAnalysisEnd] = useState(initialPeriod.end);
-  const [activePreset, setActivePreset] = useState<'7' | '30' | '90' | 'custom'>('30');
+  const [activePreset, setActivePreset] = useState<'7' | '30' | '90' | 'custom'>(isSampleWorkspace() ? 'custom' : '30');
   const [customError, setCustomError] = useState<string | null>(null);
 
   const applyPreset = (days: 7 | 30 | 90) => {
@@ -270,7 +271,7 @@ function PeriodAnalysis({
     }
     setActivePreset('custom');
     onPeriodApply({ start: analysisStart, end: analysisEnd });
-    if (lookbackDays > 90) {
+    if (canSync && lookbackDays > 90) {
       setCustomError(
         isKo
           ? '90일을 초과한 구간은 기존에 저장된 데이터만 분석합니다. 거래소 자동 동기화는 최근 90일까지 지원합니다.'
@@ -393,7 +394,7 @@ function PeriodAnalysis({
         <div>
           <h2 className="text-lg font-semibold text-white">{isKo ? '기간 성과 분석' : 'Period Performance Analysis'}</h2>
           <p className="mt-1 text-xs text-dark-400">
-            {isKo
+            {isSampleWorkspace() ? (isKo ? '저장된 샘플 거래의 종료 포지션을 분석합니다. 거래소 연결은 사용하지 않습니다.' : 'Analyze the saved sample positions. Exchange connections are disabled.') : isKo
               ? '기간을 선택하면 선택한 거래소 데이터를 동기화한 뒤 종료 포지션을 분석합니다.'
               : 'Choosing a period syncs the selected exchange and analyzes closed positions.'}
           </p>
@@ -645,13 +646,15 @@ export default function JournalPage() {
   const isKo = language === 'ko';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const sample = isSampleWorkspace();
 
   const [selectedExchange, setSelectedExchange] = useState<ExchangeId>('deepcoin');
   const [exchangeInstType, setExchangeInstType] = useState<'SWAP' | 'SPOT'>('SWAP');
   const [exchangeSymbols, setExchangeSymbols] = useState('BTC/USDT, ETH/USDT, SOL/USDT');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [snapshotEntry, setSnapshotEntry] = useState<JournalEntry | null>(null);
-  const [historyPeriod, setHistoryPeriod] = useState<JournalPeriod>(() => buildJournalPeriod());
+  const [historyPeriod, setHistoryPeriod] = useState<JournalPeriod>(() => samplePeriod() ?? buildJournalPeriod());
   const [visibleTradeCount, setVisibleTradeCount] = useState(VISIBLE_TRADE_INCREMENT);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [journalView, setJournalView] = useState<JournalView>('trades');
@@ -662,6 +665,11 @@ export default function JournalPage() {
     queryKey: journalQueryKeys.entries,
     queryFn: getJournal,
   });
+  useEffect(() => {
+    if (sample && new URLSearchParams(search).get('sampleTrade') === '1' && entries) {
+      setSnapshotEntry(entries.find(entry => entry.id === 1) ?? null);
+    }
+  }, [sample, search, entries]);
   const historyStartTime = dateBoundaryTimestamp(historyPeriod.start);
   const historyEndTime = dateBoundaryTimestamp(historyPeriod.end, true);
   const qualityQuery = useQuery({
@@ -850,7 +858,7 @@ export default function JournalPage() {
         />
       ) : <>
 
-      <JournalSyncPanel
+      {!sample && <JournalSyncPanel
         statuses={exchangeStatuses || []}
         selectedExchange={selectedExchange}
         instType={exchangeInstType}
@@ -860,7 +868,7 @@ export default function JournalPage() {
         onExchangeChange={(value) => { setSelectedExchange(value); setSyncMessage(null); }}
         onInstTypeChange={setExchangeInstType}
         onSymbolsChange={setExchangeSymbols}
-      />
+      />}
 
       <PeriodAnalysis
         allEntries={allEntries}

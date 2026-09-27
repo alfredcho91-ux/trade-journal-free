@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
+from backend.config.sample_policy import IS_SAMPLE, SAMPLE_ROOT
+
 SOURCE_ROOT = Path(__file__).resolve().parent.parent.parent
 IS_FROZEN = bool(getattr(sys, "frozen", False))
 BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", SOURCE_ROOT))
@@ -25,7 +27,7 @@ def _default_app_data_dir() -> Path:
 
 APP_DATA_DIR = Path(os.getenv("TRADE_JOURNAL_DATA_DIR", str(_default_app_data_dir()))).expanduser()
 # Source runs keep files beside the project. Packaged runs never write into the application bundle.
-PROJECT_ROOT = APP_DATA_DIR if IS_FROZEN else SOURCE_ROOT
+PROJECT_ROOT = APP_DATA_DIR if IS_FROZEN or IS_SAMPLE else SOURCE_ROOT
 FRONTEND_DIST_DIR = BUNDLE_ROOT / "frontend" / "dist" if IS_FROZEN else SOURCE_ROOT / "frontend" / "dist"
 LOCAL_ENV_PATH = PROJECT_ROOT / ".env"
 LOCAL_ENV_KEYS_LOADED: set[str] = set()
@@ -37,7 +39,7 @@ def _profile_path(value) -> str:
 
 def _local_env_owned() -> bool:
     """A redirected DB/profile must not inherit the default profile's .env."""
-    return (
+    return not IS_SAMPLE and (
         _profile_path(APP_DATA_DIR) == _profile_path(_default_app_data_dir())
         and _profile_path(os.getenv("TRADE_JOURNAL_DATA_DIR", str(APP_DATA_DIR))) == _profile_path(_default_app_data_dir())
         and _profile_path(os.getenv("JOURNAL_DIR", str(PROJECT_ROOT / "journal"))) == _profile_path(PROJECT_ROOT / "journal")
@@ -124,6 +126,8 @@ def credential_profile_id() -> str:
     Source checkouts and custom paths have their own stable namespace. Moving
     one is deliberately not implicit permission to adopt another profile's keys.
     """
+    if IS_SAMPLE:
+        return "sample:" + hashlib.sha256(str(SAMPLE_ROOT).encode("utf-8")).hexdigest()
     normal = _default_app_data_dir()
     identity = [_profile_path(APP_DATA_DIR), _profile_path(PROJECT_ROOT), _profile_path(JOURNAL_DIR), _profile_path(JOURNAL_DB_PATH)]
     if _local_env_owned() and identity == [_profile_path(normal), _profile_path(normal), _profile_path(normal / "journal"), _profile_path(normal / "journal" / "trade_journal.db")]:

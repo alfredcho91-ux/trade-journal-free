@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ccxt
+from backend.config.sample_policy import require_exchange_access
 
 from backend.modules.exchanges.models import ExchangeCredentials, NormalizedTrade, TradeFetchResult
 from backend.utils.error_handler import BusinessLogicError, DataLoadError
@@ -21,6 +22,7 @@ BINANCE_INCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 
 def exchange_client(exchange_id: str, credentials: ExchangeCredentials, inst_type: str):
+    require_exchange_access()
     class_name = "binanceusdm" if exchange_id == "binance" and inst_type == "SWAP" else exchange_id
     exchange_class = getattr(ccxt, class_name, None)
     if exchange_class is None:

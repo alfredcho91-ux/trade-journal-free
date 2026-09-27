@@ -17,6 +17,7 @@ import ReviewWorkspace from './ReviewWorkspace';
 import ExperimentsWorkspace, { MeasurementView } from './ExperimentsWorkspace';
 import { diagnosisFixture, experimentFixture, filters, patternFixture, reviewDiscovery, tradingFixture } from './reviewFixtures';
 import { findingSeed } from './reviewHandoff';
+import { setWorkspace } from '../onboarding/workspaceSession';
 
 vi.mock('../../api/review', () => ({ getReview: vi.fn(), getPatterns: vi.fn(), getDiagnoses: vi.fn(), listExperiments: vi.fn(), getExperiment: vi.fn(), createExperiment: vi.fn(), updateExperiment: vi.fn(), transitionExperiment: vi.fn(), measureExperiment: vi.fn() }));
 vi.mock('../../api/analytics', () => ({ getAnalyticsMetadata: vi.fn(), queryAnalytics: vi.fn() }));
@@ -39,7 +40,16 @@ beforeEach(() => {
   vi.mocked(api.getExperiment).mockImplementation(async id => experimentFixture(id));
   vi.mocked(api.measureExperiment).mockResolvedValue(measurement());
 });
-afterEach(() => { onlineManager.setOnline(true); cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); });
+afterEach(() => { onlineManager.setOnline(true); cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); setWorkspace(null); });
+
+it('sample Review runs the existing snapshot and summary using the fixture period', async () => {
+  setWorkspace({ mode: 'sample', profile_id: 'sample:test', first_run: false, trade_count: 36, return_url: null, period: { start: '2026-01-01', end: '2026-01-31' }, credential_backend: 'disabled', fixture_version: 1 });
+  setup(<ReviewWorkspace metadata={reviewDiscovery()} onExperiment={vi.fn()} />);
+  await screen.findByRole('region', { name: 'Review summary' });
+  expect(api.getReview).toHaveBeenCalledWith({ compare_previous: false, filters: { start_time: 1767225600000, end_time: 1769903999999 } }, expect.any(AbortSignal));
+  expect(api.createExperiment).not.toHaveBeenCalled();
+  expect(api.getPatterns).not.toHaveBeenCalled();
+});
 
 it('renders populated Review sections, comparison, sample quality and separate unavailable market evidence', () => {
   setup(<ReviewSections data={tradingFixture()} />);

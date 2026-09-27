@@ -12,6 +12,7 @@ import { useLanguage } from '../../store/useStore';
 import { analyticsLabel, textFor } from '../../utils/localization';
 import { guidedQuestions } from './guidedPresets';
 import { GuidedAnswer, GuidedFilters, GuidedQuestions } from './GuidedAnalytics';
+import { isSampleWorkspace } from '../onboarding/workspaceSession';
 
 const sections = ['Overview', 'Edge Explorer', 'Strategy', 'Psychology', 'Rules', 'Time', 'Review', 'Experiments'] as const;
 type Section = typeof sections[number];
@@ -27,11 +28,13 @@ function readState(): { draft?: BuilderDraft; section?: Section } {
   } catch { return {}; }
 }
 function Builder({ metadata, overview, isKo }: { metadata: AnalyticsMetadata; overview: ReactNode; isKo: boolean }) {
-  const [draft, setDraft] = useState<BuilderDraft>(() => readState().draft ?? initialDraft(metadata));
-  const [section, setSection] = useState<Section>('Edge Explorer');
+  const sampleStep = isSampleWorkspace() ? new URLSearchParams(window.location.search).get('sampleStep') : null;
+  const recommended = { ...initialDraft(metadata), metric: 'average_return_pct', dimension: 'confidence_score' };
+  const [draft, setDraft] = useState<BuilderDraft>(() => sampleStep === 'guided' ? recommended : readState().draft ?? initialDraft(metadata));
+  const [section, setSection] = useState<Section>(sampleStep === 'review' ? 'Review' : 'Edge Explorer');
   const [guided, setGuided] = useState(true);
-  const [question, setQuestion] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<string | null>(null);
+  const [question, setQuestion] = useState<string | null>(sampleStep === 'guided' ? 'psychology' : null);
+  const [submitted, setSubmitted] = useState<string | null>(() => sampleStep === 'guided' ? JSON.stringify(buildRequest(metadata, recommended).request) : null);
   const [showErrors, setShowErrors] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [experimentDirty, setExperimentDirty] = useState(false);

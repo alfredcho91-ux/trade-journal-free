@@ -10,6 +10,9 @@ def test_free_edition_exposes_only_journal_analysis_routes():
         if method not in {"HEAD", "OPTIONS"}
     }
     expected = {
+        ("GET", "/api/workspace"),
+        ("POST", "/api/workspace/acknowledge"),
+        ("POST", "/api/workspace/sample"),
         ("GET", "/api/health"),
         ("POST", "/api/desktop/shutdown"),
         ("GET", "/api/journal"),

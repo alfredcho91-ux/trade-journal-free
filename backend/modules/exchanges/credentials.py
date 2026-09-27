@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from backend.config.settings import get_app_environment, owns_local_credential_env
+from backend.config.sample_policy import IS_SAMPLE
 from backend.modules.exchanges import legacy_env
 from backend.modules.exchanges.encrypted_store import (
     EncryptedCredentialStoreError,
@@ -24,7 +25,7 @@ from backend.modules.exchanges.keyring_store import (
 )
 from backend.modules.exchanges.legacy_env import has_legacy_values, remove_legacy_values
 
-StorageMode = Literal["keyring", "encrypted_db"]
+StorageMode = Literal["keyring", "encrypted_db", "disabled"]
 CredentialSource = Literal["environment", "keyring", "encrypted_db", "none"]
 
 
@@ -61,8 +62,10 @@ class CredentialDeleteResult:
 
 def credential_storage_mode() -> StorageMode:
     configured = os.getenv("CREDENTIAL_STORAGE", "auto").strip().lower()
+    if IS_SAMPLE or configured == "disabled":
+        return "disabled"
     if configured not in {"auto", "keyring", "encrypted_db"}:
-        raise CredentialStorageError("CREDENTIAL_STORAGE must be auto, keyring, or encrypted_db")
+        raise CredentialStorageError("CREDENTIAL_STORAGE must be auto, keyring, encrypted_db, or disabled")
     if configured == "encrypted_db" or (configured == "auto" and has_master_key()):
         return "encrypted_db"
     return "encrypted_db" if configured == "auto" and get_app_environment() == "production" else "keyring"
@@ -89,6 +92,8 @@ def credential_source(exchange_id: str) -> CredentialSource:
 
 @legacy_env.serialized_credential_lifecycle
 def save_local_exchange_credentials(exchange_id: str, api_key: str, secret_key: str, passphrase: str = "") -> None:
+    if credential_storage_mode() == "disabled":
+        raise CredentialStorageError("Credential storage is disabled")
     credentials = StoredCredentials(_value(api_key), _value(secret_key), _optional_value(passphrase))
     _save_payload(credential_storage_mode(), exchange_id, _serialize(credentials))
     if _cleanup_error(exchange_id):
@@ -99,6 +104,8 @@ def save_local_exchange_credentials(exchange_id: str, api_key: str, secret_key: 
 def delete_exchange_credentials(exchange_id: str) -> CredentialDeleteResult:
     """Remove persisted credentials; deployment environment values remain external."""
     mode = credential_storage_mode()
+    if mode == "disabled":
+        return CredentialDeleteResult(deleted=False, environment_override=False)
     # Never delete the authoritative store while stale plaintext can repopulate
     # it on restart. A failed cleanup leaves deletion visibly incomplete.
     if _cleanup_error(exchange_id):
@@ -114,6 +121,8 @@ def delete_exchange_credentials(exchange_id: str) -> CredentialDeleteResult:
 
 @legacy_env.serialized_credential_lifecycle
 def _resolve_exchange_credentials(exchange_id: str) -> CredentialResolution:
+    if IS_SAMPLE or os.getenv("CREDENTIAL_STORAGE", "").strip().lower() == "disabled":
+        return CredentialResolution(None, "none")
     environment = _environment_credentials(exchange_id)
     present_keys = {key for key in legacy_env.legacy_keys(exchange_id) if os.getenv(key)}
     loaded_keys = present_keys.intersection(legacy_env.LOCAL_ENV_KEYS_LOADED)
@@ -231,6 +240,8 @@ def _cleanup_error(exchange_id: str) -> Optional[str]:
 
 
 def _environment_credentials(exchange_id: str) -> Optional[StoredCredentials]:
+    if IS_SAMPLE or os.getenv("CREDENTIAL_STORAGE", "").strip().lower() == "disabled":
+        return None
     if not owns_local_credential_env() and legacy_env.legacy_keys(exchange_id).intersection(legacy_env.LOCAL_ENV_KEYS_LOADED):
         return None
     prefix = exchange_id.upper()

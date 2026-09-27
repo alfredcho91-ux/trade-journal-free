@@ -4,6 +4,8 @@ import { BarChart3, BookMarked, BookOpen, ClipboardCheck, ExternalLink, GitCompa
 import { MARKET_COINS } from './constants/market';
 import { BrowserRouter, Navigate } from './router';
 import { useLocation, useNavigate } from './router-context';
+import WorkspaceExperience from './features/onboarding/WorkspaceExperience';
+import { isSampleWorkspace } from './features/onboarding/workspaceSession';
 import {
   useLanguage,
   useSelectedCoin,
@@ -179,7 +181,7 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 function Routes() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   if (pathname === '/') return <Navigate to="/journal" replace />;
 
@@ -187,7 +189,7 @@ function Routes() {
     pathname === '/journal' ? (
       <JournalPage />
     ) : pathname === '/trade-analysis' ? (
-      <TradeAnalysisPage />
+      <TradeAnalysisPage key={isSampleWorkspace() ? search : undefined} />
     ) : pathname === '/risk-lab' ? (
       <RiskLabPage />
     ) : pathname === '/plan-lab' ? (
@@ -202,7 +204,7 @@ function Routes() {
       <Navigate to="/journal" replace />
     );
 
-  return <Shell>{page}</Shell>;
+  return <Shell><WorkspaceExperience>{page}</WorkspaceExperience></Shell>;
 }
 
 export default function App() {

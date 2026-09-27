@@ -33,6 +33,8 @@ from backend.modules.strategies.router import router as strategies_router
 from backend.utils.log_redaction import install_log_redaction
 from backend.utils.local_request_security import LocalRequestSecurityMiddleware
 from backend.utils.frontend_static import FrontendStaticFiles
+from backend.config.sample_policy import IS_SAMPLE, install_offline_boundary
+from backend.modules.sample.workspace import router as workspace_router, sample_process
 
 install_log_redaction()
 
@@ -45,9 +47,16 @@ if get_app_environment() == "production":
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Install persistence schemas and integrity guards before serving requests."""
+    if IS_SAMPLE:
+        install_offline_boundary()
+        from backend.modules.sample.fixture import build_fixture
+        build_fixture()
     initialize_assignment_schema()
     initialize_experiment_schema()
-    yield
+    try:
+        yield
+    finally:
+        sample_process.close()
 
 
 def verify_credentials(
@@ -102,6 +111,13 @@ app.add_middleware(
 app.add_middleware(LocalRequestSecurityMiddleware)
 
 
+@app.middleware("http")
+async def sample_exchange_boundary(request: Request, call_next):
+    if IS_SAMPLE and request.url.path.startswith(("/api/exchanges", "/api/deepcoin")) and request.method != "GET":
+        return ORJSONResponse(status_code=403, content={"success": False, "error": "Exchange connections and sync are disabled in the sample workspace", "error_code": "SAMPLE_OFFLINE"})
+    return await call_next(request)
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(_request: Request, exc: RequestValidationError):
     """Return field errors without echoing credential or other request values."""
@@ -143,6 +159,7 @@ def desktop_shutdown(request: Request):
     return {"success": True, "data": {"shutting_down": True}}
 
 app.include_router(journal_router)
+app.include_router(workspace_router)
 app.include_router(plan_lab_router)
 app.include_router(strategies_router)
 app.include_router(strategy_assignments_router)
