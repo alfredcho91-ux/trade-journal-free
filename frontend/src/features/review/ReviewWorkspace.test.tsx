@@ -128,8 +128,11 @@ it('Review finding handoff prefills factual context without saving or creating a
   setup(<AnalyticsWorkspace overview={<p>Overview</p>} />); fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
   fireEvent.click(screen.getByText('Run review')); fireEvent.click(await screen.findByText('Open experiment draft for this comparison'));
   expect(await screen.findByRole('heading', { name: 'New experiment draft' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Observation from Review' })).toBeTruthy();
+  expect((screen.getByLabelText('What do you want to try during the next period?') as HTMLInputElement).value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: 'Advanced measurement settings' }));
   expect((screen.getByLabelText('Measurement dimension') as HTMLSelectElement).value).toBe('fomo');
-  expect((screen.getByLabelText('Hypothesis') as HTMLInputElement).value).toBe(''); expect(api.createExperiment).not.toHaveBeenCalled();
+  expect(api.createExperiment).not.toHaveBeenCalled();
 });
 it('handoff preserves exact strategy/version IDs and never edits the original filters', () => {
   const request = { filters, compare_previous: false }; const seed = findingSeed(request, 'average_r', 'strategy_version', diagnosisFixture().identity);

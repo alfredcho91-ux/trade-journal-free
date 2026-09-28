@@ -7,7 +7,7 @@ import { AnalyticsFilterInput } from '../analytics/AnalyticsFilters';
 import { analyticsError, buildRequest, initialDraft } from '../analytics/analyticsBuilder';
 import { panel } from './ReviewEvidence';
 import ReviewSummary from './ReviewSummary';
-import { findingSeed, type ExperimentSeed } from './reviewHandoff';
+import { diagnosisSeed, patternSeed, type ExperimentSeed } from './reviewHandoff';
 import { textFor } from '../../utils/localization';
 import { isSampleWorkspace } from '../onboarding/workspaceSession';
 
@@ -36,12 +36,8 @@ export default function ReviewWorkspace({ metadata, onExperiment, isKo = false }
       {review.isFetching && <p role="status">{textFor(isKo, '복기 근거를 불러오는 중…', 'Loading review evidence…')}</p>}
       {review.isError && <p role="alert">{textFor(isKo, '복기', 'Review')}: {analyticsError(review.error)}</p>}
       {!review.isFetching && !review.isError && review.data && <ReviewSummary data={review.data} metadata={metadata} isKo={isKo}
-      onPattern={item => onExperiment(findingSeed(request!, item.metric, item.dimension, item.observed.identity))}
-      onDiagnosis={item => {
-        const seed = findingSeed(request!, 'average_r');
-        if (item.identity.strategy_version_id !== null) seed.query.filters = { ...seed.query.filters, strategy_version_ids: [item.identity.strategy_version_id] };
-        onExperiment(seed);
-      }} />}
+      onPattern={item => onExperiment(patternSeed(request!, item, review.data!.patterns.metadata))}
+      onDiagnosis={item => onExperiment(diagnosisSeed(request!, item, review.data!.strategy_execution.metadata))} />}
     </>}
   </div>;
 }

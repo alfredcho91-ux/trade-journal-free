@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createExperiment, getExperiment, listExperiments, measureExperiment, transitionExperiment, updateExperiment } from '../../api/review';
 import type { AnalyticsMetadata } from '../../types/analytics';
@@ -9,6 +9,8 @@ import { displayAnalyticsValue as value } from '../analytics/analyticsDisplay';
 import { panel, Samples } from './ReviewEvidence';
 import type { ExperimentSeed } from './reviewHandoff';
 import { analyticsLabel, textFor } from '../../utils/localization';
+import { experimentTitle } from './experimentPresentation';
+import { ExperimentComparison, ReviewObservation } from './ExperimentHandoffSummary';
 
 const button = 'rounded border border-dark-600 px-3 py-2 text-sm disabled:opacity-40';
 const timestamp = (ms: number) => new Date(ms).toISOString().slice(0, 23);
@@ -31,7 +33,8 @@ export function MeasurementView({ data, isKo = false }: { data: Measurement; isK
 function Editor({ record, seed, metadata, onDirty, onMutationStart, onMutationPending, onSaved, isKo }: { record?: Experiment; seed?: ExperimentSeed | null; metadata: AnalyticsMetadata;
   onDirty: (dirty: boolean) => void; onMutationStart: (id?: number) => Promise<void>; onMutationPending: (value: boolean) => void; onSaved: (value: Experiment) => Promise<void>; isKo: boolean }) {
   const existing = record?.definition;
-  const [name, setName] = useState(existing?.name ?? '');
+  const handoff = !record && seed?.review ? { ...seed, review: seed.review } : null;
+  const [name, setName] = useState(() => existing?.name ?? (handoff ? experimentTitle(handoff, metadata, isKo) : ''));
   const [hypothesis, setHypothesis] = useState(existing?.hypothesis ?? '');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [builder, setBuilder] = useState(() => existing || seed ? builderFrom((existing ?? seed)!) : { ...initialDraft(metadata), metric: 'average_r', dimension: 'all' });
@@ -42,6 +45,8 @@ function Editor({ record, seed, metadata, onDirty, onMutationStart, onMutationPe
   const [minimum, setMinimum] = useState(String(existing?.minimum_sample ?? 5));
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(!handoff);
+  const advancedId = useId();
   const live = useRef(true);
   const original = useRef(JSON.stringify({ name, hypothesis, notes, builder, groupKey, baselineStart, baselineEnd, criterion, minimum }));
   const editable = !record || record.status === 'DRAFT';
@@ -67,7 +72,7 @@ function Editor({ record, seed, metadata, onDirty, onMutationStart, onMutationPe
     finally { onMutationPending(false); if (live.current) setPending(false); }
   };
   const metric = metadata.metrics.find(item => item.id === builder.metric);
-  return <div className="space-y-4"><form className={panel} onSubmit={event => {
+  return <div className="min-w-0 space-y-4"><form className={panel} onSubmit={event => {
     event.preventDefault();
     const built = buildRequest(metadata, builder);
     const start = Date.parse(`${baselineStart}Z`), end = Date.parse(`${baselineEnd}Z`);
@@ -79,10 +84,19 @@ function Editor({ record, seed, metadata, onDirty, onMutationStart, onMutationPe
     void run(() => record ? updateExperiment(record.id, record.revision, definition) : createExperiment(definition));
   }}>
     <h2 className="text-lg">{record ? `${record.definition.name} · ${record.status}` : textFor(isKo, '새 실험 초안', 'New experiment draft')}</h2>
-    <p className="text-xs text-dark-300">{textFor(isKo, '사용자가 작성한 가설입니다. 고정 UTC 종료 기간은 같은 필터와 그룹을 사용합니다. 시작하면 정의가 잠기며, 완료된 측정은 현재 원본 데이터를 다시 구성합니다.', 'User-owned hypothesis. Fixed UTC close/exit periods use the same filters and group. Starting locks the definition; completed measurements reconstruct current source data.')}</p>
-    <fieldset disabled={!editable || pending} className="space-y-3">
+    <p className="text-xs text-dark-300">{handoff
+      ? textFor(isKo, '관찰을 참고해 직접 시도할 행동을 정하세요. 초안을 저장한 뒤 별도로 시작해야 하며, 시작하면 측정 정의가 잠깁니다.', 'Use the observation to decide what you want to try. Save a draft, then explicitly start it to lock the measurement definition.')
+      : textFor(isKo, '사용자가 작성한 가설입니다. 고정 UTC 종료 기간은 같은 필터와 그룹을 사용합니다. 시작하면 정의가 잠기며, 완료된 측정은 현재 원본 데이터를 다시 구성합니다.', 'User-owned hypothesis. Fixed UTC close/exit periods use the same filters and group. Starting locks the definition; completed measurements reconstruct current source data.')}</p>
+    {handoff && <ReviewObservation source={handoff.review} metadata={metadata} isKo={isKo} />}
+    <fieldset disabled={!editable || pending} className="min-w-0 space-y-3">
       <label className="block text-sm">{textFor(isKo, '이름', 'Name')}<input className={inputClass} value={name} maxLength={160} onChange={e => setName(e.target.value)} /></label>
-      <label className="block text-sm">{textFor(isKo, '가설', 'Hypothesis')}<textarea className={inputClass} value={hypothesis} maxLength={2000} onChange={e => setHypothesis(e.target.value)} /></label>
+      <label className="block text-sm">{handoff ? textFor(isKo, '다음 기간에 무엇을 시도해 보고 싶나요?', 'What do you want to try during the next period?') : textFor(isKo, '가설', 'Hypothesis')}<textarea className={inputClass} value={hypothesis} maxLength={2000} onChange={e => setHypothesis(e.target.value)} /></label>
+      {handoff && <>
+        <p className="text-xs text-dark-300">{textFor(isKo, '관찰된 차이와 시도할 행동은 별개입니다. 이 내용은 직접 작성하는 실험 가설로 저장됩니다. 앱이 행동을 추천하거나 효과를 보장하지 않습니다.', 'The observation and the action to try are separate. Your words are saved as your experiment hypothesis. The app does not recommend an action or promise an effect.')}</p>
+        <ExperimentComparison seed={handoff} metadata={metadata} builder={builder} groupKey={groupKey} baselineStart={baselineStart} baselineEnd={baselineEnd} criterion={criterion} minimum={minimum} isKo={isKo} />
+      </>}
+      <button type="button" className={`${button} min-h-11 text-left`} aria-expanded={advancedOpen} aria-controls={advancedId} onClick={() => setAdvancedOpen(!advancedOpen)}>{textFor(isKo, '고급 측정 설정', 'Advanced measurement settings')}</button>
+      {advancedOpen && <div id={advancedId} className="min-w-0 space-y-3">
       <div className="grid gap-3 md:grid-cols-2"><label>{textFor(isKo, '목표 지표', 'Target metric')}<select className={inputClass} value={builder.metric} onChange={e => setBuilder({ ...builder, metric: e.target.value })}>{metadata.metrics.map(item => <option key={item.id} value={item.id}>{analyticsLabel(item.label, isKo)} ({item.unit})</option>)}</select></label>
         <label>{textFor(isKo, '측정 기준', 'Measurement dimension')}<select className={inputClass} value={builder.dimension} onChange={e => { setBuilder({ ...builder, dimension: e.target.value }); setGroupKey(''); }}>{metadata.dimensions.filter(item => metric?.supported_dimensions.includes(item.id)).map(item => <option key={item.id} value={item.id}>{analyticsLabel(item.label, isKo)}</option>)}</select></label></div>
       {builder.dimension !== 'all' && <label className="block">{textFor(isKo, '정확한 관찰 그룹 키', 'Exact observed group key')}<input className={inputClass} value={groupKey} onChange={e => setGroupKey(e.target.value)} /><span className="text-xs">{textFor(isKo, '발견에서 실험 만들기를 사용하면 공식 그룹 식별자를 가져옵니다.', 'Use Create experiment from a finding to carry its official group identity.')}</span></label>}
@@ -95,6 +109,11 @@ function Editor({ record, seed, metadata, onDirty, onMutationStart, onMutationPe
         <label>{textFor(isKo, '연산자', 'Operator')}<select className={inputClass} value={criterion.operator} onChange={e => setCriterion({ ...criterion, operator: e.target.value as 'gte' | 'lte' })}><option value="gte">{textFor(isKo, '이상(≥)', 'At least (≥)')}</option><option value="lte">{textFor(isKo, '이하(≤)', 'At most (≤)')}</option></select></label>
         <label>{textFor(isKo, '목표', 'Target')}<input className={inputClass} value={criterion.target} onChange={e => setCriterion({ ...criterion, target: e.target.value })} /></label></div>
       <label className="block">{textFor(isKo, '최소 판정 가능 표본 및 거래', 'Minimum evaluable sample and trades')}<input className={inputClass} type="number" min={5} max={2000} value={minimum} onChange={e => setMinimum(e.target.value)} /></label>
+      {handoff && <details><summary className="cursor-pointer py-2">{textFor(isKo, '정확한 식별자와 원래 복기 근거', 'Exact identifiers and original Review evidence')}</summary>
+        <p className="text-xs">{textFor(isKo, '복기 근거는 이 화면의 참고용이며 실험 정의에 저장되지 않습니다. 이후 측정은 현재 원본 기록으로 재구성되므로 과거 관찰과 달라질 수 있습니다.', 'Review evidence is transient context, not part of the saved definition. Later measurements reconstruct current source records and may differ from this historical observation.')}</p>
+        <pre className="max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify({ metric: builder.metric, dimension: builder.dimension, group_key: builder.dimension === 'all' ? null : groupKey, review: handoff.review }, null, 2)}</pre>
+      </details>}
+      </div>}
       <label className="block">{textFor(isKo, '메모', 'Notes')}<textarea className={inputClass} maxLength={4000} value={notes} onChange={e => setNotes(e.target.value)} /></label>
       {editable && <button className={button} disabled={pending} type="submit">{pending ? textFor(isKo, '저장 중…', 'Saving…') : record ? textFor(isKo, '초안 저장', 'Save draft') : textFor(isKo, '초안 만들기', 'Create draft')}</button>}
     </fieldset>
@@ -163,7 +182,7 @@ export default function ExperimentsWorkspace({ metadata, seed, onDirtyChange, is
       {list.data?.length === 0 && <p>{textFor(isKo, '저장된 실험이 없습니다.', 'No experiments saved.')}</p>}
       {list.data?.map(item => <button className={`block w-full text-left ${button}`} key={item.id} type="button" aria-pressed={selected === item.id} onClick={() => select(item.id)}>{item.definition.name}<span className="block text-xs">{item.status} · #{item.id}</span></button>)}
       <div className="flex gap-2"><button className={button} disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>{textFor(isKo, '이전', 'Previous')}</button><button className={button} disabled={list.data?.length !== 50} onClick={() => setOffset(offset + 50)}>{textFor(isKo, '다음', 'Next')}</button></div></aside>
-      <div>{typeof selected === 'number' && detail.isFetching && <p role="status">{textFor(isKo, '선택한 실험을 불러오는 중…', 'Loading selected experiment…')}</p>}
+      <div className="min-w-0">{typeof selected === 'number' && detail.isFetching && <p role="status">{textFor(isKo, '선택한 실험을 불러오는 중…', 'Loading selected experiment…')}</p>}
         {detail.isError && typeof selected === 'number' && <p role="alert">{analyticsError(detail.error)}</p>}
         {typeof selected === 'number' && <button className={button} disabled={detail.isFetching || mutationPending} type="button" onClick={() => void reload()}>{textFor(isKo, '저장된 실험 다시 불러오기', 'Reload saved experiment')}</button>}
         {(selected === 'new' || detail.data?.id === selected) && <Editor key={`${selected}/${selected === 'new' ? newDraft : `${detail.data?.revision}/${editorGeneration}`}`} metadata={metadata} seed={newDraft === 0 ? seed : null} record={selected === 'new' ? undefined : detail.data} isKo={isKo} onDirty={setDirty} onMutationStart={async id => {
