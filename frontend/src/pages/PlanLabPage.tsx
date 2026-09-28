@@ -41,6 +41,8 @@ import { isSampleWorkspace, samplePeriod } from '../features/onboarding/workspac
 import { useEditorAuthority, type EditorSubmissionAuthority } from '../hooks/useEditorAuthority';
 import TradeReportModal from '../features/journal/TradeReportModal';
 import PlanningContextPanel from '../features/planLab/PlanningContextPanel';
+import PlanHistory from '../features/planLab/PlanHistory';
+import { planSourceLabel } from '../features/planLab/planPresentation';
 import { invalidatePlanningContexts, retrospectiveDraft, usePlanningContext } from '../features/planLab/planningContext';
 import type { PlanningContext } from '../api/planningContext';
 import { SampleBadge } from '../features/tradeAnalysis/SampleBadge';
@@ -291,10 +293,7 @@ function behaviorLabel(id: string, isKo: boolean): string {
 }
 
 function sourceLabel(source: PlanSource, isKo: boolean): string {
-  if (source === 'VERIFIED_PRETRADE') return isKo ? '사전 기록' : 'Verified pre-trade';
-  if (source === 'IN_TRADE') return isKo ? '진입 후 기록' : 'Recorded in trade';
-  if (source === 'RETROSPECTIVE') return isKo ? '회고 입력' : 'Retrospective';
-  return isKo ? '미연결' : 'Unlinked';
+  return planSourceLabel(source, isKo);
 }
 
 export function PlanForm({ planningContext, draft, isKo, trade, openPosition, revisionTarget, pending, error, saved, evaluation, hasNextMissing, entries = [], onChange, onSubmit, onCancel, onViewAnalysis, onNextMissing }: {
@@ -415,8 +414,8 @@ export function LegacyPlanDetailsDrawer({ plan, entry, evaluation, analysisReque
   const revision = plan.latest_revision;
   return <div className="fixed inset-0 z-[80] bg-black/60" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="ml-auto h-full w-full max-w-[620px] overflow-y-auto border-l border-dark-700 bg-dark-950 p-4 sm:p-6">
     <div className="flex items-start justify-between gap-4"><div><h2 className="text-lg font-bold text-white">{isKo ? '입력한 거래 계획' : 'Recorded trade plan'}</h2><p className="mt-1 text-xs text-dark-500">{entry ? `${dateLabel(entry.entry_datetime, isKo)} · ${entry.direction?.toUpperCase()} · ${entry.symbol}` : `${plan.symbol} · ${plan.side.toUpperCase()}`}</p></div><button type="button" onClick={onClose}><X className="h-5 w-5" /></button></div>
-    <div className="mt-5 flex flex-wrap gap-2"><span className={`border px-2 py-1 text-[10px] ${plan.source === 'VERIFIED_PRETRADE' ? 'border-bull/40 text-bull' : plan.source === 'IN_TRADE' ? 'border-primary-400/40 text-primary-200' : 'border-amber-300/40 text-amber-200'}`}>{plan.source === 'VERIFIED_PRETRADE' ? (isKo ? '사전 기록 확인됨' : 'Verified pre-trade') : plan.source === 'IN_TRADE' ? (isKo ? '진입 후 기록' : 'Recorded in trade') : (isKo ? '회고 입력' : 'Retrospective')}</span><span className="border border-dark-700 px-2 py-1 text-[10px] text-dark-400">v{revision.version}</span></div>
-    <p className="mt-3 text-xs leading-5 text-dark-400">{plan.source === 'VERIFIED_PRETRADE' ? (isKo ? '실제 진입 전에 서버에 저장된 계획입니다.' : 'This plan was server-recorded before the actual entry.') : plan.source === 'IN_TRADE' ? (isKo ? '실제 진입 후, 청산 전에 기록한 계획입니다. 실제 진입가는 계획 진입가로 해석하지 않습니다.' : 'This plan was recorded after entry and before exit. The actual entry is not treated as a planned entry.') : (isKo ? '과거 거래에 대해 나중에 입력한 계획입니다.' : 'This plan was entered after the historical trade.')}</p>
+    <div className="mt-5"><PlanHistory plan={plan} entryRevision={plan.source === 'VERIFIED_PRETRADE' ? evaluation?.plan_effective_at_entry : null} analysisRevision={evaluation?.plan_effective_at_entry} analysisBasis={evaluation?.plan_source} isKo={isKo} /></div>
+    <p className="mt-3 text-xs">{isKo ? `아래 가격·메모는 현재 계획 v${revision.version}입니다.` : `Prices and notes below show current plan v${revision.version}.`}</p>
     <div className="mt-5 grid grid-cols-2 gap-3"><Kpi label="Stop Loss" value={price(revision.stop_loss)} /><Kpi label={isKo ? '1차 목표가' : 'TP1'} value={price(revision.take_profit)} /><Kpi label={isKo ? '2차 목표가' : 'TP2'} value={price(revision.take_profit_2)} /><Kpi label={isKo ? '최대 보유시간' : 'Maximum hold'} value={revision.max_hold_hours == null ? '-' : `${revision.max_hold_hours}h`} /></div>
     {(revision.entry_note || revision.exit_note || revision.memo) && <div className="mt-5 space-y-3 text-xs"><div className="border border-dark-700 p-3"><span className="block text-dark-500">{isKo ? '진입 근거' : 'Entry rationale'}</span><p className="mt-1 whitespace-pre-wrap text-dark-200">{revision.entry_note || '-'}</p></div><div className="border border-dark-700 p-3"><span className="block text-dark-500">{isKo ? '계획 청산 조건' : 'Planned exit condition'}</span><p className="mt-1 whitespace-pre-wrap text-dark-200">{revision.exit_note || '-'}</p></div>{revision.memo && <div className="border border-dark-700 p-3"><span className="block text-dark-500">{isKo ? '메모' : 'Memo'}</span><p className="mt-1 whitespace-pre-wrap text-dark-200">{revision.memo}</p></div>}</div>}
     <div className="mt-5 border border-primary-400/30 bg-primary-500/5 p-4"><b className="text-sm text-white">{isKo ? 'Actual vs Plan' : 'Actual vs plan'}</b>{evaluation ? <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><span>{isKo ? '실제' : 'Actual'} <strong className="block font-mono text-white">{signed(evaluation.actual_r, 2, 'R')}</strong></span><span>{isKo ? '계획' : 'Plan'} <strong className="block font-mono text-white">{signed(evaluation.planned_result_r, 2, 'R')}</strong></span><span>{isKo ? '차이' : 'Delta'} <strong className="block font-mono text-white">{signed(evaluation.execution_delta_r, 2, 'R')}</strong></span></div> : <div><p className="mt-2 text-xs text-dark-400">{analysisRequested ? (analysisLoading ? (isKo ? '공식 비교 결과를 계산하고 있습니다.' : 'Calculating the official comparison.') : (isKo ? '비교 가능한 가격 경로가 없습니다.' : 'No comparable price path is available.')) : (isKo ? '공식 비교는 요청할 때만 계산합니다.' : 'The official comparison is calculated on request.')}</p>{!analysisRequested && <button type="button" onClick={onLoadAnalysis} className="mt-3 border border-primary-400/40 px-3 py-2 text-xs text-primary-200">{isKo ? '공식 분석 불러오기' : 'Load official analysis'}</button>}</div>}</div>

@@ -308,7 +308,7 @@ describe('Playbook frontend acceptance', () => {
     const user = userEvent.setup(); renderPage();
 
     expect(await screen.findByText('Readable Rule Engine rule')).toBeTruthy();
-    expect(screen.getByText('trade.direction · in · Long, Short')).toBeTruthy();
+    expect(screen.getByText('Direction is one of Long, Short')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'New Version' }));
     expect((screen.getByLabelText('Entry rules 1 evaluate automatically') as HTMLInputElement).checked).toBe(true);
     await user.type(screen.getByLabelText('Version label'), 'v2.1');
@@ -473,7 +473,11 @@ describe('Playbook frontend acceptance', () => {
   it('keeps persisted v2 evaluator history read-only and adds no Journal adherence UI', async () => {
     mockedVersions.mockResolvedValue([version(1, 10, { rules: v2Rules({ metric_id: 'journal.fomo', operator: 'eq', expected: false }), retired_at: '2026-09-04T00:00:00Z', is_active: false })]);
     renderPage();
-    expect(await screen.findByText('journal.fomo · eq · false')).toBeTruthy();
+    expect(await screen.findByText('FOMO: No')).toBeTruthy();
+    await userEvent.click(screen.getByText('Exact rule definition'));
+    const exactRule = screen.getByText('Exact rule definition').closest('details')!;
+    expect(exactRule.open).toBe(true);
+    expect(within(exactRule).getByText(/"metric_id": "journal.fomo"/)).toBeTruthy();
     expect(screen.getByText('READ ONLY')).toBeTruthy();
     expect(screen.queryByLabelText('Entry rules 1 evaluate automatically')).toBeNull();
     expect(screen.queryByText('FOLLOWED')).toBeNull();

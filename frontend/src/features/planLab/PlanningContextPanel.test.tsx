@@ -75,8 +75,8 @@ it('shows conflicting sources side by side and latest vs entry-time revision; op
   const source = context(); source.link_state = 'LINKED'; source.linked_plan = history();
   vi.mocked(getPlanningContext).mockResolvedValue(source);
   const { open, start } = setup();
-  expect(await screen.findByText('Latest revision · v2')).toBeTruthy();
-  expect(screen.getByText('Entry-time eligible revision · v1')).toBeTruthy();
+  expect(await screen.findByText('Current plan revision · v2')).toBeTruthy();
+  expect(screen.getByText('At trade entry · recorded before entry · v1')).toBeTruthy();
   expect(screen.getByText(/Both sources are shown unchanged/)).toBeTruthy();
   expect(screen.queryByText('Start retrospective plan from these notes')).toBeNull();
   fireEvent.click(screen.getByText('Open plan')); expect(open).toHaveBeenCalledWith(source.linked_plan.plan);
@@ -87,7 +87,7 @@ it('supports plan-only context without fabricating Journal notes', async () => {
   const source = context(); source.journal_notes.has_notes = false; source.link_state = 'LINKED'; source.linked_plan = history();
   vi.mocked(getPlanningContext).mockResolvedValue(source); setup();
   await screen.findByText('Open plan');
-  expect(screen.queryByText('Journal planning notes · mutable source')).toBeNull();
+  expect(screen.queryByText('Journal planning notes · timing not verified')).toBeNull();
 });
 
 it('requires an explicit candidate selection and refreshes context after linking', async () => {

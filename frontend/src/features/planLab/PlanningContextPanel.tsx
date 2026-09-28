@@ -1,20 +1,11 @@
 import { useState } from 'react';
 import type { PlanningContext } from '../../api/planningContext';
-import type { PlanRevision, TradingPlan } from '../../types';
+import type { TradingPlan } from '../../types';
+import PlanHistory from './PlanHistory';
 import { convertedJournalPrices, usePlanningContext, useLinkPlanningContext } from './planningContext';
 
 const value = (input: unknown) => input == null || input === '' ? '—' : String(input);
 const button = 'border border-primary-400/40 px-3 py-2 text-xs text-primary-100 disabled:opacity-40';
-
-function RevisionSummary({ revision, label }: { revision: PlanRevision; label: string }) {
-  return <div className="min-w-0 space-y-1 break-words border border-dark-700 p-3">
-    <b>{label} · v{revision.version}</b>
-    <p>Entry: {revision.entry_price != null ? value(revision.entry_price) : revision.entry_min != null ? `${revision.entry_min} – ${revision.entry_max}` : '—'}</p>
-    <p>SL: {value(revision.stop_loss)} · TP1: {value(revision.take_profit)}{revision.take_profit_2 != null && ` · TP2: ${revision.take_profit_2}`}</p>
-    {revision.setup && <p>Setup: {revision.setup}</p>}{revision.entry_note && <p>{revision.entry_note}</p>}
-    <p className="text-dark-400">{revision.received_at}</p>
-  </div>;
-}
 
 export default function PlanningContextPanel({ entryId, isKo, onOpenPlan, onStartPlan, onLinkPlan, linking = false, linkError }: {
   entryId: number; isKo: boolean;
@@ -46,19 +37,15 @@ export default function PlanningContextPanel({ entryId, isKo, onOpenPlan, onStar
       ? t('계획 메모 있음 · 거래 계획으로 저장되지 않았습니다.', 'Planning notes recorded — not saved as a Trade Plan.')
       : t('연결된 거래 계획이나 계획 메모가 없습니다.', 'No linked Trade Plan or planning notes.')}</p>}
     <div className="grid min-w-0 gap-3 md:grid-cols-2">
-      {notes.has_notes && <div className="min-w-0 space-y-2 break-words border border-dark-700 p-3">
-        <b>{t('Journal 계획 메모 · 수정 가능한 원문', 'Journal planning notes · mutable source')}</b>
+      {notes.has_notes && <details className="order-2 min-w-0 space-y-2 break-words border border-dark-700 p-3">
+        <summary className="cursor-pointer py-1 font-semibold">{t('Journal 계획 메모 · 기록 시점 미확인', 'Journal planning notes · timing not verified')}</summary>
         <p>{t('손절', 'Stop')}: {value(notes.planned_stop_pct)}% · {t('목표', 'Target')}: {value(notes.planned_target_pct)}%</p>
         <p>{value(notes.planned_entry_reason)}</p>
         <p className="text-dark-400">{t('최초 메모 시각', 'First note timestamp')}: {value(notes.plan_recorded_at)}</p>
         <p>{t('현재 값의 사전 기록을 증명하지 않습니다.', 'This does not verify when the current values were planned.')}</p>
-      </div>}
-      {history && <div className="min-w-0 space-y-2">
-        <p>Plan #{history.plan.id} · {history.plan.source} · {history.plan.status} · {history.plan.link?.link_status}</p>
-        <RevisionSummary revision={history.plan.latest_revision} label={t('최신 Revision', 'Latest revision')} />
-        {history.entry_time_revision && <RevisionSummary revision={history.entry_time_revision} label={t('진입 시점 적격 Revision', 'Entry-time eligible revision')} />}
-        {!history.entry_time_revision && <p>{t('적격 사전 Revision 없음', 'No eligible pre-trade revision')}</p>}
-        {history.analysis_basis === 'RETROSPECTIVE' && <p>{t('회고 비교 기준', 'Retrospective comparison basis')}: v{history.analysis_revision?.version} · {t('사전 증거 아님', 'Not pre-trade evidence')}</p>}
+      </details>}
+      {history && <div className="min-w-0 space-y-2 md:col-span-2">
+        <PlanHistory plan={history.plan} entryRevision={history.entry_time_revision} analysisRevision={history.analysis_revision} analysisBasis={history.analysis_basis} isKo={isKo} />
         <button className={button} onClick={() => onOpenPlan(history.plan)}>{t('계획 열기', 'Open plan')}</button>
       </div>}
     </div>

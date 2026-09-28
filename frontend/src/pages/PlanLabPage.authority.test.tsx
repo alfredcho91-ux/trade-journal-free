@@ -198,7 +198,7 @@ it('prefills only a draft from explicit Journal navigation and refreshes context
   expect(createRetrospectivePlan).not.toHaveBeenCalled();
   const readsBeforeSave = vi.mocked(getPlanningContext).mock.calls.length;
   fireEvent.click(screen.getByRole('button', { name: 'Save plan' }));
-  await screen.findByText('Latest revision · v1');
+  await screen.findByText('Current plan revision · v1');
   expect(createRetrospectivePlan).toHaveBeenCalledWith(1, expect.objectContaining({ entry_price: null, entry_min: null, entry_max: null, stop_loss: 98, take_profit: 104, take_profit_2: null }));
   expect(vi.mocked(getPlanningContext).mock.calls.length).toBeGreaterThan(readsBeforeSave);
   expect(source.journal_notes).toEqual(notes);
