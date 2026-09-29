@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Save } from 'lucide-react';
 
-import { getDailyJournal, saveDailyJournal } from '../../api/journal';
+import { getDailyJournal, getDailyJournals, saveDailyJournal } from '../../api/journal';
 import type { DailyJournalEntry, DailyJournalUpdatePayload } from '../../types';
+import { isSampleWorkspace, samplePeriod } from '../onboarding/workspaceSession';
 import {
   dailyJournalDraftFromEntry,
   hasDailyJournalChanges,
@@ -40,6 +41,8 @@ export default function DailyJournalPanel({ isKo, onDirtyChange, resetRevision =
   resetRevision?: number;
 }) {
   const queryClient = useQueryClient();
+  const sample = isSampleWorkspace();
+  const sampleDates = samplePeriod();
   const [selectedDate, setSelectedDate] = useState(() => localToday());
   const [initial, setInitial] = useState<DailyJournalDraft>(() => dailyJournalDraftFromEntry(null));
   const [draft, setDraft] = useState<DailyJournalDraft>(() => dailyJournalDraftFromEntry(null));
@@ -61,6 +64,16 @@ export default function DailyJournalPanel({ isKo, onDirtyChange, resetRevision =
     enabled: isValidLocalDate(selectedDate),
     retry: false,
   });
+  const sampleDaysQuery = useQuery({
+    queryKey: journalQueryKeys.dailyRange(sampleDates?.start, sampleDates?.end),
+    queryFn: () => getDailyJournals({ start_date: sampleDates?.start, end_date: sampleDates?.end }),
+    enabled: sample && Boolean(sampleDates?.start && sampleDates?.end),
+    retry: false,
+  });
+  const sampleExampleDate = useMemo(() => sampleDaysQuery.data
+    ?.map((entry) => entry.trade_date)
+    .filter(isValidLocalDate)
+    .sort((left, right) => left.localeCompare(right))[0] ?? null, [sampleDaysQuery.data]);
 
   const payload = useMemo(() => serializeDailyJournalChanges(initial, draft), [draft, initial]);
   const isDirty = hasDailyJournalChanges(initial, draft);
@@ -171,6 +184,9 @@ export default function DailyJournalPanel({ isKo, onDirtyChange, resetRevision =
       <div>
         <h2 className="text-base font-semibold text-white">{isKo ? '하루 계획과 복기' : 'Daily plan and review'}</h2>
         <p className="mt-1 text-[11px] text-dark-500">{isKo ? '한 날짜의 사전 계획과 사후 복기를 같은 기록에 저장합니다.' : 'Keep pre-session planning and post-session review in one date-keyed record.'}</p>
+        {sampleExampleDate && <button type="button" onClick={() => requestDate(sampleExampleDate)} className="mt-2 border border-primary-400/40 bg-primary-500/10 px-2.5 py-1.5 text-[11px] text-primary-100">
+          {isKo ? `기록이 있는 샘플 날짜 보기 · ${sampleExampleDate}` : `View a populated sample day · ${sampleExampleDate}`}
+        </button>}
       </div>
       <div className="flex items-center gap-1">
         <button type="button" aria-label={isKo ? '이전 날짜' : 'Previous date'} onClick={() => requestShiftedDate(-1)} className="border border-dark-700 p-2 text-dark-300"><ChevronLeft className="h-4 w-4" /></button>

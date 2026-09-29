@@ -5,18 +5,21 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getDailyJournal, saveDailyJournal } from '../../api/journal';
+import { getDailyJournal, getDailyJournals, saveDailyJournal } from '../../api/journal';
 import type { DailyJournalEntry } from '../../types';
+import { setWorkspace } from '../onboarding/workspaceSession';
 import { journalQueryKeys } from './journalQueryKeys';
 import { localToday, shiftLocalDate } from './dailyJournalForm';
 import DailyJournalPanel from './DailyJournalPanel';
 
 vi.mock('../../api/journal', () => ({
   getDailyJournal: vi.fn(),
+  getDailyJournals: vi.fn(),
   saveDailyJournal: vi.fn(),
 }));
 
 const mockedGet = vi.mocked(getDailyJournal);
+const mockedGetRange = vi.mocked(getDailyJournals);
 const mockedSave = vi.mocked(saveDailyJournal);
 
 function renderPanel(isKo = false) {
@@ -47,10 +50,46 @@ function dailyEntry(overrides: Partial<DailyJournalEntry> = {}): DailyJournalEnt
 afterEach(() => {
   cleanup();
   mockedGet.mockReset();
+  mockedGetRange.mockReset();
   mockedSave.mockReset();
+  setWorkspace(null);
 });
 
 describe('DailyJournalPanel', () => {
+  it.each([
+    [false, 'View a populated sample day · 2026-01-02'],
+    [true, '기록이 있는 샘플 날짜 보기 · 2026-01-02'],
+  ])('opens an existing populated sample day through the normal date mechanism, locale %s', async (isKo, label) => {
+    setWorkspace({ mode: 'sample', profile_id: 'sample:test', first_run: false, trade_count: 36, return_url: null, period: { start: '2026-01-01', end: '2026-01-31' }, credential_backend: 'disabled', fixture_version: 1 });
+    mockedGetRange.mockResolvedValue([
+      dailyEntry({ id: 3, trade_date: '2026-01-14' }),
+      dailyEntry({ id: 1, trade_date: '2026-01-02', session_plan: 'Existing sample session plan', post_session_notes: 'Existing sample reflection' }),
+      dailyEntry({ id: 2, trade_date: '2026-01-08' }),
+    ]);
+    mockedGet.mockImplementation(async tradeDate => tradeDate === '2026-01-02'
+      ? dailyEntry({ trade_date: tradeDate, session_plan: 'Existing sample session plan', post_session_notes: 'Existing sample reflection' })
+      : null);
+    const user = userEvent.setup();
+    renderPanel(isKo);
+    const action = await screen.findByRole('button', { name: label });
+    action.focus();
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect((screen.getByLabelText(isKo ? '저널 날짜' : 'Journal date') as HTMLInputElement).value).toBe('2026-01-02'));
+    expect((screen.getByLabelText(isKo ? '세션 계획' : 'Session plan') as HTMLTextAreaElement).value).toBe('Existing sample session plan');
+    expect((screen.getByLabelText(isKo ? '세션 후 메모' : 'Post-session notes') as HTMLTextAreaElement).value).toBe('Existing sample reflection');
+    expect(mockedGetRange).toHaveBeenCalledWith({ start_date: '2026-01-01', end_date: '2026-01-31' });
+    expect(mockedSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps the normal workspace on today and does not load or show sample dates', async () => {
+    mockedGet.mockResolvedValue(null);
+    renderPanel();
+    expect((await screen.findByLabelText('Journal date') as HTMLInputElement).value).toBe(localToday());
+    expect(screen.queryByText(/populated sample day/)).toBeNull();
+    expect(mockedGetRange).not.toHaveBeenCalled();
+  });
+
   it('shows a loading state and then an empty bilingual form', async () => {
     let resolveLoad: ((value: null) => void) | undefined;
     mockedGet.mockReturnValue(new Promise((resolve) => { resolveLoad = resolve; }));

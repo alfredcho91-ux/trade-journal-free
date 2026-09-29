@@ -343,6 +343,38 @@ describe('Past Trade Plan Input reliability', () => {
     expect(html).toContain('평가 가능한 가격 경로가 없습니다');
   });
 
+  it.each([
+    [false, 'Not calculated — price-path data required for the plan result is unavailable.'],
+    [true, '계산되지 않음 — 계획 결과에 필요한 가격 경로 데이터가 없습니다.'],
+  ])('places the known unavailable reason beside the dash without changing actual result, locale %s', (isKo, reason) => {
+    const html = renderToStaticMarkup(<PlanDetailsDrawer
+      plan={plan('VERIFIED_PRETRADE', 1)}
+      entry={trade(1, '2026-01-01T10:00:00Z')}
+      evaluation={splitEvaluation({
+        evaluation_status: 'NOT_EVALUABLE',
+        plan_execution_mode: 'SINGLE_TP',
+        planned_result_r: null,
+        planned_result_pnl: null,
+        execution_delta_r: null,
+        plan_legs: [],
+        geometry: { valid: true, status: 'VALID' },
+      })}
+      entries={[]}
+      analysisRequested
+      analysisLoading={false}
+      isKo={isKo}
+      onClose={() => undefined}
+      onRevise={() => undefined}
+      onLoadAnalysis={() => undefined}
+    />);
+
+    expect(html).toContain('+1.50R');
+    expect(html).toContain(reason);
+    expect(html).not.toContain('Calculated with the legacy rule');
+    expect(html).not.toContain('기존 계획 방식으로 계산했습니다');
+    expect(html).not.toContain('+0.00R');
+  });
+
   it('explains TP1-to-stop and TP1-to-horizon from backend leg outcomes', () => {
     const stored = plan('VERIFIED_PRETRADE', 1);
     stored.latest_revision.take_profit_2 = 108;
