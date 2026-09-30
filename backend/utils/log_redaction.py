@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import traceback
 from threading import RLock
 from typing import Any
 
@@ -11,7 +12,7 @@ _LOCK = RLock()
 _VALUES: set[str] = set()
 _INSTALLED = False
 _KEY_VALUE_PATTERN = re.compile(
-    r"(?i)(api[_-]?key|secret(?:[_-]?key)?|passphrase)"
+    r"(?i)(credential[_-]?master[_-]?key|api[_-]?key|secret(?:[_-]?key)?|passphrase)"
     r"(\s*[:=]\s*)"
     r"([^\s,;}&]+)",
 )
@@ -34,7 +35,7 @@ def redact_text(value: Any) -> str:
     text = _KEY_VALUE_PATTERN.sub(r"\1\2[REDACTED]", text)
     text = _BEARER_PATTERN.sub(r"\1 [REDACTED]", text)
     with _LOCK:
-        sensitive_values = tuple(_VALUES)
+        sensitive_values = sorted(_VALUES, key=len, reverse=True)
     for sensitive in sensitive_values:
         text = text.replace(sensitive, "[REDACTED]")
     return text
@@ -70,13 +71,17 @@ def install_log_redaction() -> None:
                     key: redact_text(item) if isinstance(item, str) else item
                     for key, item in record.args.items()
                 }
-            return record
-        try:
-            rendered = record.getMessage()
-        except (TypeError, ValueError):
-            rendered = record.msg
-        record.msg = redact_text(rendered)
-        record.args = ()
+        else:
+            try:
+                rendered = record.getMessage()
+            except (TypeError, ValueError):
+                rendered = record.msg
+            record.msg = redact_text(rendered)
+            record.args = ()
+        if record.exc_info:
+            record.exc_text = redact_text("".join(traceback.format_exception(*record.exc_info)))
+        if record.stack_info:
+            record.stack_info = redact_text(record.stack_info)
         return record
 
     logging.setLogRecordFactory(redacting_factory)

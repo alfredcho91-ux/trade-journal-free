@@ -104,7 +104,7 @@ def create_error_response(
         if error.details:
             response["details"] = redact_data(error.details)
         if include_traceback or sys.flags.debug:
-            response["traceback"] = traceback.format_exc()
+            response["traceback"] = redact_text(traceback.format_exc())
         return response
 
     # ValueError인 경우 (검증 에러로 간주)
@@ -115,7 +115,7 @@ def create_error_response(
             "error_code": error_code or "VALIDATION_ERROR",
         }
         if include_traceback or sys.flags.debug:
-            response["traceback"] = traceback.format_exc()
+            response["traceback"] = redact_text(traceback.format_exc())
         return response
 
     # 기타 예외
@@ -125,7 +125,7 @@ def create_error_response(
         "error_code": error_code or "INTERNAL_ERROR",
     }
     if include_traceback or sys.flags.debug:
-        response["traceback"] = traceback.format_exc()
+        response["traceback"] = redact_text(traceback.format_exc())
 
     # 에러 로깅
     logger.error("Unhandled error: %s", redact_text(error), exc_info=True)
