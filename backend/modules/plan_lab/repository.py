@@ -120,8 +120,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn = journal_repository._connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    _ensure_schema(conn)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        _ensure_schema(conn)
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 

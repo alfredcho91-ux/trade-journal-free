@@ -71,12 +71,15 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a Strategy-scoped connection without changing global FK behavior."""
     conn = journal_repository._connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    if int(conn.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        if int(conn.execute("PRAGMA foreign_keys").fetchone()[0]) != 1:
+            raise RuntimeError("Strategy storage requires SQLite foreign key enforcement")
+        journal_repository._ensure_schema(conn)
+        _ensure_schema(conn)
+    except BaseException:
         conn.close()
-        raise RuntimeError("Strategy storage requires SQLite foreign key enforcement")
-    journal_repository._ensure_schema(conn)
-    _ensure_schema(conn)
+        raise
     return conn
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 from backend.config.settings import JOURNAL_DB_PATH
+from backend.utils.sqlite_connection import ClosingConnection
 
 TABLE_NAME = "exchange_executions"
 COLUMNS = [
@@ -22,10 +23,14 @@ COLUMNS = [
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     path = db_path or JOURNAL_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(str(path))
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA synchronous=NORMAL")
+    connection = sqlite3.connect(str(path), factory=ClosingConnection)
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=NORMAL")
+    except BaseException:
+        connection.close()
+        raise
     return connection
 
 

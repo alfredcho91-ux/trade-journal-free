@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 import pandas as pd
 
 from backend.config.settings import JOURNAL_COLUMNS, JOURNAL_CSV_PATH, JOURNAL_DB_PATH
+from backend.utils.sqlite_connection import ClosingConnection
 
 TABLE_NAME = "journal_entries"
 RULE_TABLE_NAME = "journal_behavior_rules"
@@ -147,11 +148,15 @@ def _resolve_csv_path(csv_path: Optional[Path] = None) -> Path:
 def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     db_path = _resolve_db_path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
+    conn = sqlite3.connect(str(db_path), timeout=30, factory=ClosingConnection)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 

@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from backend.config.settings import JOURNAL_DB_PATH
 from backend.config.sample_policy import require_exchange_access
+from backend.utils.sqlite_connection import ClosingConnection
 
 MASTER_KEY_ENV = "CREDENTIAL_MASTER_KEY"
 _ALGORITHM = "AES-256-GCM"
@@ -84,8 +85,12 @@ def has_master_key() -> bool:
 def _connect(db_path: Optional[Path]) -> sqlite3.Connection:
     path = Path(db_path or JOURNAL_DB_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, timeout=30)
-    connection.execute("PRAGMA busy_timeout = 30000")
+    connection = sqlite3.connect(path, timeout=30, factory=ClosingConnection)
+    try:
+        connection.execute("PRAGMA busy_timeout = 30000")
+    except BaseException:
+        connection.close()
+        raise
     return connection
 
 
