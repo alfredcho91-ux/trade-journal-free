@@ -1,6 +1,6 @@
 # Trade Journal
 
-여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `Risk Lab`, `계획 분석`, `홀딩 / 재진입`, `거래 탐색`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
+여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `Risk Lab`, `계획 분석`, `홀딩 / 재진입`, `거래 탐색`, `플레이북`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
 
 현재 배포 버전: `v1.0.26`
 
@@ -10,8 +10,11 @@
 - 처음 읽기 전용 API 연결을 저장하면 기본 최근 30일 거래를 한 번 자동 동기화
 - 동기화가 끝나면 선택 기간의 거래 목록·성과·품질 분석을 자동 갱신하고, 종료 거래가 없으면 분석 불가 원인을 구분해 표시
 - 종료 거래 저널, 거래 차트 복기, 분할 진입·익절 마커
+- 매매일지 안의 Daily Journal에서 날짜별 준비·회고 기록, 플레이북에서 Strategy와 버전별 규칙 관리
+- 매매분석의 안내형·고급 분석, 요약 우선 Review, 사용자 정의 Experiment와 기간별 측정
+- 첫 실행 시 API 연결 없이 합성 거래를 탐색하는 별도 샘플 작업공간. 샘플은 별도 프로세스·프로필·DB에서 실행되고 credential 저장과 실제 거래소 동기화가 비활성화됩니다. 샘플 편집은 사용자 저널로 합쳐지지 않으며, 시장 경로가 필요한 분석은 사용할 수 없다고 표시합니다. [샘플 격리 구조](docs/isolated-sample-onboarding.md)
 - 승패·진입·청산 품질과 대성공·대실패 거래 분석, 별도 Risk Lab의 손절·SL/TP 기대값 분석
-- 매매분석 상단 Trading Review: 기존 행동 분석의 수익 누수, 품질 분석의 반복 강점, 이미 계산된 Plan Lab 실행 요약을 한 번에 보고 근거 거래로 이동
+- 매매분석 Overview의 Trading Review 카드: 기존 행동 분석의 수익 누수, 품질 분석의 반복 강점, 이미 계산된 Plan Lab 실행 요약을 한 번에 보고 근거 거래로 이동
 - 거래별 계획 SL/TP·Setup·Mistake 기록과 규칙 준수, 수익 누수, 조건 비교 분석
 - Plan Lab은 상단에서 거래소가 확인한 실제 진행중 포지션을 먼저 보여 주고, 종료 거래에는 당시 계획을 회고 입력해 실제 실행과 비교합니다. 진행중 계획은 서버가 포지션이 아직 열려 있는지 다시 확인한 경우에만 `IN_TRADE`로 저장되며, 실제 Entry는 목표 손익비 미리보기 기준일 뿐 사용자가 계획한 진입가로 저장되지 않습니다. 회고 입력도 계획 Entry가 없으면 실제 Entry를 계획값으로 저장하지 않으며, 거래 전 서버에 저장된 계획만 사전 기록으로 검증합니다. `TP2`가 없으면 기존처럼 `TP1`에서 100% 청산하고, `TP2`가 있으면 `TP1 50% + TP2 잔여 50%` 고정 규칙으로 공식 Plan R·Plan PnL·Delta·Attribution·Optimizer를 계산합니다. 거래 목록은 가볍게 먼저 열리고 경로 재생·Optimizer는 사용자가 공식 분석을 요청할 때 실행됩니다.
 - macOS 앱과 Windows x64 압축 배포판
@@ -26,13 +29,13 @@ backend/venv/bin/python -m pip install -r packaging/requirements-build.txt
 ./packaging/build_macos_app.sh
 ```
 
-완성된 파일은 바탕화면의 `Trade Journal/macOS/Trade-Journal-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 거래 DB는 `~/Library/Application Support/Trade Journal Free`에 저장됩니다. API Key는 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
+완성된 파일은 바탕화면의 `Trade Journal/macOS/Trade-Journal-macOS.zip`입니다. 이 압축 파일에는 API Key, 매매일지 DB, 시장 데이터, 마스터 키가 포함되지 않습니다. 사용자가 앱을 열면 로컬 주소(`127.0.0.1`)에서만 실행되고, 기본 거래 DB는 `~/Library/Application Support/Trade Journal Free/journal`에 저장됩니다. 기본 credential은 macOS Keychain에 저장됩니다. 앱을 다시 실행하면 새 서버를 중복으로 띄우지 않고 기존 화면을 엽니다.
 
-Windows x64용은 GitHub Actions의 `Build Windows Distribution` 워크플로를 수동 실행해 생성합니다. 결과물은 Actions 실행 화면의 `Trade-Journal-Windows-x64` artifact에서 내려받을 수 있습니다. Windows에서는 거래 DB가 `%APPDATA%\Trade Journal Free`에, API Key는 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
+Windows x64용은 main push의 `Tests` 성공 후 `workflow_run`으로 `Build Windows Distribution`이 실행되어, 테스트한 정확한 SHA를 체크아웃하고 패키징합니다. 수동 실행도 main의 선택 SHA에 성공한 Tests push 실행이 있어야 합니다. 결과물은 Actions의 `Trade-Journal-Windows-x64` artifact에서 내려받으며, 같은 버전 태그가 이미 있으면 Release 게시는 건너뛰고 artifact만 제공합니다. Windows 기본 거래 DB는 `%APPDATA%\Trade Journal Free\journal`에, 기본 credential은 Windows Credential Manager에 저장됩니다. Windows 패키지는 Windows runner에서 빌드해야 하며 macOS에서 교차 빌드하지 않습니다.
 
 ### Windows 코드 서명
 
-공개 배포본은 Authenticode PFX 인증서로 `Trade Journal.exe`를 서명한 뒤 timestamp 검증까지 수행합니다. GitHub 저장소의 `Settings → Secrets and variables → Actions`에 아래 값을 등록합니다.
+인증서가 설정된 빌드는 Authenticode PFX 인증서로 `Trade Journal.exe`를 서명한 뒤 timestamp 검증까지 수행합니다. 공개 배포에 서명을 필수로 하려면 GitHub 저장소의 `Settings → Secrets and variables → Actions`에 아래 값을 등록합니다.
 
 | 종류 | 이름 | 값 |
 | --- | --- | --- |
@@ -73,12 +76,12 @@ SmartScreen을 끄거나 Windows 실시간 보호를 해제할 필요는 없습�
 - 투자금 순수익률 30% 또는 방향 반영 가격 수익률 3% 이상인 대성공 거래와, 큰 투자금 손실 또는 큰 가격 역행이 발생한 대실패 거래 분석
 - Risk Lab: 손절 사후 분석, Stop 최적화, 코인 가격 기준 N% 손절 기대값, SL/TP 조합 시뮬레이션
 - 계획 분석: 실제 Entry 기준 SL/TP 경로 재생, TP2 선택 시 고정 50/50 분할 청산, Actual/Plan Expectancy, Execution Delta, 행동별 손익 누수, Setup·방향·시장상황 비교, 70/30 시계열 검증
-- Trading Review는 새 분석 엔진이 아니라 기존 Quality Analysis·Behavior Analysis·Plan Lab의 공식 결과를 표시용으로만 조립하는 Executive Summary입니다. 강점은 공식 R 표본이 있는 시장상황끼리 평균 R로 비교하며, Plan Lab의 무거운 경로 재생·Optimizer는 매매분석 진입 시 자동 실행하지 않고 이미 같은 기간·방향으로 불러온 결과만 재사용합니다. 최소 순수익률 필터는 Plan Lab 미지원 범위로 명확히 표시합니다.
+- Overview의 Trading Review 카드는 별도 Review 메뉴와 구분됩니다. 이 카드는 기존 Quality Analysis·Behavior Analysis·Plan Lab의 공식 결과를 표시용으로만 조립하는 Executive Summary입니다. 강점은 공식 R 표본이 있는 시장상황끼리 평균 R로 비교하며, Plan Lab의 무거운 경로 재생·Optimizer는 매매분석 진입 시 자동 실행하지 않고 이미 같은 기간·방향으로 불러온 결과만 재사용합니다. 최소 순수익률 필터는 Plan Lab 미지원 범위로 명확히 표시합니다.
 - 현재 시장과 과거 거래의 유사도 비교
 - 매매분석 상단의 최소 순수익률 필터: 투입 증거금 대비 순수익률 절대값이 입력값 이하인 종료 거래를 통계에서 제외
 - 거래 리포트: 실제 보유 구간의 최대 유리 움직임, 진입가 재도달, 이후 최대 불리 움직임과 실제 청산을 5분/15분봉으로 복기
 - 거래 리포트의 RSI 선은 축소 화면에서도 확인할 수 있도록 다른 기준선보다 굵게 표시
-- 매매일지·매매분석·Risk Lab의 상세 분석 영역은 처음부터 펼쳐진 상태로 표시
+- 매매분석은 안내형 질문에서 시작하며, 고급 분석에서 지표·분석 기준·필터를 직접 구성합니다. Review는 주요 발견을 최대 3개 먼저 보여 주고 전체 근거와 표본·coverage 제한은 펼쳐서 확인할 수 있습니다.
 
 이 프로그램은 주문 생성·수정·취소·출금 API를 호출하지 않습니다. 모든 거래소 키는 반드시 Read Only로 생성하세요.
 
@@ -127,11 +130,13 @@ chmod +x bootstrap.sh dev.sh start.sh
 | `JOURNAL_DIR` | SQLite/CSV 저장 디렉터리 |
 | `APP_ENV` | 로컬은 `development`, 외부 공개는 `production` |
 | `DEMO_USERNAME`, `DEMO_PASSWORD` | production Basic Auth 계정 |
-| `CREDENTIAL_STORAGE` | `auto`, `keyring`, `encrypted_db`. production의 `auto`는 암호화 DB 사용 |
+| `CREDENTIAL_STORAGE` | `auto`, `keyring`, `encrypted_db`, `disabled`. `auto`는 마스터 키가 있거나 production이면 암호화 DB, 그 외에는 OS keyring 사용. 샘플은 `disabled` 강제 |
 | `CREDENTIAL_MASTER_KEY` | AES-256-GCM용 32바이트 URL-safe base64 키. 서버 Secret으로만 주입 |
 | `TRUST_PROXY_HEADERS` | 신뢰하는 reverse proxy/Cloudflare 뒤에서만 `true` |
 
-`.env`, `journal/*.db`, 인증서·키 파일, 캐시와 시장 데이터는 Git에서 제외됩니다. API 연결 창은 키를 브라우저 저장소에 기록하지 않고 같은 origin의 `/api` 백엔드에만 전송합니다. 데스크톱은 Keychain/Credential Manager, Docker·production 서버는 SQLite의 AES-256-GCM 암호문을 사용합니다. 마스터 키는 DB나 코드에 저장되지 않습니다. 명시적인 환경변수는 보안 저장소보다 우선하며 기존 로컬 `.env`의 거래소 키는 보호 저장소로 이전한 뒤 파일에서 제거합니다.
+`.env`, `journal/*.db`, 인증서·키 파일, 캐시와 시장 데이터는 Git에서 제외됩니다. API 연결 창은 키를 브라우저 저장소에 기록하지 않고 같은 origin의 `/api` 백엔드에만 전송합니다. 기본 데스크톱은 Keychain/Credential Manager, 위 Docker 설정과 production의 `auto`는 SQLite의 AES-256-GCM 암호문을 사용합니다. 마스터 키는 DB나 코드에 저장하지 않습니다. 완전한 명시적 배포 환경변수는 보호 저장소보다 우선하며 자동 복사·삭제하지 않습니다.
+
+소유권이 확인된 로컬 legacy `.env`는 자동 조회·이전으로 삭제되지 않습니다. 암호화 DB로 자동 복사할 때는 기존 목적지를 덮어쓰지 않고 재조회·내용 검증 후에도 원본을 보존합니다. OS keyring 모드에서는 legacy 값을 읽되 자동 저장하지 않습니다. `.env` 정리는 사용자가 연결을 명시적으로 저장하거나 삭제할 때 수행하며, 실패하면 cleanup-pending 오류를 반환합니다. 커스텀 경로와 샘플은 정상 프로필의 `.env`를 인수하지 않습니다. 자세한 저장·삭제 경계는 [SECURITY.md](SECURITY.md)를 참고하세요.
 
 마스터 키는 로컬에서 다음처럼 생성하고 결과를 배포 Secret에만 등록합니다.
 
@@ -141,17 +146,15 @@ python3 -c "import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_
 
 ## Cloudflare 배포 준비
 
-Pages는 빌드된 프론트엔드를 제공하고 `/api`를 Workers 또는 별도 FastAPI origin으로 라우팅합니다. 현재 Python FastAPI 자체는 Workers 런타임에서 직접 실행되지 않지만, 저장 암호문은 Workers Web Crypto가 지원하는 AES-256-GCM 형식이라 D1 기반 adapter로 옮길 수 있습니다.
-
-```bash
-wrangler secret put CREDENTIAL_MASTER_KEY
-wrangler secret put DEMO_PASSWORD
-```
+Pages로 빌드된 프론트엔드를 제공할 경우 `/api`를 별도 FastAPI origin으로 라우팅해야 합니다. 현재 Python FastAPI는 Workers 런타임에서 직접 실행되지 않으며, D1 credential adapter는 구현되어 있지 않습니다. `CREDENTIAL_MASTER_KEY`, `DEMO_USERNAME`, `DEMO_PASSWORD`는 실제 FastAPI 프로세스에 환경 Secret으로 주입해야 합니다.
 
 `APP_ENV=production`, `CREDENTIAL_STORAGE=encrypted_db`를 설정하고 HTTPS를 종료하는 신뢰 가능한 Cloudflare proxy 뒤에서만 `TRUST_PROXY_HEADERS=true`로 둡니다. Pages와 API는 같은 HTTPS origin을 권장합니다.
 
 ## 데이터 기준
 
+- 거래소 실행값, Journal의 분류·심리·회고 및 legacy `planned_*` 메모, 날짜별 Daily Journal, 불변 PlanRevision, 재사용 가능한 StrategyVersion은 별도 원본입니다. PlanningContext는 이를 읽기 전용으로 함께 보여 주며 Journal 메모를 검증된 Plan 이력으로 승격하지 않습니다. `setup_tags`는 Strategy ID가 아닙니다.
+- Rule Engine은 `FOLLOWED`, `VIOLATED`, `NOT_EVALUABLE`을 구분합니다. 준수율의 분모는 평가 가능한 규칙만이며 coverage는 별도입니다. 설명 텍스트만 있는 규칙이나 부족한 근거를 위반으로 처리하지 않습니다.
+- Review는 결정론적 Analytics/Rule Engine 결과를 요약하며 LLM·인과 추론·예측 조언이 아닙니다. Review에서 Experiment 초안을 열면 비교 조건과 설명 맥락을 미리 채우지만 행동·가설·판정 기준은 사용자가 정합니다. Review의 하위 그룹 대 전체 비교와 Experiment의 동일 그룹 기간 간 측정은 다릅니다.
 - 거래 원본은 선택한 거래소의 읽기 전용 API를 사용합니다.
 - Deepcoin은 종료 포지션 API를 사용하고, Binance는 CCXT 체결을 시간순으로 매칭해 완료 포지션을 재구성합니다. Binance의 진행중·종료 거래는 계정 범위와 최초 진입 fill에서 만든 deterministic lifecycle ID를 공유합니다. 추가 진입과 부분 청산은 같은 lifecycle을 유지하고, 전량 청산 뒤 재진입은 새 lifecycle을 시작합니다. 동기화는 timestamp 경계를 겹쳐 재조회하고 거래 ID로 중복 제거합니다. 조회 기간보다 이전에 열린 포지션은 충분한 기존 체결 원장이 없으면 복원이 불완전할 수 있으므로 경고를 확인해야 합니다.
 - 종료 포지션은 저널 테이블에, 차트 복기용 개별 체결은 경량 `exchange_executions` 테이블에 분리 저장합니다. 지표 스냅샷은 최초 진입과 종료 시점에만 계산합니다.
@@ -178,9 +181,11 @@ wrangler secret put DEMO_PASSWORD
 
 ```bash
 backend/venv/bin/python -m pytest -q backend/tests
-cd frontend && npm test
-cd frontend && npm run lint
-cd frontend && npm run build
+cd frontend
+npm ci
+npm test
+npm run lint
+npm run build
 ```
 
 개발·테스트 의존성은 `backend/requirements-dev.txt`, 실행 의존성은 `backend/requirements.txt`로 분리되어 있습니다.

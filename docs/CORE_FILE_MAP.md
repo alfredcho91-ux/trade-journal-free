@@ -12,6 +12,7 @@
   -> exchanges/reconstruction.py (포지션 lifecycle 재구성)
   -> journal/repository.py (종료 거래 저장)
   -> journal 분석 서비스 / plan_lab 분석
+  -> analytics / rule_engine -> review / experiments 측정
   -> FastAPI router
   -> frontend API client / page / chart
 ```
@@ -60,6 +61,11 @@
 | `backend/modules/journal/sl_tp_analysis.py` | 4 | OHLCV 경로 기반 SL/TP 조합 재생 |
 | `backend/modules/journal/current_market.py` | 3 | 현재 완료봉 snapshot과 과거 유사 거래 기준 |
 | `backend/modules/journal/router.py` | 3 | journal 분석 API의 타입 검증·서비스 연결 |
+| `backend/modules/journal/planning_context.py` | 4 | 읽기 전용 결합; Journal 메모·Plan 이력·실제 실행의 원본과 출처 유지 |
+| `backend/modules/strategies/`, `backend/modules/strategy_assignments/` | 4 | 재사용 StrategyVersion과 거래별 정확한 과거 버전 할당 |
+| `backend/modules/rule_engine/` | 4 | 결정론적 평가; NOT_EVALUABLE 중립, 준수율 분모와 coverage 분리 |
+| `backend/modules/analytics/`, `backend/modules/review/` | 4 | bounded snapshot 집계와 관찰된 차이·진단; 인과 추론 없음 |
+| `backend/modules/experiments/` | 4 | 사용자 정의·상태 저장, 동일 그룹의 기간 간 Analytics 측정 |
 
 이 영역은 FE에서 다시 계산하지 않고 공식 service 결과를 확장·표시한다.
 분석 서비스는 공통 `trade_selection.py`, `market_data.py`, snapshot 결과를 재사용해야 한다.
@@ -69,6 +75,11 @@
 | Path | Risk | 책임 / 주의점 |
 | --- | --- | --- |
 | `frontend/src/pages/JournalPage.tsx` | 3 | 매매일지 기간 필터, KPI, 캘린더, 거래 목록, 거래 리포트 연결 |
+| `frontend/src/features/journal/DailyJournalPanel.tsx` | 3 | 날짜별 준비·회고 편집; 거래별 계획과 별도 |
+| `frontend/src/pages/PlaybookPage.tsx` | 3 | Strategy·버전·규칙 표현과 이력 |
+| `frontend/src/features/analytics/`, `frontend/src/features/review/` | 3 | Guided/Advanced, 요약 우선 Review, 사용자 Experiment handoff·측정 |
+| `frontend/src/features/planLab/PlanningContextPanel.tsx` | 3 | Journal/Plan Lab 공통 보기; 메모를 사전 Plan으로 승격하지 않음 |
+| `frontend/src/features/onboarding/` | 3 | 샘플 전환, reset/exit, 프로필별 UI 상태 |
 | `frontend/src/pages/TradeAnalysisPage.tsx` | 3 | 한눈에 보기·상세 분석 orchestration, 전역 filter, query 상태 |
 | `frontend/src/pages/TradeExplorerPage.tsx` | 3 | evidence 거래 목록, 필터 결과, 거래별 복기 진입 |
 | `frontend/src/pages/PlanLabPage.tsx` | 3 | 진행중/종료 계획 입력, Plan 상태, 저장 race/error UX |
@@ -96,11 +107,14 @@ UI 파일에서 공식 통계를 재산출하거나 실제 snapshot을 임의 �
 | `backend/modules/exchanges/keyring_store.py` | 4 | OS credential store |
 | `backend/modules/exchanges/encrypted_store.py` | 4 | AES-GCM encrypted credential DB |
 | `backend/config/settings.py` | 4 | DB/cache/app data 경로와 환경 설정 |
+| `backend/config/sample_policy.py`, `backend/modules/sample/` | 4 | 별도 프로세스·프로필·DB, disabled credentials, offline fixture, parent-owned 정리 |
+| `backend/utils/sqlite_connection.py` | 4 | commit/rollback 이후 finally에서 명시적 connection close |
+| `backend/utils/log_redaction.py` | 4 | 등록 민감값·인증 패턴의 메시지/traceback masking; 모든 임의 비밀 검출 보장은 아님 |
 | `backend/desktop.py` | 3 | local server lifecycle, port, browser launch |
 | `packaging/build_windows_app.ps1` | 3 | Windows x64 PyInstaller 배포 ZIP 생성 |
 | `packaging/build-msix.ps1` | 3 | Windows ZIP을 MSIX staging으로 변환 |
 | `packaging/sign_windows_artifact.ps1` | 4 | 선택적 Windows code signing 정책 |
-| `.github/workflows/windows-package.yml` | 3 | Windows build artifact/release workflow |
+| `.github/workflows/windows-package.yml` | 3 | main Tests 성공 SHA의 workflow_run 패키징, 수동 실행도 같은 SHA 성공 guard 적용 |
 | `scripts/check_release_versions.py` | 2 | 앱·문서·release version guard |
 | `README.md`, `ARCHITECTURE.md`, `SECURITY.md` | 2 | 실제 구현·운영·보안 정책 문서 |
 
@@ -159,7 +173,7 @@ UI 파일에서 공식 통계를 재산출하거나 실제 snapshot을 임의 �
 | Binance lifecycle deterministic, Deepcoin position identity stable | `reconstruction.py`, `deepcoin/service.py`, sync tests |
 | Binance USDT-M Futures OHLCV 단일 source | `journal/market_data.py`, `test_journal_market_data.py` |
 | RVOL20은 직전 완료봉 / 그 이전 20개 완료봉 평균 | `deepcoin/snapshot.py`, `test_volume_readiness.py` |
-| API credential은 frontend/localStorage/log에 노출하지 않음 | `credentials.py`, `keyring_store.py`, `encrypted_store.py`, redaction tests |
+| credential 응답·브라우저 영구 저장소에서 비밀값 제외, 등록 민감값·인증 패턴의 로그 마스킹 | `credentials.py`, `keyring_store.py`, `encrypted_store.py`, `log_redaction.py`, redaction tests |
 
 ## 8. 변경 권장 순서
 
