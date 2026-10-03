@@ -95,7 +95,7 @@ def verify_credentials(
 app = FastAPI(
     title="Trade Journal API",
     description="Read-only multi-exchange journal and personal trade analytics",
-    version="1.0.26",
+    version="1.0.27",
     default_response_class=ORJSONResponse,
     dependencies=[Depends(verify_credentials)],
     lifespan=lifespan,
