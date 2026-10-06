@@ -33,16 +33,16 @@ export function MiniChart({ t, v, volume, yRefs = [], height = 80, markers }: Mi
   const segmentTone = (index: number): string => {
     const value = v[index];
     const currentVolume = volumeValues[index];
-    if (typeof value !== 'number' || Number.isNaN(value) || currentVolume == null) return '#3b82f6';
+    if (typeof value !== 'number' || Number.isNaN(value) || currentVolume == null) return 'var(--color-info)';
     const recentVolumes = volumeValues
       .slice(Math.max(0, index - 19), index + 1)
       .filter((item): item is number => item != null);
     const averageVolume = recentVolumes.reduce((sum, item) => sum + item, 0) / recentVolumes.length;
     const hasVolumeExpansion = averageVolume > 0 && currentVolume / averageVolume >= 1.5;
-    if (!hasVolumeExpansion) return '#3b82f6';
-    if (value >= 70) return '#22c55e';
-    if (value <= 30) return '#ef4444';
-    return '#3b82f6';
+    if (!hasVolumeExpansion) return 'var(--color-info)';
+    if (value >= 70) return 'var(--color-bull)';
+    if (value <= 30) return 'var(--color-bear)';
+    return 'var(--color-info)';
   };
 
   const rsiSegments = v.slice(1).flatMap((value, index) => {
@@ -77,7 +77,7 @@ export function MiniChart({ t, v, volume, yRefs = [], height = 80, markers }: Mi
               y1={y}
               x2="100"
               y2={y}
-              stroke={isMid ? '#9ca3af' : '#6b7280'}
+              stroke={isMid ? 'var(--color-text-muted)' : 'var(--color-border-control)'}
               strokeWidth={isBand ? '1.2' : '0.7'}
               strokeDasharray={isMid ? undefined : '2,2'}
             />

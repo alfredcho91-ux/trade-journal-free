@@ -21,11 +21,12 @@ import RuleDescription from '../features/playbook/RuleDescription';
 import { errorMessage, normalizedDescription } from '../features/playbook/strategyDraft';
 import { strategyQueryKeys } from '../features/playbook/strategyQueryKeys';
 import { useEditorAuthority, type EditorSubmissionAuthority } from '../hooks/useEditorAuthority';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { useLanguage } from '../store/useStore';
 import type { RuleEngineMetadata, Strategy, StrategyCreateInput, StrategyRuleV2, StrategyVersion, StrategyVersionInput } from '../types';
 
-const secondaryButton = 'inline-flex items-center gap-1.5 border border-dark-600 px-3 py-2 text-xs font-medium text-dark-200 hover:border-dark-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
-const primaryButton = 'inline-flex items-center gap-1.5 border border-primary-400 bg-primary-500 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-400 disabled:cursor-not-allowed disabled:opacity-50';
+const secondaryButton = 'btn-secondary inline-flex items-center gap-1.5';
+const primaryButton = 'btn-primary inline-flex items-center gap-1.5';
 
 type Editor = 'new-strategy' | 'edit-strategy' | 'new-version' | null;
 type LifecycleAction = 'archive' | 'restore' | 'activate' | 'retire';
@@ -92,8 +93,9 @@ function ConfirmDialog({ title, body, confirmLabel, danger = false, onCancel, on
   onConfirm: () => void;
   isKo: boolean;
 }) {
-  return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="w-full max-w-md border border-dark-600 bg-dark-900 p-5 shadow-2xl"><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-dark-300">{body}</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onCancel} className={secondaryButton}>{isKo ? '취소' : 'Cancel'}</button><button type="button" onClick={onConfirm} className={danger ? 'border border-bear/60 bg-bear/15 px-3 py-2 text-xs font-semibold text-bear' : primaryButton}>{confirmLabel}</button></div></div>
+  const dialogRef = useDialogFocus(onCancel);
+  return <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="w-full max-w-md rounded-xl border border-dark-700 bg-dark-900 p-5 shadow-md"><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-dark-300">{body}</p><div className="mt-5 flex justify-end gap-2"><button type="button" data-dialog-initial-focus onClick={onCancel} className={secondaryButton}>{isKo ? '취소' : 'Cancel'}</button><button type="button" onClick={onConfirm} className={danger ? 'btn-danger' : primaryButton}>{confirmLabel}</button></div></div>
   </div>;
 }
 
@@ -112,12 +114,13 @@ function EditStrategyDrawer({ strategy, isKo, pending, error, onDirtyChange, onC
   const captureAuthority = useEditorAuthority(`strategy:${strategy.id}`, { name, description });
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const [confirmClose, setConfirmClose] = useState(false);
+  const dialogRef = useDialogFocus<HTMLElement>(() => dirty ? setConfirmClose(true) : onClose());
   return <>
-    <div className="pointer-events-none fixed inset-0 z-[70] bg-black/45"><aside className="pointer-events-auto absolute inset-y-0 right-0 w-[min(560px,58vw)] border-l border-dark-600 bg-dark-900 shadow-2xl" role="dialog" aria-modal="true" aria-label={isKo ? '전략 편집' : 'Edit Strategy'}>
+    <div className="pointer-events-none fixed inset-0 z-[70] bg-black/45"><aside ref={dialogRef} tabIndex={-1} className="pointer-events-auto absolute inset-y-0 right-0 w-[min(560px,58vw)] overflow-y-auto border-l border-dark-700 bg-dark-900 shadow-md" role="dialog" aria-modal="true" aria-label={isKo ? '전략 편집' : 'Edit Strategy'}>
       <header className="border-b border-dark-700 px-5 py-4"><h2 className="text-base font-semibold text-white">{isKo ? '전략 편집' : 'Edit Strategy'}</h2><p className="mt-1 text-xs text-dark-500">{isKo ? '이름과 설명만 변경합니다. 버전 정의는 읽기 전용입니다.' : 'Only name and description change. Version definitions remain read-only.'}</p></header>
       <form className="space-y-4 p-5" onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSubmit(name.trim(), normalizedDescription(description), captureAuthority()); }}>
-        <label className="block text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input autoFocus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-400" /></label>
-        <label className="block text-xs text-dark-300">{isKo ? '전략 설명' : 'Strategy description'}<textarea aria-label={isKo ? '전략 설명' : 'Strategy description'} value={description} maxLength={2000} onChange={(event) => setDescription(event.target.value)} className="mt-1.5 min-h-28 w-full resize-y border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none focus:border-primary-400" /></label>
+        <label className="block text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input data-dialog-initial-focus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full" /></label>
+        <label className="block text-xs text-dark-300">{isKo ? '전략 설명' : 'Strategy description'}<textarea aria-label={isKo ? '전략 설명' : 'Strategy description'} value={description} maxLength={2000} onChange={(event) => setDescription(event.target.value)} className="mt-1.5 min-h-28 w-full resize-y" /></label>
         {error && <p role="alert" className="border border-bear/40 bg-bear/10 px-3 py-2 text-xs text-bear">{error}</p>}
         <div className="flex justify-end gap-2 border-t border-dark-700 pt-4"><button type="button" onClick={() => dirty ? setConfirmClose(true) : onClose()} className={secondaryButton}>{isKo ? '취소' : 'Cancel'}</button><button type="submit" disabled={pending || !dirty || !name.trim()} className={primaryButton}>{pending ? (isKo ? '저장 중...' : 'Saving...') : (isKo ? '변경 저장' : 'Save Changes')}</button></div>
       </form>

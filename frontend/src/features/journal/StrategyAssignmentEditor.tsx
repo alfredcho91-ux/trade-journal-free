@@ -14,6 +14,7 @@ import { strategyQueryKeys } from '../playbook/strategyQueryKeys';
 import UnsavedChangesDialog from './UnsavedChangesDialog';
 import { strategyAssignmentQueryKeys } from './strategyAssignmentQueryKeys';
 import { journalQueryKeys } from './journalQueryKeys';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
 interface Draft {
   entryId: number;
@@ -61,13 +62,14 @@ function RemoveAssignmentDialog({ isKo, pending, error, onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  return <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label={isKo ? '전략 할당 제거' : 'Remove Strategy assignment'}>
+  const dialogRef = useDialogFocus(() => { if (!pending) onCancel(); });
+  return <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label={isKo ? '전략 할당 제거' : 'Remove Strategy assignment'}>
     <div className="w-full max-w-md border border-dark-600 bg-dark-900 p-5 shadow-2xl">
       <h2 className="text-base font-semibold text-white">{isKo ? '이 전략 할당을 제거할까요?' : 'Remove this Strategy assignment?'}</h2>
       <p className="mt-2 text-sm leading-6 text-dark-300">{isKo ? '이 거래에서 전략 연결만 제거됩니다. 거래와 Playbook 전략은 삭제되지 않습니다.' : 'This only removes the Strategy link from this trade. The trade and Playbook Strategy will not be deleted.'}</p>
       {error && <p role="alert" className="mt-3 border border-bear/35 bg-bear/10 px-3 py-2 text-xs text-bear">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
-        <button type="button" disabled={pending} onClick={onCancel} className="border border-dark-600 px-3 py-2 text-xs text-dark-200 disabled:opacity-50">{isKo ? '취소' : 'Cancel'}</button>
+        <button type="button" data-dialog-initial-focus disabled={pending} onClick={onCancel} className="border border-dark-600 px-3 py-2 text-xs text-dark-200 disabled:opacity-50">{isKo ? '취소' : 'Cancel'}</button>
         <button type="button" disabled={pending} onClick={onConfirm} className="border border-bear/60 bg-bear/15 px-3 py-2 text-xs font-semibold text-bear disabled:opacity-50">{pending ? (isKo ? '제거 중...' : 'Removing...') : (isKo ? '제거' : 'Remove')}</button>
       </div>
     </div>

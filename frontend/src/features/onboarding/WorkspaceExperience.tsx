@@ -54,17 +54,20 @@ export default function WorkspaceExperience({ children }: { children: ReactNode 
         <p className="text-sm text-dark-400">{ko ? '내 데이터: Journal에서 지원되는 Deepcoin 또는 Binance 연결을 설정할 수 있습니다.' : 'For your own data, set up a supported Deepcoin or Binance connection in Journal.'}</p>
         <button className="text-sm text-dark-300 underline" onClick={() => void acknowledge()}>{ko ? '나중에 하기' : 'Skip for now'}</button>
       </section> : <>
-        {sample ? <section className="mb-5 space-y-3 rounded border border-primary-400/40 bg-primary-500/10 p-4" aria-label={ko ? '샘플 작업 공간' : 'Sample workspace'}>
+        {sample ? <section className="mb-4 space-y-2 border-b border-dark-700 pb-3" aria-label={ko ? '샘플 작업 공간' : 'Sample workspace'}>
           <div className="flex flex-wrap items-center justify-between gap-3"><div><strong>{ko ? '샘플 작업 공간' : 'Sample workspace'}</strong><p className="text-xs text-dark-300">{ko ? '2026년 1월 · 가상의 거래 기록 · 로컬 전용' : 'January 2026 · Synthetic trades · Fully local'}</p></div>
-            <div className="flex flex-wrap gap-2"><button className={button} onClick={() => void exit()}>{ko ? '내 작업 공간으로 돌아가기' : 'Use my own data'}</button><button className={button} onClick={() => void exit(true)}>{ko ? '샘플 다시 시작' : 'Reset sample'}</button></div></div>
+            <div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={() => void exit()}>{ko ? '내 작업 공간으로 돌아가기' : 'Use my own data'}</button><button className="btn-secondary" onClick={() => void exit(true)}>{ko ? '샘플 다시 시작' : 'Reset sample'}</button></div></div>
+          <details>
+          <summary className="cursor-pointer text-sm text-dark-300">{ko ? '샘플 안내' : 'Sample guide'}</summary>
           <p className="text-sm text-dark-300">{ko ? '거래의 메모와 계획을 열어 본 뒤, 자신감별 결과를 비교하고 복기에서 근거를 확인하세요. 기록이 없는 항목도 예시에 포함돼 있습니다.' : 'Open a trade’s notes and plan, compare results by confidence, then inspect the evidence in Review. Some records are intentionally incomplete.'}</p>
-          <div className="flex flex-wrap gap-2">
-            <button className={button} onClick={() => navigate('/journal?sampleTrade=1')}>{ko ? '1 · 예시 거래 열기' : '1 · Open a sample trade'}</button>
-            <button className={button} onClick={() => navigate('/trade-analysis?sampleStep=guided')}>{ko ? '2 · 안내형 분석' : '2 · Guided analytics'}</button>
-            <button className={button} onClick={() => navigate('/trade-analysis?sampleStep=review')}>{ko ? '3 · 복기' : '3 · Review'}</button>
-            <button className={button} onClick={() => setLoop(!loop)} aria-expanded={loop}>{ko ? '4 · 다음 단계 이해하기' : '4 · See the product loop'}</button>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button className="btn-secondary" onClick={() => navigate('/journal?sampleTrade=1')}>{ko ? '1 · 예시 거래 열기' : '1 · Open a sample trade'}</button>
+            <button className="btn-secondary" onClick={() => navigate('/trade-analysis?sampleStep=guided')}>{ko ? '2 · 안내형 분석' : '2 · Guided analytics'}</button>
+            <button className="btn-secondary" onClick={() => navigate('/trade-analysis?sampleStep=review')}>{ko ? '3 · 복기' : '3 · Review'}</button>
+            <button className="btn-secondary" onClick={() => setLoop(!loop)} aria-expanded={loop}>{ko ? '4 · 다음 단계 이해하기' : '4 · See the product loop'}</button>
           </div>
           {loop && <p className="text-sm leading-6">{ko ? '기록 → 분석 → 복기 → 계획 → 실험 → 측정. 복기에서 발견한 차이를 근거와 함께 살펴보고, 필요하면 실험 초안으로 이어가세요. 결과의 차이가 원인을 증명하지는 않습니다.' : 'Journal → Analyze → Review → Plan → Experiment → Measure. Inspect a finding and its evidence, then optionally explore an experiment draft. A difference in results does not prove a cause.'}</p>}
+          </details>
         </section> : <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           {state?.trade_count === 0 && <p className="text-sm text-dark-300">{location.pathname === '/journal'
             ? (ko ? '아직 거래가 없습니다. 샘플을 살펴보거나 거래소를 연결해 시작하세요.' : 'No trades yet. Explore the sample or connect an exchange to get started.')

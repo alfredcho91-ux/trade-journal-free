@@ -174,6 +174,47 @@ it('shows Journal planning notes and navigates to the shared retrospective edito
 });
 
 describe('Trade Report combined unsaved-change boundary', () => {
+  it('keeps the report open while removal confirmation traps focus and handles Escape', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(() => [new DOMRect(0, 0, 32, 32)] as unknown as DOMRectList);
+    mockedAssignmentGet.mockResolvedValue(assignment(101));
+    const user = userEvent.setup();
+    const { onClose } = renderModal();
+    const opener = await screen.findByRole('button', { name: 'Remove Strategy' });
+    await user.click(opener);
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(document.activeElement).toBe(cancel);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Remove' }));
+    await user.tab();
+    expect(document.activeElement).toBe(cancel);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Remove Strategy assignment' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Trade report' })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockedAssignmentDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not let Escape dismiss the report or removal confirmation while removal is pending', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(() => [new DOMRect(0, 0, 32, 32)] as unknown as DOMRectList);
+    mockedAssignmentGet.mockResolvedValue(assignment(101));
+    let finish!: (value: null) => void;
+    mockedAssignmentDelete.mockReturnValue(new Promise<null>(resolve => { finish = resolve; }));
+    const user = userEvent.setup();
+    const { onClose } = renderModal();
+    await user.click(await screen.findByRole('button', { name: 'Remove Strategy' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Removing...' }).disabled).toBe(true));
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Remove Strategy assignment' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Trade report' })).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockedAssignmentDelete).toHaveBeenCalledExactlyOnceWith(101);
+    await act(async () => { finish(null); });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Remove Strategy assignment' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('does not refetch or preview evaluation for an unsaved Assignment draft', async () => {
     const user = userEvent.setup();
     renderModal();

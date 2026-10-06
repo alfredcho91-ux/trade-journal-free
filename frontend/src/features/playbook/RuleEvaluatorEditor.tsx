@@ -140,7 +140,7 @@ export default function RuleEvaluatorEditor({ rule, label, metadata, metadataLoa
     {evaluator && !metadata && <div className="mt-2 border border-dark-700 bg-dark-900/70 p-2 text-[10px] text-dark-400">
       {isKo ? '보존된 판정기' : 'Preserved evaluator'}: <span className="font-mono text-dark-200">{evaluator.metric_id} · {evaluator.operator} · {expectedText(evaluator.expected)}</span>
     </div>}
-    {evaluator && metadata && <div className="mt-2 grid grid-cols-3 gap-2">
+    {evaluator && metadata && <div className="mt-2 grid grid-cols-1 gap-2">
       <label className="text-[10px] text-dark-400">{isKo ? '지표' : 'Metric'}
         <select
           aria-label={`${label} metric`}

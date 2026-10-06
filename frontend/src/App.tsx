@@ -80,7 +80,7 @@ function Shell({ children }: { children: ReactNode }) {
   ];
 
   const navigation = (vertical = false) => (
-    <nav className={vertical ? 'flex flex-col gap-1' : 'grid h-10 grid-cols-7 border border-dark-700'} aria-label={isKo ? '주요 메뉴' : 'Primary'}>
+    <nav className={vertical ? 'flex flex-col gap-1' : 'flex min-h-10 overflow-x-auto border-b border-dark-700'} aria-label={isKo ? '주요 메뉴' : 'Primary'}>
       {tabs.map(({ path, label, icon: Icon }) => {
         const active = pathname === path;
         return (
@@ -90,7 +90,7 @@ function Shell({ children }: { children: ReactNode }) {
             onClick={() => navigate(path)}
             className={vertical
               ? `flex min-h-10 items-center gap-2 border-l-2 px-3 text-sm font-medium transition-colors ${active ? 'border-primary-400 bg-primary-500/15 text-primary-200' : 'border-transparent text-dark-400 hover:bg-dark-800 hover:text-white'}`
-              : `flex min-w-0 items-center justify-center gap-1 px-1 text-[11px] font-medium transition-colors ${active ? 'bg-primary-500 text-white' : 'bg-dark-900 text-dark-300 hover:bg-dark-800 hover:text-white'}`
+              : `flex min-h-10 min-w-max flex-1 shrink-0 items-center justify-center gap-1.5 px-2 text-sm font-medium transition-colors ${active ? 'bg-primary-500 text-white' : 'bg-dark-900 text-dark-300 hover:bg-dark-800 hover:text-white'}`
             }
           >
             <Icon className={`${vertical ? 'h-4 w-4' : 'h-3.5 w-3.5'} shrink-0`} aria-hidden="true" />
@@ -102,27 +102,27 @@ function Shell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-dark-900 text-dark-100">
-      <header className="sticky top-0 z-40 border-b border-dark-700 bg-dark-950/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1680px] flex-wrap items-center gap-3 px-4 py-3 lg:px-6">
+    <div className="min-h-screen overflow-x-clip bg-dark-900 text-dark-100">
+      <header className="sticky top-0 z-40 h-14 border-b border-dark-700 bg-dark-950">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center gap-3 px-4 lg:px-6">
           <button
             type="button"
             onClick={() => navigate('/journal')}
-            className="mr-2 text-left"
+            className="min-w-0 shrink-0 text-left"
             aria-label={isKo ? '매매일지 홈' : 'Journal home'}
           >
-            <div className="text-base font-bold text-white">Trade Journal</div>
-            <div className="text-[10px] text-dark-500">{isKo ? '읽기 전용 분석' : 'Read-only analytics'}</div>
+            <div className="text-base font-semibold text-dark-100">Trade Journal</div>
+            <div className="text-[length:var(--text-metadata)] leading-4 text-dark-500">{isKo ? '읽기 전용 분석' : 'Read-only analytics'}</div>
           </button>
 
-          <div className="ml-auto flex items-center gap-2">
-            {pathname !== '/journal' && pathname !== '/playbook' && pathname !== '/trade-analysis' && <div className="flex h-9 border border-dark-700" aria-label={isKo ? '분석 코인' : 'Analysis coin'}>
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {pathname !== '/journal' && pathname !== '/playbook' && pathname !== '/trade-analysis' && <div className="flex h-8 shrink-0 border border-dark-700" aria-label={isKo ? '분석 코인' : 'Analysis coin'}>
               {MARKET_COINS.map((coin) => (
                 <button
                   key={coin}
                   type="button"
                   onClick={() => setSelectedCoin(coin)}
-                  className={`w-12 text-xs font-semibold transition-colors ${
+                  className={`w-10 text-xs font-semibold transition-colors ${
                     selectedCoin === coin
                       ? 'bg-dark-200 text-dark-950'
                       : 'bg-dark-900 text-dark-400 hover:text-white'
@@ -135,7 +135,7 @@ function Shell({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setLanguage(isKo ? 'en' : 'ko')}
-              className="flex h-9 w-9 items-center justify-center border border-dark-700 bg-dark-900 text-dark-300 hover:text-white"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-dark-700 bg-dark-900 text-dark-300 hover:text-white"
               title={isKo ? 'English' : '한국어'}
               aria-label={isKo ? 'Switch to English' : '한국어로 전환'}
             >
@@ -145,30 +145,30 @@ function Shell({ children }: { children: ReactNode }) {
               type="button"
               onClick={shutdownDesktop}
               disabled={isShuttingDown}
-              className="flex h-9 w-9 items-center justify-center border border-dark-700 bg-dark-900 text-dark-300 hover:border-bear/60 hover:text-bear disabled:cursor-wait disabled:opacity-60"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-dark-700 bg-dark-900 text-dark-300 hover:border-bear/60 hover:text-bear disabled:cursor-wait disabled:opacity-60"
               title={isKo ? '프로그램 종료' : 'Close application'}
               aria-label={isKo ? '프로그램 종료' : 'Close application'}
             >
               <Power className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-          {shutdownNotice && (
-            <div className="basis-full text-right text-xs text-dark-400" role="status">
-              {shutdownNotice}
-            </div>
-          )}
         </div>
       </header>
 
-      <div className="border-b border-dark-800 bg-dark-950 lg:hidden">{navigation()}</div>
-      <div className="mx-auto flex max-w-[1680px]">
-        <aside className="sticky top-[69px] hidden h-[calc(100vh-69px)] w-48 shrink-0 border-r border-dark-800 bg-dark-950/60 py-5 lg:block">
+      {shutdownNotice && (
+        <div className="mx-auto max-w-[1600px] px-4 py-2 text-right text-xs text-dark-400 lg:px-6" role="status">
+          {shutdownNotice}
+        </div>
+      )}
+      <div className="bg-dark-950 lg:hidden">{navigation()}</div>
+      <div className="mx-auto flex max-w-[1600px]">
+        <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-44 shrink-0 self-start overflow-y-auto border-r border-dark-800 bg-dark-950 py-5 lg:block">
           {navigation(true)}
         </aside>
         <main className="min-w-0 flex-1 px-4 py-5 lg:px-6">{children}</main>
-        <aside className="sticky top-[69px] hidden h-[calc(100vh-69px)] w-60 shrink-0 border-l border-dark-800 px-4 py-5 xl:block" aria-label={isKo ? '피드백' : 'Feedback'}>
-          <section className="border border-dark-700 bg-dark-900/30 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-dark-100"><MessageSquare className="h-4 w-4 text-primary-300" />{isKo ? '피드백' : 'Feedback'}</div>
+        <aside className="sticky top-14 hidden max-h-[calc(100dvh-3.5rem)] w-44 shrink-0 self-start overflow-y-auto border-l border-dark-800 px-4 py-5 xl:block" aria-label={isKo ? '피드백' : 'Feedback'}>
+          <section>
+            <div className="flex items-center gap-2 text-sm font-medium text-dark-400"><MessageSquare className="h-4 w-4 shrink-0" aria-hidden="true" />{isKo ? '피드백' : 'Feedback'}</div>
             <p className="mt-2 text-xs leading-5 text-dark-500">{isKo ? '오류, 개선 의견, 지원 거래소를 알려주세요.' : 'Share bugs, ideas, or exchange requests.'}</p>
             <a href={feedbackFormUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary-200 hover:text-primary-100">
               {isKo ? '피드백 보내기' : 'Send feedback'}<ExternalLink className="h-3.5 w-3.5" />

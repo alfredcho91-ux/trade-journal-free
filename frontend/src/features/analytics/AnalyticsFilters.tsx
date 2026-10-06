@@ -4,7 +4,7 @@ import { strategyQueryKeys } from '../playbook/strategyQueryKeys';
 import type { AnalyticsFilter } from '../../types/analytics';
 import { analyticsFilterDescription, analyticsLabel, textFor } from '../../utils/localization';
 
-export const inputClass = 'w-full rounded border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-dark-100 focus:border-primary-400 focus:outline-none';
+export const inputClass = 'w-full';
 
 function IdSuggestions({ field, onSelect, isKo }: { field: AnalyticsFilter; onSelect: (id: string) => void; isKo: boolean }) {
   const strategies = useQuery({ queryKey: strategyQueryKeys.list(true), queryFn: () => listStrategies(true) });

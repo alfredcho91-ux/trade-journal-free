@@ -7,10 +7,11 @@ import RuleEvaluatorEditor from './RuleEvaluatorEditor';
 import { evaluatorForPayload, rulesAreValid } from './ruleAuthoring';
 import { cloneRules, emptyRules, newRule, normalizedDescription, type RuleGroup } from './strategyDraft';
 import { useEditorAuthority, type EditorSubmissionAuthority } from '../../hooks/useEditorAuthority';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 
-const inputClass = 'w-full border border-dark-600 bg-dark-950 px-3 py-2 text-sm text-white outline-none placeholder:text-dark-600 focus:border-primary-400';
-const secondaryButton = 'border border-dark-600 px-3 py-2 text-xs font-medium text-dark-200 hover:border-dark-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-50';
-const primaryButton = 'border border-primary-400 bg-primary-500 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-400 disabled:cursor-not-allowed disabled:opacity-50';
+const inputClass = 'w-full';
+const secondaryButton = 'btn-secondary';
+const primaryButton = 'btn-primary';
 
 interface VersionDraft {
   version_label: string;
@@ -23,13 +24,14 @@ function BaseSwitchConfirmDialog({ isKo, onKeepEditing, onDiscardAndSwitch }: {
   onKeepEditing: () => void;
   onDiscardAndSwitch: () => void;
 }) {
-  return <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label={isKo ? '기준 버전 변경' : 'Change base version'}>
-    <div className="w-full max-w-md border border-dark-600 bg-dark-900 p-5 shadow-2xl">
+  const dialogRef = useDialogFocus(onKeepEditing);
+  return <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-[95] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label={isKo ? '기준 버전 변경' : 'Change base version'}>
+    <div className="w-full max-w-md rounded-xl border border-dark-700 bg-dark-900 p-5 shadow-md">
       <h2 className="text-base font-semibold text-white">{isKo ? '기준 버전을 변경할까요?' : 'Change base version?'}</h2>
       <p className="mt-2 text-sm leading-5 text-dark-300">{isKo ? '현재 설명과 규칙 편집 내용이 선택한 버전의 내용으로 교체됩니다.' : 'Your current description and rule edits will be replaced with the selected version.'}</p>
       <div className="mt-5 flex justify-end gap-2">
-        <button type="button" autoFocus onClick={onKeepEditing} className={secondaryButton}>{isKo ? '계속 편집' : 'Keep Editing'}</button>
-        <button type="button" onClick={onDiscardAndSwitch} className="border border-bear/60 bg-bear/15 px-3 py-2 text-xs font-semibold text-bear">{isKo ? '버리고 전환' : 'Discard and Switch'}</button>
+        <button type="button" data-dialog-initial-focus onClick={onKeepEditing} className={secondaryButton}>{isKo ? '계속 편집' : 'Keep Editing'}</button>
+        <button type="button" onClick={onDiscardAndSwitch} className="btn-danger">{isKo ? '버리고 전환' : 'Discard and Switch'}</button>
       </div>
     </div>
   </div>;
@@ -53,10 +55,10 @@ function RuleEditor({ rules, metadata, metadataLoading, metadataError, isKo, onC
     { key: 'exit_rules', label: isKo ? '청산 규칙' : 'Exit rules' },
   ];
 
-  return <div className="grid grid-cols-3 gap-3">
+  return <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
     {groups.map(({ key, label }) => <section key={key} className="border border-dark-700 bg-dark-950/40 p-3">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-dark-300">{label}</h3>
+        <h3 className="text-xs font-semibold text-dark-300">{label}</h3>
         <span className="font-mono text-[10px] text-dark-600">{rules[key].length}</span>
       </div>
       <div className="space-y-2">
@@ -77,7 +79,7 @@ function RuleEditor({ rules, metadata, metadataLoading, metadataError, isKo, onC
             <button
               type="button"
               onClick={() => onChange({ ...rules, [key]: rules[key].filter((item) => item.id !== rule.id) })}
-              className="mt-1.5 text-dark-600 hover:text-bear"
+              className="btn-icon mt-1 hover:text-bear"
               aria-label={`${isKo ? '규칙 삭제' : 'Remove rule'} ${index + 1}`}
             ><Trash2 className="h-3.5 w-3.5" /></button>
           </div>
@@ -116,12 +118,13 @@ function Drawer({ title, subtitle, children, isKo, dirty, onClose }: {
 }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const close = () => dirty ? setConfirmClose(true) : onClose();
+  const dialogRef = useDialogFocus<HTMLElement>(close);
   return <>
     <div className="pointer-events-none fixed inset-0 z-[70] bg-black/45">
-      <aside className="pointer-events-auto absolute inset-y-0 right-0 w-[min(880px,76vw)] overflow-y-auto border-l border-dark-600 bg-dark-900 shadow-2xl" role="dialog" aria-modal="true" aria-label={title}>
+      <aside ref={dialogRef} tabIndex={-1} className="pointer-events-auto absolute inset-y-0 right-0 w-[min(880px,76vw)] overflow-y-auto border-l border-dark-700 bg-dark-900 shadow-md" role="dialog" aria-modal="true" aria-label={title}>
         <header className="sticky top-0 z-10 flex items-start justify-between border-b border-dark-700 bg-dark-900 px-5 py-4">
-          <div><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-1 text-xs text-dark-500">{subtitle}</p></div>
-          <button type="button" onClick={close} className="text-dark-400 hover:text-white" aria-label={isKo ? '닫기' : 'Close'}><X className="h-5 w-5" /></button>
+          <div className="min-w-0"><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-1 break-words text-xs text-dark-500">{subtitle}</p></div>
+          <button type="button" onClick={close} className="btn-icon shrink-0" aria-label={isKo ? '닫기' : 'Close'}><X className="h-4 w-4" aria-hidden="true" /></button>
         </header>
         {children}
       </aside>
@@ -189,7 +192,7 @@ export function NewStrategyDrawer({ metadata, metadataLoading, metadataError, is
       onSubmit({ name: name.trim(), description: normalizedDescription(description), initial_version: versionPayload(version, metadata) }, captureAuthority());
     }}>
       <div className="grid grid-cols-2 gap-4">
-        <label className="text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input autoFocus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className={`mt-1.5 ${inputClass}`} /></label>
+        <label className="text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input data-dialog-initial-focus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className={`mt-1.5 ${inputClass}`} /></label>
         <label className="text-xs text-dark-300">{isKo ? '초기 버전 라벨' : 'Initial version label'}<input aria-label={isKo ? '초기 버전 라벨' : 'Initial version label'} value={version.version_label} maxLength={80} onChange={(event) => setVersion({ ...version, version_label: event.target.value })} className={`mt-1.5 ${inputClass}`} placeholder="v1.0" /></label>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -250,7 +253,7 @@ export function NewVersionDrawer({ strategy, versions, initialBase, metadata, me
   return <Drawer title={isKo ? '새 버전' : 'New Version'} subtitle={`${strategy.name} · ${isKo ? '새 정의를 생성합니다. 기존 버전은 변경되지 않습니다.' : 'Creates a new definition. Existing versions stay unchanged.'}`} isKo={isKo} dirty={dirty} onClose={onClose}>
     <form className="space-y-5 p-5" onSubmit={(event) => { event.preventDefault(); if (metadata && validDraft(draft, metadata)) onSubmit(versionPayload(draft, metadata), captureAuthority()); }}>
       <div className="grid grid-cols-2 gap-4">
-        <label className="text-xs text-dark-300">{isKo ? '버전 라벨' : 'Version label'}<input autoFocus aria-label={isKo ? '버전 라벨' : 'Version label'} value={draft.version_label} maxLength={80} onChange={(event) => setDraft({ ...draft, version_label: event.target.value })} className={`mt-1.5 ${inputClass}`} placeholder="v1.1" /></label>
+        <label className="text-xs text-dark-300">{isKo ? '버전 라벨' : 'Version label'}<input data-dialog-initial-focus aria-label={isKo ? '버전 라벨' : 'Version label'} value={draft.version_label} maxLength={80} onChange={(event) => setDraft({ ...draft, version_label: event.target.value })} className={`mt-1.5 ${inputClass}`} placeholder="v1.1" /></label>
         <label className="text-xs text-dark-300">{isKo ? '기준 버전' : 'Based on'}<select aria-label={isKo ? '기준 버전' : 'Based on'} value={baseId ?? ''} onChange={(event) => requestBaseChange(event.target.value ? Number(event.target.value) : null)} className={`mt-1.5 ${inputClass}`}><option value="">{isKo ? '빈 규칙 세트' : 'Empty rule set'}</option>{versions.map((version) => <option key={version.id} value={version.id}>{version.version_label}</option>)}</select></label>
       </div>
       <label className="block text-xs text-dark-300">{isKo ? '버전 설명' : 'Version description'}<textarea aria-label={isKo ? '버전 설명' : 'Version description'} value={draft.description} maxLength={2000} onChange={(event) => setDraft({ ...draft, description: event.target.value })} className={`mt-1.5 min-h-20 resize-y ${inputClass}`} /></label>

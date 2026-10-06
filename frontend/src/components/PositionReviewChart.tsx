@@ -163,23 +163,28 @@ export default function PositionReviewChart({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
+    const tokens = getComputedStyle(document.documentElement);
+    // Canvas needs resolved RGB values; SVG charts can use CSS variables directly.
+    const color = (token: string, alpha = 1) => `rgba(${tokens.getPropertyValue(token).trim().split(/\s+/).join(', ')}, ${alpha})`;
 
     const chart = createChart(container, {
       width: container.clientWidth,
       height,
       layout: {
-        background: { type: ColorType.Solid, color: '#0b1220' },
-        textColor: '#94a3b8',
+        background: { type: ColorType.Solid, color: color('--palette-dark-900') },
+        textColor: color('--palette-dark-500'),
+        fontFamily: getComputedStyle(container).fontFamily,
+        fontSize: parseFloat(tokens.getPropertyValue('--text-metadata')) * parseFloat(tokens.fontSize),
         attributionLogo: true,
       },
       grid: {
-        vertLines: { color: 'rgba(51, 65, 85, 0.35)' },
-        horzLines: { color: 'rgba(51, 65, 85, 0.35)' },
+        vertLines: { color: color('--palette-dark-700', 0.35) },
+        horzLines: { color: color('--palette-dark-700', 0.35) },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#334155', scaleMargins: { top: 0, bottom: 0 } },
+      rightPriceScale: { borderColor: color('--palette-dark-700'), scaleMargins: { top: 0, bottom: 0 } },
       timeScale: {
-        borderColor: '#334155',
+        borderColor: color('--palette-dark-700'),
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 6,

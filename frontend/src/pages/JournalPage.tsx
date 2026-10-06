@@ -46,6 +46,7 @@ import {
 } from '../features/preferences/tradingStyle';
 
 const VISIBLE_TRADE_INCREMENT = 12;
+const PRIMARY_METRICS: JournalMetricId[] = ['netReturn', 'netPnl', 'winRate', 'expectancy'];
 
 function formatSignedNumber(value: number | null | undefined, maximumFractionDigits = 4): string {
   if (value == null || !Number.isFinite(value)) {
@@ -68,11 +69,13 @@ function AnalysisMetric({
   value,
   detail,
   tone = 'default',
+  primary = false,
 }: {
   label: string;
   value: React.ReactNode;
   detail?: React.ReactNode;
   tone?: 'default' | 'positive' | 'negative' | 'primary';
+  primary?: boolean;
 }) {
   const toneClass =
     tone === 'positive'
@@ -84,9 +87,9 @@ function AnalysisMetric({
       : 'text-white';
 
   return (
-    <div className="border border-dark-700 bg-dark-900/45 p-3">
-      <div className="text-[11px] text-dark-500">{label}</div>
-      <div className={`mt-1 text-lg font-bold font-mono ${toneClass}`}>{value}</div>
+    <div className="min-w-0 p-3">
+      <div className="text-xs text-dark-400">{label}</div>
+      <div className={`mt-1 break-words font-semibold font-mono ${primary ? 'text-xl' : 'text-base'} ${toneClass}`}>{value}</div>
       {detail != null && <div className="mt-1 text-[11px] text-dark-500">{detail}</div>}
     </div>
   );
@@ -210,6 +213,8 @@ function PeriodAnalysis({
   onSyncDays,
   onPeriodApply,
   performance,
+  performanceLoading,
+  performanceError,
 }: {
   allEntries: JournalEntry[];
   closedEntries: JournalEntry[];
@@ -224,6 +229,8 @@ function PeriodAnalysis({
   onSyncDays: (days: number) => void;
   onPeriodApply: (period: JournalPeriod) => void;
   performance?: JournalPerformanceData;
+  performanceLoading: boolean;
+  performanceError: boolean;
 }) {
   const selectedTradingStyle = useTradingStyle();
   const selectedStyleConfig = TRADING_STYLE_CONFIGS[selectedTradingStyle];
@@ -333,6 +340,7 @@ function PeriodAnalysis({
   const metricCards: Record<JournalMetricId, React.ReactNode> = {
     netReturn: (
       <AnalysisMetric
+        primary
         label={isKo ? '기간 순수익률' : 'Net Return'}
         value={periodNetReturn == null ? '-' : `${formatSignedNumber(periodNetReturn, 2)}%`}
         tone={(periodNetReturn || 0) >= 0 ? 'positive' : 'negative'}
@@ -341,6 +349,7 @@ function PeriodAnalysis({
     ),
     netPnl: (
       <AnalysisMetric
+        primary
         label={isKo ? '기간 순수익금' : 'Net Profit'}
         value={`${formatSignedNumber(netPnl, 2)} USDT`}
         tone={netPnl >= 0 ? 'positive' : 'negative'}
@@ -349,8 +358,9 @@ function PeriodAnalysis({
     ),
     winRate: (
       <AnalysisMetric
+        primary
         label={isKo ? '승률' : 'Win Rate'}
-        value={`${winRate.toFixed(1)}%`}
+        value={`${winRate.toFixed(2)}%`}
         tone="primary"
         detail={`${performance?.wins || 0}W · ${performance?.losses || 0}L · ${performance?.breakevens || 0}BE`}
       />
@@ -366,6 +376,7 @@ function PeriodAnalysis({
     averageLoss: <AnalysisMetric label={isKo ? '평균 손실' : 'Avg Loss'} value={`${formatSignedNumber(averageLoss, 2)} USDT`} tone="negative" />,
     expectancy: (
       <AnalysisMetric
+        primary
         label={isKo ? '거래당 기대값' : 'Expectancy / Trade'}
         value={`${formatSignedNumber(expectancy, 2)} USDT`}
         tone={(expectancy ?? 0) >= 0 ? 'positive' : 'negative'}
@@ -513,12 +524,17 @@ function PeriodAnalysis({
         <div className="mt-4 border border-bear/30 bg-bear/10 p-3 text-sm text-bear">
           {isKo ? '시작일이 종료일보다 늦습니다.' : 'The start date is after the end date.'}
         </div>
+      ) : performanceLoading ? (
+        <p role="status" className="mt-4 text-sm text-dark-400">{isKo ? '기간 성과를 불러오는 중입니다.' : 'Loading period performance.'}</p>
+      ) : performanceError ? (
+        <p role="alert" className="mt-4 text-sm text-bear">{isKo ? '기간 성과를 불러오지 못했습니다.' : 'Could not load period performance.'}</p>
       ) : (
         <>
-          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
-            {selectedStyleConfig.journalMetricOrder.map((metricId) => (
+          <div className="mt-4 grid grid-cols-2 border-y border-dark-700 md:grid-cols-3 xl:grid-cols-5" aria-label={isKo ? '핵심 성과' : 'Key performance'}>
+            {selectedStyleConfig.journalMetricOrder.filter((metricId) => PRIMARY_METRICS.includes(metricId)).map((metricId) => (
               <div key={metricId} className="contents">{metricCards[metricId]}</div>
             ))}
+            <AnalysisMetric primary label={isKo ? '종료 거래' : 'Closed trades'} value={String(performance?.closed_trade_count || 0)} detail={isKo ? '연결 거래소 기준 · 선택 기간' : 'Connected exchanges · selected period'} />
           </div>
 
           <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-l-2 border-primary-400/60 bg-dark-900/25 px-3 py-2.5 text-sm leading-6 text-dark-200">
@@ -532,6 +548,13 @@ function PeriodAnalysis({
             </span>
           </div>
 
+          <details className="mt-4 border-t border-dark-700 pt-3">
+            <summary className="cursor-pointer text-sm font-medium text-dark-200">{isKo ? '상세 성과 · 차트 · 달력' : 'Detailed performance · charts · calendar'}</summary>
+            <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
+              {selectedStyleConfig.journalMetricOrder.filter((metricId) => !PRIMARY_METRICS.includes(metricId)).map((metricId) => (
+                <div key={metricId} className="contents">{metricCards[metricId]}</div>
+              ))}
+            </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-4">
             <div className="border border-dark-700 bg-dark-900/35 p-4">
               <div className="text-xs font-semibold text-dark-300">LONG</div>
@@ -635,6 +658,7 @@ function PeriodAnalysis({
                 : 'Net return = net realized PnL / invested margin, margin-weighted'}
             </span>
           </div>
+          </details>
         </>
       )}
     </section>
@@ -815,7 +839,6 @@ export default function JournalPage() {
   const allEntries = entries || [];
   const closedEntries = allEntries.filter(isClosedPosition);
   const periodClosedEntries = closedEntries.filter((entry) => isJournalEntryWithinPeriod(entry, historyPeriod));
-  const stats = performanceQuery.data;
 
   const visibleEntries = [...periodClosedEntries]
     .sort((a, b) => {
@@ -830,8 +853,8 @@ export default function JournalPage() {
     <div className="space-y-6">
       <div>
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            📒 {isKo ? '매매 일지' : 'Trading Journal'}
+          <h1 className="text-xl font-semibold text-white">
+            {isKo ? '매매 일지' : 'Trading Journal'}
           </h1>
           <p className="text-dark-400 mt-1">
             {isKo ? '거래 기록 및 복기 관리' : 'Track and review your trades'}
@@ -887,40 +910,11 @@ export default function JournalPage() {
           setVisibleTradeCount(VISIBLE_TRADE_INCREMENT);
         }}
         performance={performanceQuery.data}
+        performanceLoading={performanceQuery.isPending}
+        performanceError={performanceQuery.isError}
       />
 
       <PlanLabSummary data={planLabQuery.data} isKo={isKo} onOpen={() => navigate('/plan-lab')} />
-
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-white">{stats?.closed_trade_count || 0}</div>
-          <div className="text-sm text-dark-400">{isKo ? '종료 거래' : 'Closed Trades'}</div>
-          <div className="mt-1 text-[11px] text-dark-500">{isKo ? '연결 거래소 기준' : 'Connected exchanges'}</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold text-primary-400">{(stats?.win_rate_pct || 0).toFixed(2)}%</div>
-          <div className="text-sm text-dark-400">{isKo ? '승률' : 'Win Rate'}</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className={`text-2xl font-bold ${(stats?.net_return_pct || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>
-            {stats?.net_return_pct == null ? '-' : `${formatSignedNumber(stats.net_return_pct, 2)}%`}
-          </div>
-          <div className="text-sm text-dark-400">{isKo ? '투입 증거금 대비 수익률' : 'Return on deployed margin'}</div>
-          <div className="mt-1 text-[11px] text-dark-500">
-            {isKo ? '수수료·펀딩 반영' : 'After fees and funding'}
-          </div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className={`text-2xl font-bold ${(stats?.net_pnl || 0) >= 0 ? 'text-bull' : 'text-bear'}`}>
-            {formatSignedNumber(stats?.net_pnl, 2)} USDT
-          </div>
-          <div className="text-sm text-dark-400">{isKo ? '순수익금' : 'Net Profit'}</div>
-          <div className="mt-1 text-[11px] text-dark-500">
-            {isKo ? '수수료·펀딩 반영' : 'After fees and funding'}
-          </div>
-        </div>
-      </div>
-
 
       <div className="card p-6">
         <div className="mb-4">
@@ -980,8 +974,8 @@ export default function JournalPage() {
                     {assessment ? <><div className={`font-semibold ${assessment.tone === 'negative' ? 'text-bear' : assessment.tone === 'warning' ? 'text-amber-300' : 'text-primary-300'}`}>{assessment.label}</div><div className="mt-1 line-clamp-2 leading-4 text-dark-400">{assessment.explanation}</div></> : <span className="text-dark-500">{qualityQuery.isLoading ? (isKo ? '판정 계산 중' : 'Calculating assessment') : (isKo ? '판정 데이터 없음' : 'Assessment unavailable')}</span>}
                   </div>
                   <div className="mt-3 flex items-center justify-between border-t border-dark-800 pt-3">
-                    {closed && entry.datetime && entry.exit_price != null ? <button type="button" onClick={() => setSnapshotEntry(entry)} className="inline-flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-100"><CandlestickChart className="h-4 w-4" />{isKo ? '거래 리포트' : 'Trade report'}</button> : <span />}
-                    <button type="button" aria-label={isKo ? '거래 삭제' : 'Delete trade'} onClick={() => entry.id && deleteMutation.mutate(entry.id)} className="text-dark-500 hover:text-red-400" disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" /></button>
+                    {closed && entry.datetime && entry.exit_price != null ? <button type="button" data-dialog-opener={entry.id == null ? undefined : `trade-report-${entry.id}`} onClick={() => setSnapshotEntry(entry)} className="inline-flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-100"><CandlestickChart className="h-4 w-4" />{isKo ? '거래 리포트' : 'Trade report'}</button> : <span />}
+                    <button type="button" aria-label={isKo ? '거래 삭제' : 'Delete trade'} onClick={() => entry.id && deleteMutation.mutate(entry.id)} className="btn-icon hover:text-bear" disabled={deleteMutation.isPending}><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
                   </div>
                 </article>
               );
@@ -1124,6 +1118,7 @@ export default function JournalPage() {
                           {closed && entry.datetime && entry.exit_price != null && (
                             <button
                               type="button"
+                              data-dialog-opener={entry.id == null ? undefined : `trade-report-${entry.id}`}
                               onClick={() => setSnapshotEntry(entry)}
                               className="text-amber-300 transition-colors hover:text-amber-100"
                               title={isKo ? '거래 리포트 및 차트' : 'Trade report and chart'}
@@ -1134,6 +1129,7 @@ export default function JournalPage() {
                           {!closed && entry.indicator_snapshot && (
                           <button
                             type="button"
+                            data-dialog-opener={entry.id == null ? undefined : `trade-report-${entry.id}`}
                             onClick={() => setSnapshotEntry(entry)}
                             className="text-primary-400 transition-colors hover:text-primary-200"
                             title={isKo ? '거래 리포트 보기' : 'View trade report'}
@@ -1145,11 +1141,13 @@ export default function JournalPage() {
                       </td>
                       <td className="py-2 px-3">
                         <button
+                          type="button"
+                          aria-label={isKo ? '거래 삭제' : 'Delete trade'}
                           onClick={() => entry.id && deleteMutation.mutate(entry.id)}
-                          className="text-dark-500 hover:text-red-400 transition-colors"
+                          className="btn-icon hover:text-bear"
                           disabled={deleteMutation.isPending}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>
                       </td>
                     </tr>

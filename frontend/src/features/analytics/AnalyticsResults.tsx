@@ -39,18 +39,18 @@ export default function AnalyticsResults({ data, isKo = false }: { data: Analyti
       <p className="text-xs text-dark-400">{textFor(isKo, 'UTC 기준 종료 시각 구간입니다. 판정 불가 구간은 선이 끊기며, 정확한 값과 날짜는 표에서 확인할 수 있습니다.', 'Ordered close-time buckets in UTC. Unavailable buckets break the line; exact values and dates are in the table.')}</p>
     </div>}
     {mode === 'chart' && !series && <div aria-label={textFor(isKo, '그룹 막대 비교', 'Grouped bar comparison')} className="max-h-80 space-y-2 overflow-y-auto">
-      {groups.map(g => <div key={g.identity.key} className="grid grid-cols-[minmax(100px,1fr)_2fr_120px] items-center gap-3 text-xs">
-        <span>{groupName(g, isKo)}</span><div className="h-3 bg-dark-800"><div className="h-3 bg-primary-400" style={{ width: g.value === null ? '0%' : `${Math.abs(Number(g.value)) / maximum * 100}%` }} /></div>
-        <span>{displayAnalyticsValue(g.value)} {g.value !== null ? data.metric.unit : ''}</span></div>)}
+      {groups.map(g => <div key={g.identity.key} className="grid grid-cols-[minmax(100px,1fr)_minmax(0,2fr)_auto] items-center gap-3 text-xs">
+        <span className="min-w-0 break-words">{groupName(g, isKo)}</span><div className="h-3 bg-dark-800"><div className="h-3 bg-primary-400" style={{ width: g.value === null ? '0%' : `${Math.abs(Number(g.value)) / maximum * 100}%` }} /></div>
+        <span className="whitespace-nowrap text-right tabular-nums">{displayAnalyticsValue(g.value)} {g.value !== null ? data.metric.unit : ''}</span></div>)}
       <p className="text-xs text-dark-400">{textFor(isKo, '막대 길이는 크기를 나타내며, 부호가 있는 서버 값도 함께 표시됩니다.', 'Bar length shows magnitude; signed backend values are displayed alongside.')}</p>
     </div>}
-    {!!data.groups.length && <div className="max-h-[520px] overflow-auto"><table className="w-full text-left text-xs"><caption className="sr-only">{textFor(isKo, '서버 값과 표본 품질', 'Backend values and sample quality')}</caption>
-      <thead className="sticky top-0 bg-dark-950 text-dark-300"><tr>{['Group', 'Value', 'Total sample', 'Evaluable', 'Unavailable', 'Evidence context'].map(h => <th key={h} className="p-2">{analyticsLabel(h, isKo)}</th>)}</tr></thead>
+    {!!data.groups.length && <div className="max-h-[520px] overflow-auto"><table className="min-w-[640px] w-full text-left text-sm"><caption className="sr-only">{textFor(isKo, '서버 값과 표본 품질', 'Backend values and sample quality')}</caption>
+      <thead className="sticky top-0 bg-dark-950 text-dark-300"><tr>{['Group', 'Value', 'Total sample', 'Evaluable', 'Unavailable', 'Evidence context'].map(h => <th key={h} className={`px-3 py-2 text-xs ${['Value', 'Total sample', 'Evaluable', 'Unavailable'].includes(h) ? 'text-right' : 'text-left'}`}>{analyticsLabel(h, isKo)}</th>)}</tr></thead>
       <tbody>{groups.map(g => <tr key={g.identity.key} className="border-t border-dark-700 align-top">
-        <td className="p-2"><div>{groupName(g, isKo)}</div><div className="text-dark-400">{g.identity.strategy_id !== null && `${textFor(isKo, '전략', 'Strategy')} #${g.identity.strategy_id} `}{g.identity.strategy_version_id !== null && `${textFor(isKo, '버전', 'Version')} #${g.identity.strategy_version_id}`}{g.identity.rule_id && ` ${g.identity.rule_category} / ${g.identity.rule_id}`}</div></td>
-        <td className="p-2 tabular-nums">{displayAnalyticsValue(g.value)}{g.value !== null && ` ${data.metric.unit}`}{g.profit_factor_infinite && <div>{textFor(isKo, '손실 없음 · 비제한 비율', 'No losses · unbounded ratio')}</div>}</td>
-        <td className="p-2">{g.total_sample}</td><td className="p-2">{g.evaluable_sample}</td><td className="p-2">{g.unavailable_sample}</td>
-        <td className="space-y-1 p-2 text-dark-300">
+        <td className="max-w-xs px-3 py-2 [overflow-wrap:anywhere]"><div>{groupName(g, isKo)}</div><div className="text-dark-400">{g.identity.strategy_id !== null && `${textFor(isKo, '전략', 'Strategy')} #${g.identity.strategy_id} `}{g.identity.strategy_version_id !== null && `${textFor(isKo, '버전', 'Version')} #${g.identity.strategy_version_id}`}{g.identity.rule_id && ` ${g.identity.rule_category} / ${g.identity.rule_id}`}</div></td>
+        <td className="px-3 py-2 text-right tabular-nums"><span className="whitespace-nowrap">{displayAnalyticsValue(g.value)}{g.value !== null && ` ${data.metric.unit}`}</span>{g.profit_factor_infinite && <div>{textFor(isKo, '손실 없음 · 비제한 비율', 'No losses · unbounded ratio')}</div>}</td>
+        <td className="px-3 py-2 text-right tabular-nums">{g.total_sample}</td><td className="px-3 py-2 text-right tabular-nums">{g.evaluable_sample}</td><td className="px-3 py-2 text-right tabular-nums">{g.unavailable_sample}</td>
+        <td className="space-y-1 px-3 py-2 text-xs text-dark-300">
           {g.total_sample === 0 ? <div>{textFor(isKo, '빈 표본', 'Empty sample')}</div> : g.trade_sample < 20 && <div className="text-amber-300">{textFor(isKo, '표본 부족 · 20건 미만 거래(표시상 주의이며 통계 검정이 아님)', 'Limited sample · fewer than 20 trades (display caution, not a statistical test)')}</div>}
           {g.total_sample > 0 && g.evaluable_sample === 0 && <div>{textFor(isKo, '판정 가능한 표본 없음', 'No evaluable samples')}</div>}
           {g.unavailable_reason && <div>{g.unavailable_reason}</div>}

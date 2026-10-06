@@ -101,24 +101,24 @@ export function StochMiniChart({
               y={Math.min(zeroY, valueY)}
               width={barWidth}
               height={Math.max(0.6, Math.abs(zeroY - valueY))}
-              fill={value >= 0 ? '#34d399' : '#f87171'}
+              fill={value >= 0 ? 'var(--color-bull)' : 'var(--color-bear)'}
               fillOpacity="0.38"
             />
           );
         })}
-        <polyline fill="none" stroke="#3b82f6" strokeWidth="1" vectorEffect="non-scaling-stroke" points={ptsK} />
-        {vdArr.length > 0 && <polyline fill="none" stroke="#f59e0b" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="3,2" points={ptsD} />}
+        <polyline fill="none" stroke="var(--color-info)" strokeWidth="1" vectorEffect="non-scaling-stroke" points={ptsK} />
+        {vdArr.length > 0 && <polyline fill="none" stroke="var(--color-warning)" strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray="3,2" points={ptsD} />}
         {yRefs.map((r, i) => (
-          <line key={i} x1="0" y1={toY(r)} x2="100" y2={toY(r)} stroke="#6b7280" strokeWidth="0.5" strokeDasharray="2,2" />
+          <line key={i} x1="0" y1={toY(r)} x2="100" y2={toY(r)} stroke="var(--color-border-control)" strokeWidth="0.5" strokeDasharray="2,2" />
         ))}
       </svg>
       {visibleCrossLabels.map(({ index, value, state }) => {
         const y = toY(value);
         const top = Math.max(0, Math.min(height - 7, state === 'golden' ? y - 7 : y));
-        const tone = state === 'golden' ? 'bg-emerald-400/55' : 'bg-red-400/55';
+        const tone = state === 'golden' ? 'bg-bull/55' : 'bg-bear/55';
         const triangle = state === 'golden'
-          ? 'border-x-[5px] border-x-transparent border-b-[7px] border-b-emerald-400'
-          : 'border-x-[5px] border-x-transparent border-t-[7px] border-t-red-400';
+          ? 'border-x-[5px] border-x-transparent border-b-[7px] border-b-bull'
+          : 'border-x-[5px] border-x-transparent border-t-[7px] border-t-bear';
         return (
           <div key={`${tk[index]}-${state}`} className="pointer-events-none absolute inset-y-0" style={{ left: `${toX(index)}%` }}>
             <span className={`absolute inset-y-0 w-px ${tone}`} />
