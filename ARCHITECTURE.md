@@ -2,7 +2,7 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 배포 버전: `v1.0.27`
+현재 릴리스 후보: `v1.0.28` (Windows x64 limited-beta prerelease). [릴리스 범위](docs/releases/v1.0.28.md)
 
 ```text
 Browser (desktop launcher opens the default browser)
@@ -67,6 +67,14 @@ FastAPI
 - `frontend/src/features/tradeAnalysis/`: 백엔드 분석 결과의 표시·필터·차트 UI. 성과·품질·행동·위험 분석의 기준 집계는 백엔드가 담당
 - `frontend/src/components/PositionReviewChart.tsx`: Lightweight Charts 가격 차트
 - `frontend/src/components/MiniChart.tsx`: 거래 리포트 RSI·지표 미니 차트. RSI 값 선은 기준선보다 굵은 SVG stroke로 표시해 축소 화면 가독성을 유지
+
+### UI 표현 계층
+
+- `frontend/src/index.css`의 CSS 변수에 palette·foreground·typography·spacing·radius·overlay shadow·focus 토큰을 정의하고 `frontend/tailwind.config.js`에서 같은 토큰을 참조합니다. SVG·canvas 차트도 기존 데이터 처리를 유지하면서 표면·grid·축 색을 이 토큰에 연결합니다.
+- `App.tsx`의 shell은 56px sticky 헤더, 최대 1600px 폭, desktop navigation과 보조 피드백 영역을 조립합니다. 콘텐츠는 `min-w-0`와 내부 table scroll을 사용합니다. 768 / 1024 / 1440px에서 검증하며 별도 모바일 UX는 제공하지 않습니다.
+- 기존 화면·컨트롤을 재사용하고 Journal의 핵심 성과와 거래 목록을 먼저 보여 줍니다. 추가 분석은 native `details/summary`로 접으며, 자식 컴포넌트와 query는 계속 마운트됩니다. Journal의 후속 시각 조정은 `className`만 바꾸고 계산·필터·query/mutation·저장 동작을 유지합니다.
+- `frontend/src/hooks/useDialogFocus.ts`는 기존 dialog에 ref를 연결해 초기 focus, Tab 경계, 최상위 dialog의 Escape, body scroll lock과 opener focus 복귀를 처리합니다. 중첩 확인창도 같은 stack에 등록하며 dirty/pending 정책은 각 dialog의 기존 callback이 담당합니다.
+- 설계·검증 기록: [P0 토큰과 감사](docs/design/ui-audit-p0.md), [P1 shell](docs/design/ui-shell-p1.md), [P2 control/focus](docs/design/ui-controls-p2.md), [P3 화면 계층](docs/design/ui-screens-p3.md), [P4 robustness](docs/design/ui-robustness-p4.md), [최종 regression 감사](docs/design/ui-regression-final.md). 실제 200% browser zoom과 실시간 시장 데이터의 수락 검증은 미완료입니다.
 
 ## 백엔드
 

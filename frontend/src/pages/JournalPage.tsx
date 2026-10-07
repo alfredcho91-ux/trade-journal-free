@@ -87,7 +87,7 @@ function AnalysisMetric({
       : 'text-white';
 
   return (
-    <div className="min-w-0 p-3">
+    <div className="min-w-0 py-3 pr-3">
       <div className="text-xs text-dark-400">{label}</div>
       <div className={`mt-1 break-words font-semibold font-mono ${primary ? 'text-xl' : 'text-base'} ${toneClass}`}>{value}</div>
       {detail != null && <div className="mt-1 text-[11px] text-dark-500">{detail}</div>}
@@ -101,7 +101,7 @@ function PlanLabSummary({ data, isKo, onOpen }: {
   onOpen: () => void;
 }) {
   const summary = data?.summary;
-  return <section className="flex items-center justify-between gap-4 border border-dark-700 bg-dark-900/30 px-4 py-3">
+  return <section className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
     <div className="min-w-0">
       <div className="text-xs font-semibold text-dark-100">{isKo ? '계획 분석' : 'Plan Lab'}</div>
       {summary?.plan_recorded_count ? <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-dark-400">
@@ -400,7 +400,7 @@ function PeriodAnalysis({
   };
 
   return (
-    <section className="card p-5">
+    <section className="border-y border-dark-700 py-4">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-white">{isKo ? '기간 성과 분석' : 'Period Performance Analysis'}</h2>
@@ -452,7 +452,7 @@ function PeriodAnalysis({
       </div>
 
       {activePreset === 'custom' && (
-        <div className="mt-4 flex flex-wrap items-end gap-2 border border-dark-700 bg-dark-900/35 p-3">
+        <div className="mt-4 flex flex-wrap items-end gap-2">
           <div>
             <div className="mb-1 text-[10px] text-dark-500">{isKo ? '시작일' : 'From'}</div>
             <input
@@ -530,25 +530,25 @@ function PeriodAnalysis({
         <p role="alert" className="mt-4 text-sm text-bear">{isKo ? '기간 성과를 불러오지 못했습니다.' : 'Could not load period performance.'}</p>
       ) : (
         <>
-          <div className="mt-4 grid grid-cols-2 border-y border-dark-700 md:grid-cols-3 xl:grid-cols-5" aria-label={isKo ? '핵심 성과' : 'Key performance'}>
+          <div className="mt-5 grid grid-cols-2 border-t border-dark-700 pt-2 md:grid-cols-3 xl:grid-cols-5" aria-label={isKo ? '핵심 성과' : 'Key performance'}>
             {selectedStyleConfig.journalMetricOrder.filter((metricId) => PRIMARY_METRICS.includes(metricId)).map((metricId) => (
               <div key={metricId} className="contents">{metricCards[metricId]}</div>
             ))}
             <AnalysisMetric primary label={isKo ? '종료 거래' : 'Closed trades'} value={String(performance?.closed_trade_count || 0)} detail={isKo ? '연결 거래소 기준 · 선택 기간' : 'Connected exchanges · selected period'} />
           </div>
 
-          <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-l-2 border-primary-400/60 bg-dark-900/25 px-3 py-2.5 text-sm leading-6 text-dark-200">
-            <span className="font-bold text-primary-200">{isKo ? '매매 스타일' : 'Trading style'}</span>
-            <span className="font-semibold text-dark-100">{selectedStyleLabel}</span>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs leading-5 text-dark-400">
+            <span className="font-medium">{isKo ? '매매 스타일' : 'Trading style'}</span>
+            <span className="font-medium text-dark-200">{selectedStyleLabel}</span>
             <span className="text-dark-600">·</span>
-            <span className="text-xs font-medium text-dark-300 sm:text-sm">
+            <span>
               {tradeStyle.insufficientData
                 ? (isKo ? '실제 거래 분석에 더 많은 거래가 필요합니다' : 'More completed trades are needed for observed-trade analysis.')
                 : `${isKo ? '실제 거래' : 'Observed trades'}: ${tradeStyle.traits.join(' · ')}`}
             </span>
           </div>
 
-          <details className="mt-4 border-t border-dark-700 pt-3">
+          <details className="mt-3">
             <summary className="cursor-pointer text-sm font-medium text-dark-200">{isKo ? '상세 성과 · 차트 · 달력' : 'Detailed performance · charts · calendar'}</summary>
             <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
               {selectedStyleConfig.journalMetricOrder.filter((metricId) => !PRIMARY_METRICS.includes(metricId)).map((metricId) => (
@@ -916,7 +916,7 @@ export default function JournalPage() {
 
       <PlanLabSummary data={planLabQuery.data} isKo={isKo} onOpen={() => navigate('/plan-lab')} />
 
-      <div className="card p-6">
+      <div className="relative min-w-0">
         <div className="mb-4">
           <div>
             <h3 className="text-lg font-semibold">{isKo ? '거래 기록' : 'Trade History'}</h3>
