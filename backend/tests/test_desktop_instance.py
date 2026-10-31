@@ -26,3 +26,16 @@ def test_desktop_instance_publishes_and_removes_metadata(tmp_path):
 
     instance.release()
     assert not instance.metadata_path.exists()
+
+
+def test_existing_instance_rejects_untrusted_metadata_urls(tmp_path, monkeypatch):
+    import json
+    from unittest.mock import Mock
+
+    ready = Mock(return_value=True)
+    monkeypatch.setattr("backend.desktop_instance._server_is_ready", ready)
+    instance = DesktopInstance(tmp_path)
+    for url in ("https://example.org", "http://evil@127.0.0.1:5181", "file:///C:/test", "http://127.0.0.1:5181/path"):
+        instance.metadata_path.write_text(json.dumps({"url": url}))
+        assert instance.existing_url(timeout_seconds=0.01) is None
+    ready.assert_not_called()

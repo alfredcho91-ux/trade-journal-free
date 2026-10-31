@@ -11,7 +11,7 @@ class FrontendStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
         if path in {
             "journal", "trade-analysis", "risk-lab", "plan-lab",
-            "trade-explorer", "hold-reentry", "playbook",
+            "trade-explorer", "hold-reentry", "playbook", "strategy-discovery",
         }:
             path = "index.html"
         return await super().get_response(path, scope)

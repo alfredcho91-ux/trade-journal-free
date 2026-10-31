@@ -3,6 +3,7 @@ import { KeyRound, Loader2, Trash2, X } from 'lucide-react';
 
 import type { ExchangeStatus } from '../../types';
 import { useDialogFocus } from '../../hooks/useDialogFocus';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 
 export default function ExchangeConnectionModal({
   exchange,
@@ -26,6 +27,7 @@ export default function ExchangeConnectionModal({
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  useBeforeUnloadGuard(Boolean(apiKey || secretKey || passphrase));
   const errorText = error instanceof Error ? error.message : null;
   const canSave = Boolean(
     apiKey.trim() && secretKey.trim() && (!exchange.requires_passphrase || passphrase.trim()),

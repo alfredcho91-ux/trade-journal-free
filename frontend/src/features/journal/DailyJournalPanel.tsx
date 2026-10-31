@@ -16,6 +16,7 @@ import {
 } from './dailyJournalForm';
 import { journalQueryKeys } from './journalQueryKeys';
 import UnsavedChangesDialog from './UnsavedChangesDialog';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 
 interface DailySaveRequest {
   tradeDate: string;
@@ -77,6 +78,7 @@ export default function DailyJournalPanel({ isKo, onDirtyChange, resetRevision =
 
   const payload = useMemo(() => serializeDailyJournalChanges(initial, draft), [draft, initial]);
   const isDirty = hasDailyJournalChanges(initial, draft);
+  useBeforeUnloadGuard(isDirty);
 
   useEffect(() => {
     if (!dateQuery.isSuccess || dateQuery.isFetching) return;

@@ -49,22 +49,22 @@ def get_strategy_service(strategy_id: int) -> Dict[str, Any]:
     return {"success": True, "data": strategy}
 
 
-def create_strategy_service(payload: Dict[str, Any]) -> Dict[str, Any]:
+def prepare_strategy_create(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Shared normalization for ordinary creation and atomic discovery adoption."""
     name, name_key = _normalized_keyed_text(payload.get("name"), "Strategy name", 120)
     initial = payload["initial_version"]
     label, label_key = _normalized_keyed_text(
         initial.get("version_label"), "Version label", 40
     )
+    return dict(name=name, name_key=name_key, description=_description(payload.get("description")),
+                version_label=label, version_label_key=label_key,
+                version_description=_description(initial.get("description")), rules=initial["rules"])
+
+
+def create_strategy_service(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = prepare_strategy_create(payload)
     try:
-        strategy = repository.create_strategy(
-            name=name,
-            name_key=name_key,
-            description=_description(payload.get("description")),
-            version_label=label,
-            version_label_key=label_key,
-            version_description=_description(initial.get("description")),
-            rules=initial["rules"],
-        )
+        strategy = repository.create_strategy(**normalized)
     except sqlite3.IntegrityError as exc:
         raise _conflict(
             "A Strategy with this normalized name already exists",

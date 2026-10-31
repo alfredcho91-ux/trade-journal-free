@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDialogFocus } from '../../hooks/useDialogFocus';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 import { useNavigate } from '../../router-context';
@@ -172,6 +173,7 @@ export default function TradeReportModal({
   type ExitTarget = 'close' | 'plan' | 'plan-prefill' | 'plan-prefill-price' | 'playbook';
   const [pendingExit, setPendingExit] = useState<ExitTarget | null>(null);
   const hasUnsavedChanges = assignmentDirty || behaviorDirty;
+  useBeforeUnloadGuard(hasUnsavedChanges);
   useEffect(() => {
     setAssignmentDirty(false);
     setBehaviorDirty(false);

@@ -108,23 +108,24 @@ function RuleEditor({ rules, metadata, metadataLoading, metadataError, isKo, onC
   </div>;
 }
 
-function Drawer({ title, subtitle, children, isKo, dirty, onClose }: {
+function Drawer({ title, subtitle, children, isKo, dirty, busy = false, onClose }: {
   title: string;
   subtitle: string;
   children: React.ReactNode;
   isKo: boolean;
   dirty: boolean;
+  busy?: boolean;
   onClose: () => void;
 }) {
   const [confirmClose, setConfirmClose] = useState(false);
-  const close = () => dirty ? setConfirmClose(true) : onClose();
+  const close = () => { if (!busy) { if (dirty) setConfirmClose(true); else onClose(); } };
   const dialogRef = useDialogFocus<HTMLElement>(close);
   return <>
     <div className="pointer-events-none fixed inset-0 z-[70] bg-black/45">
       <aside ref={dialogRef} tabIndex={-1} className="pointer-events-auto absolute inset-y-0 right-0 w-[min(880px,76vw)] overflow-y-auto border-l border-dark-700 bg-dark-900 shadow-md" role="dialog" aria-modal="true" aria-label={title}>
         <header className="sticky top-0 z-10 flex items-start justify-between border-b border-dark-700 bg-dark-900 px-5 py-4">
           <div className="min-w-0"><h2 className="text-base font-semibold text-white">{title}</h2><p className="mt-1 break-words text-xs text-dark-500">{subtitle}</p></div>
-          <button type="button" onClick={close} className="btn-icon shrink-0" aria-label={isKo ? '닫기' : 'Close'}><X className="h-4 w-4" aria-hidden="true" /></button>
+          <button type="button" disabled={busy} onClick={close} className="btn-icon shrink-0" aria-label={isKo ? '닫기' : 'Close'}><X className="h-4 w-4" aria-hidden="true" /></button>
         </header>
         {children}
       </aside>
@@ -169,28 +170,38 @@ function MetadataState({ metadataLoading, metadataError, isKo }: MetadataProps &
   return null;
 }
 
-export function NewStrategyDrawer({ metadata, metadataLoading, metadataError, isKo, pending, error, onDirtyChange, onClose, onSubmit }: MetadataProps & {
+export function NewStrategyDrawer({ metadata, metadataLoading, metadataError, isKo, pending, error, onDirtyChange, onClose, onSubmit,
+  initialPayload, title, subtitle, submitLabel, lockWhilePending = false }: MetadataProps & {
   isKo: boolean;
   pending: boolean;
   error: string | null;
   onDirtyChange: (dirty: boolean) => void;
   onClose: () => void;
   onSubmit: (payload: StrategyCreateInput, authority: EditorSubmissionAuthority) => void;
+  initialPayload?: StrategyCreateInput;
+  title?: string;
+  subtitle?: string;
+  submitLabel?: string;
+  lockWhilePending?: boolean;
 }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [version, setVersion] = useState<VersionDraft>({ version_label: '', description: '', rules: emptyRules() });
+  const [initial] = useState(() => ({ name: initialPayload?.name ?? '', description: initialPayload?.description ?? '',
+    version: { version_label: initialPayload?.initial_version.version_label ?? '', description: initialPayload?.initial_version.description ?? '',
+      rules: initialPayload ? cloneRules(initialPayload.initial_version.rules) : emptyRules() } }));
+  const [name, setName] = useState(initial.name);
+  const [description, setDescription] = useState(initial.description);
+  const [version, setVersion] = useState<VersionDraft>(initial.version);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const dirty = Boolean(name || description || version.version_label || version.description || allRules(version.rules).length);
+  const dirty = JSON.stringify({ name, description, version }) !== JSON.stringify(initial);
   const captureAuthority = useEditorAuthority('new-strategy', { name, description, version });
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
-  return <Drawer title={isKo ? '새 전략' : 'New Strategy'} subtitle={isKo ? '전략과 초기 버전을 함께 만듭니다.' : 'Create the strategy and its initial immutable version together.'} isKo={isKo} dirty={dirty} onClose={onClose}>
-    <form className="space-y-5 p-5" onSubmit={(event) => {
+  return <Drawer title={title ?? (isKo ? '새 전략' : 'New Strategy')} subtitle={subtitle ?? (isKo ? '전략과 초기 버전을 함께 만듭니다.' : 'Create the strategy and its initial immutable version together.')} isKo={isKo} dirty={dirty} busy={lockWhilePending && pending} onClose={onClose}>
+    <form className="p-5" onSubmit={(event) => {
       event.preventDefault();
       if (!name.trim() || !metadata || !validDraft(version, metadata)) return;
       onSubmit({ name: name.trim(), description: normalizedDescription(description), initial_version: versionPayload(version, metadata) }, captureAuthority());
     }}>
+      <fieldset disabled={lockWhilePending && pending} className="min-w-0 space-y-5">
       <div className="grid grid-cols-2 gap-4">
         <label className="text-xs text-dark-300">{isKo ? '전략 이름' : 'Strategy name'}<input data-dialog-initial-focus aria-label={isKo ? '전략 이름' : 'Strategy name'} value={name} maxLength={240} onChange={(event) => setName(event.target.value)} className={`mt-1.5 ${inputClass}`} /></label>
         <label className="text-xs text-dark-300">{isKo ? '초기 버전 라벨' : 'Initial version label'}<input aria-label={isKo ? '초기 버전 라벨' : 'Initial version label'} value={version.version_label} maxLength={80} onChange={(event) => setVersion({ ...version, version_label: event.target.value })} className={`mt-1.5 ${inputClass}`} placeholder="v1.0" /></label>
@@ -202,7 +213,8 @@ export function NewStrategyDrawer({ metadata, metadataLoading, metadataError, is
       <MetadataState metadata={metadata} metadataLoading={metadataLoading} metadataError={metadataError} isKo={isKo} />
       <RuleEditor rules={version.rules} metadata={metadata} metadataLoading={metadataLoading} metadataError={metadataError} isKo={isKo} onChange={(rules) => setVersion({ ...version, rules })} />
       {error && <p role="alert" className="border border-bear/40 bg-bear/10 px-3 py-2 text-xs text-bear">{error}</p>}
-      <div className="flex justify-end gap-2 border-t border-dark-700 pt-4"><button type="button" onClick={() => dirty ? setConfirmCancel(true) : onClose()} className={secondaryButton}>{isKo ? '취소' : 'Cancel'}</button><button type="submit" disabled={pending || !name.trim() || !validDraft(version, metadata)} className={primaryButton}>{pending ? (isKo ? '생성 중...' : 'Creating...') : (isKo ? '전략 생성' : 'Create Strategy')}</button></div>
+      <div className="flex justify-end gap-2 border-t border-dark-700 pt-4"><button type="button" onClick={() => dirty ? setConfirmCancel(true) : onClose()} className={secondaryButton}>{isKo ? '취소' : 'Cancel'}</button><button type="submit" disabled={pending || !name.trim() || !validDraft(version, metadata)} className={primaryButton}>{pending ? (isKo ? '생성 중...' : 'Creating...') : (submitLabel ?? (isKo ? '전략 생성' : 'Create Strategy'))}</button></div>
+      </fieldset>
     </form>
     {confirmCancel && <UnsavedChangesDialog isKo={isKo} onKeepEditing={() => setConfirmCancel(false)} onDiscard={onClose} />}
   </Drawer>;

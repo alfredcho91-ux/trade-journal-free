@@ -129,5 +129,8 @@ jobs:
           tag_name: ${{ steps.release.outputs.version }}
           name: Trade Journal ${{ steps.release.outputs.version }}
           target_commitish: ${{ env.PACKAGE_SHA }}
+          prerelease: true
+          make_latest: false
+          body_path: docs/releases/${{ steps.release.outputs.version }}.md
           generate_release_notes: true
           files: Windows/Trade-Journal-Windows.zip

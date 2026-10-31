@@ -202,30 +202,13 @@ def create_strategy(
     rules: Dict[str, Any],
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    timestamp = utc_now()
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
-            cursor = conn.execute(
-                f"""INSERT INTO {STRATEGY_TABLE}
-                (name, name_key, description, archived_at, created_at, updated_at)
-                VALUES (?, ?, ?, NULL, ?, ?)""",
-                (name, name_key, description, timestamp, timestamp),
-            )
-            strategy_id = int(cursor.lastrowid)
-            conn.execute(
-                f"""INSERT INTO {VERSION_TABLE}
-                (strategy_id, sequence, version_label, version_label_key,
-                 description, rules_json, is_active, retired_at, created_at)
-                VALUES (?, 1, ?, ?, ?, ?, 1, NULL, ?)""",
-                (
-                    strategy_id,
-                    version_label,
-                    version_label_key,
-                    version_description,
-                    _rules_json(rules),
-                    timestamp,
-                ),
+            strategy_id, _ = insert_strategy(
+                conn, name=name, name_key=name_key, description=description,
+                version_label=version_label, version_label_key=version_label_key,
+                version_description=version_description, rules=rules,
             )
             conn.commit()
         except Exception:
@@ -235,6 +218,30 @@ def create_strategy(
     if created is None:
         raise RuntimeError("Created Strategy could not be read")
     return created
+
+
+def insert_strategy(
+    conn: sqlite3.Connection, *, name: str, name_key: str, description: Optional[str],
+    version_label: str, version_label_key: str, version_description: Optional[str],
+    rules: Dict[str, Any],
+) -> tuple[int, int]:
+    """Insert into the caller's transaction; never begin, commit or bootstrap here."""
+    timestamp = utc_now()
+    cursor = conn.execute(
+        f"""INSERT INTO {STRATEGY_TABLE}
+        (name, name_key, description, archived_at, created_at, updated_at)
+        VALUES (?, ?, ?, NULL, ?, ?)""",
+        (name, name_key, description, timestamp, timestamp),
+    )
+    strategy_id = int(cursor.lastrowid)
+    cursor = conn.execute(
+        f"""INSERT INTO {VERSION_TABLE}
+        (strategy_id, sequence, version_label, version_label_key,
+         description, rules_json, is_active, retired_at, created_at)
+        VALUES (?, 1, ?, ?, ?, ?, 1, NULL, ?)""",
+        (strategy_id, version_label, version_label_key, version_description, _rules_json(rules), timestamp),
+    )
+    return strategy_id, int(cursor.lastrowid)
 
 
 def update_strategy(

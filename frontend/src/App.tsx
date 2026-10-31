@@ -1,11 +1,12 @@
 import { Suspense, lazy, useState, type ReactNode } from 'react';
-import { BarChart3, BookMarked, BookOpen, ClipboardCheck, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, Search, ShieldAlert } from 'lucide-react';
+import { BarChart3, BookMarked, BookOpen, ClipboardCheck, Compass, ExternalLink, GitCompareArrows, Languages, MessageSquare, Power, Search, ShieldAlert } from 'lucide-react';
 
 import { MARKET_COINS } from './constants/market';
 import { BrowserRouter, Navigate } from './router';
 import { useLocation, useNavigate } from './router-context';
 import WorkspaceExperience from './features/onboarding/WorkspaceExperience';
 import { isSampleWorkspace } from './features/onboarding/workspaceSession';
+import { closeNativeWindow } from './features/desktop/nativeWindow';
 import {
   useLanguage,
   useSelectedCoin,
@@ -20,6 +21,7 @@ const TradeExplorerPage = lazy(() => import('./pages/TradeExplorerPage'));
 const HoldReentryPage = lazy(() => import('./pages/HoldReentryPage'));
 const PlanLabPage = lazy(() => import('./pages/PlanLabPage'));
 const PlaybookPage = lazy(() => import('./pages/PlaybookPage'));
+const StrategyDiscoveryPage = lazy(() => import('./pages/StrategyDiscoveryPage'));
 const feedbackFormUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdGlwCDcOiTTchsy_MVX33V9ZUXdQK_VA94U7cC2aVARfeV1Q/viewform?usp=publish-editor';
 
 const routeFallback = (
@@ -44,6 +46,7 @@ function Shell({ children }: { children: ReactNode }) {
     setIsShuttingDown(true);
     setShutdownNotice(null);
     try {
+      if (await closeNativeWindow()) return;
       const response = await fetch('/api/desktop/shutdown', { method: 'POST' });
       if (!response.ok) {
         const body = await response.json().catch(() => null) as { detail?: string } | null;
@@ -72,6 +75,7 @@ function Shell({ children }: { children: ReactNode }) {
   const tabs = [
     { path: '/journal', label: isKo ? '매매일지' : 'Journal', icon: BookOpen },
     { path: '/trade-analysis', label: isKo ? '매매분석' : 'Trade Analysis', icon: BarChart3 },
+    { path: '/strategy-discovery', label: isKo ? '전략 발견' : 'Strategy Discovery', icon: Compass },
     { path: '/risk-lab', label: isKo ? '리스크 랩' : 'Risk Lab', icon: ShieldAlert },
     { path: '/plan-lab', label: isKo ? '계획 분석' : 'Plan Lab', icon: ClipboardCheck },
     { path: '/trade-explorer', label: isKo ? '거래 탐색' : 'Trade Explorer', icon: Search },
@@ -116,7 +120,7 @@ function Shell({ children }: { children: ReactNode }) {
           </button>
 
           <div className="ml-auto flex min-w-0 items-center gap-2">
-            {pathname !== '/journal' && pathname !== '/playbook' && pathname !== '/trade-analysis' && <div className="flex h-8 shrink-0 border border-dark-700" aria-label={isKo ? '분석 코인' : 'Analysis coin'}>
+            {pathname !== '/journal' && pathname !== '/playbook' && pathname !== '/trade-analysis' && pathname !== '/strategy-discovery' && <div className="flex h-8 shrink-0 border border-dark-700" aria-label={isKo ? '분석 코인' : 'Analysis coin'}>
               {MARKET_COINS.map((coin) => (
                 <button
                   key={coin}
@@ -190,6 +194,8 @@ function Routes() {
       <JournalPage />
     ) : pathname === '/trade-analysis' ? (
       <TradeAnalysisPage key={isSampleWorkspace() ? search : undefined} />
+    ) : pathname === '/strategy-discovery' ? (
+      <StrategyDiscoveryPage />
     ) : pathname === '/risk-lab' ? (
       <RiskLabPage />
     ) : pathname === '/plan-lab' ? (

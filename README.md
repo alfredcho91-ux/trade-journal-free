@@ -1,8 +1,8 @@
 # Trade Journal
 
-여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `Risk Lab`, `계획 분석`, `홀딩 / 재진입`, `거래 탐색`, `플레이북`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
+여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `전략 발견`, `Risk Lab`, `계획 분석`, `홀딩 / 재진입`, `거래 탐색`, `플레이북`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
 
-현재 릴리스 후보: `v1.0.28` (Windows x64 limited-beta prerelease). [변경 내용과 검증 한계](docs/releases/v1.0.28.md)
+현재 릴리스 후보: `v1.0.29` (Windows x64 limited-beta prerelease). [변경 내용과 검증 한계](docs/releases/v1.0.29.md)
 
 ## 무료 배포판 범위
 
@@ -12,6 +12,7 @@
 - 종료 거래 저널, 거래 차트 복기, 분할 진입·익절 마커
 - 매매일지 안의 Daily Journal에서 날짜별 준비·회고 기록, 플레이북에서 Strategy와 버전별 규칙 관리
 - 매매분석의 안내형·고급 분석, 요약 우선 Review, 사용자 정의 Experiment와 기간별 측정
+- 전략 발견 MVP: 기록된 거래의 종목·방향 조건을 앞 70% 기간에서 찾고 뒤 30% 기간에서 평가한 뒤, 근거와 규칙을 검토해 Playbook에 등록합니다. [구조·범위·검증 한계](docs/strategy-discovery.md)
 - 첫 실행 시 API 연결 없이 합성 거래를 탐색하는 별도 샘플 작업공간. 샘플은 별도 프로세스·프로필·DB에서 실행되고 credential 저장과 실제 거래소 동기화가 비활성화됩니다. 샘플 편집은 사용자 저널로 합쳐지지 않으며, 시장 경로가 필요한 분석은 사용할 수 없다고 표시합니다. [샘플 격리 구조](docs/isolated-sample-onboarding.md)
 - 승패·진입·청산 품질과 대성공·대실패 거래 분석, 별도 Risk Lab의 손절·SL/TP 기대값 분석
 - 매매분석 Overview의 Trading Review 카드: 기존 행동 분석의 수익 누수, 품질 분석의 반복 강점, 이미 계산된 Plan Lab 실행 요약을 한 번에 보고 근거 거래로 이동
@@ -19,6 +20,16 @@
 - Plan Lab은 상단에서 거래소가 확인한 실제 진행중 포지션을 먼저 보여 주고, 종료 거래에는 당시 계획을 회고 입력해 실제 실행과 비교합니다. 진행중 계획은 서버가 포지션이 아직 열려 있는지 다시 확인한 경우에만 `IN_TRADE`로 저장되며, 실제 Entry는 목표 손익비 미리보기 기준일 뿐 사용자가 계획한 진입가로 저장되지 않습니다. 회고 입력도 계획 Entry가 없으면 실제 Entry를 계획값으로 저장하지 않으며, 거래 전 서버에 저장된 계획만 사전 기록으로 검증합니다. `TP2`가 없으면 기존처럼 `TP1`에서 100% 청산하고, `TP2`가 있으면 `TP1 50% + TP2 잔여 50%` 고정 규칙으로 공식 Plan R·Plan PnL·Delta·Attribution·Optimizer를 계산합니다. 거래 목록은 가볍게 먼저 열리고 경로 재생·Optimizer는 사용자가 공식 분석을 요청할 때 실행됩니다.
 - macOS 앱과 Windows x64 압축 배포판
 - 사용자 API Key는 브라우저 저장소나 프론트엔드 코드에 저장하지 않음
+
+## 전략 발견 · MVP
+
+`전략 발견` 페이지에서 기간·종목·방향·기준 지표를 선택하고 **전략 후보 찾기**를 누릅니다. 페이지 진입이나 필터 수정만으로 분석을 실행하지 않습니다. 종목 표기는 Rule Engine과 같이 정규화하므로 `BTC/USDT`, `BTC/USDT:USDT`, `BTCUSDT`를 같은 종목 조건으로 처리합니다.
+
+발견 구간에서 양수 성과와 전체 대비 차이가 있는 후보를 고르고, 고정한 조건을 검증 구간에 적용합니다. 구간별 평가 표본 최소 5건·가용성 80%는 표시 정책이며 통계적 유의성이나 미래 수익을 뜻하지 않습니다. 경계를 걸친 포지션을 제외하고, 검증 근거 부족과 성과 약화를 구분합니다. Profit Factor는 손익 통화가 명시적으로 검증되지 않아 판정하지 않습니다.
+
+후보·분석 당시의 최소 입력값·결과를 로컬에 보존합니다. **초안 검토 → Playbook에 등록**을 명시적으로 실행할 때만 전략과 활성 초기 버전을 생성합니다. 규칙을 수정하면 원래 후보의 검증 결과가 저장된 전략에 적용되지 않습니다. 리스크·청산 규칙은 직접 검토·입력하며, LLM·외부 AI API·자동 주문은 사용하지 않습니다. Experiment 자동 연결은 아직 제공하지 않습니다.
+
+이 기능은 v1.0.29 프리릴리즈에 포함됩니다. v1.0.28 배포 ZIP에는 포함되지 않습니다.
 
 ## UI와 작업 환경
 
@@ -60,7 +71,7 @@ Windows x64용은 main push의 `Tests` 성공 후 `workflow_run`으로 `Build Wi
 1. 내려받은 `Trade-Journal-Windows.zip`을 우클릭하고 `속성`을 엽니다. `차단 해제` 항목이 보이면 체크한 뒤 `적용`을 누릅니다.
 2. ZIP 압축을 풀고 압축을 푼 폴더에서 `Trade Journal.exe`를 실행합니다.
 3. SmartScreen 화면이 나타나면 `추가 정보`를 누른 뒤 `실행`을 선택합니다.
-4. 앱이 실행되면 브라우저에 열리는 로컬 화면에서 거래소 연결과 동기화를 진행합니다.
+4. 앱이 실행되면 Trade Journal 전용 창에서 거래소 연결과 동기화를 진행합니다. Microsoft Edge WebView2 Runtime이 필요합니다. 미설치 환경에서는 [Microsoft 공식 페이지](https://developer.microsoft.com/microsoft-edge/webview2/)에서 설치하세요.
 
 SmartScreen을 끄거나 Windows 실시간 보호를 해제할 필요는 없습니다. 파일 출처가 공식 저장소와 다르거나 파일이 변조된 것으로 보이면 실행하지 마세요.
 
@@ -121,7 +132,9 @@ chmod +x bootstrap.sh dev.sh start.sh
 - Frontend: `http://localhost:5181`
 - Backend/OpenAPI: `http://localhost:8011/docs`
 
-배포 앱을 종료할 때는 화면 오른쪽 위의 전원 아이콘을 누르세요. 브라우저만 닫는 것과 달리 로컬 서버까지 정상 종료합니다. 종료해도 운영체제 보안 저장소의 API Key는 삭제되지 않으며, 연결을 완전히 지우려면 매매일지의 `API 연결` 창에서 별도로 삭제해야 합니다.
+Windows 배포 앱은 Chrome 탭 대신 WebView2 전용 창으로 실행됩니다. 창의 X 버튼 또는 화면 오른쪽 위의 전원 아이콘으로 종료하면 로컬 서버와 샘플 서버도 함께 종료합니다. 저장 중인 작업은 완료를 기다리고, 미저장 변경사항은 종료 전에 확인합니다. 종료해도 운영체제 보안 저장소의 API Key는 삭제되지 않으며, 연결을 완전히 지우려면 매매일지의 `API 연결` 창에서 별도로 삭제해야 합니다. macOS 및 브라우저 실행 모드는 기존 전원 아이콘으로 서버를 종료합니다.
+
+Windows 소스 실행은 backend 의존성과 `packaging/requirements-build.txt`를 설치한 후 frontend를 빌드하고 `python -m backend.desktop`을 실행합니다. 브라우저 실행이 필요하면 `TRADE_JOURNAL_DESKTOP_MODE=browser`, 창 없이 서버만 실행하려면 `TRADE_JOURNAL_NO_BROWSER=1`을 설정합니다. 전용 창의 웹 설정은 `%APPDATA%\Trade Journal Free\webview`에 저장되며 기존 거래 DB와 credential 저장 위치는 유지됩니다. [Windows 전용 창 구현과 검증 기록](docs/windows-desktop.md)을 참고하세요. 전용 창은 v1.0.29 프리릴리즈에 포함되며 v1.0.28 ZIP에는 포함되지 않습니다.
 
 기본 포트는 전체 Quant-Lab 앱(`5173/8000`)과 동시에 실행해도 충돌하지 않도록 분리되어 있습니다. `.env`의 `JOURNAL_FRONTEND_PORT`, `JOURNAL_BACKEND_PORT`로 변경할 수 있습니다.
 

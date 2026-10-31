@@ -118,6 +118,13 @@ afterEach(() => {
 });
 
 describe('Playbook frontend acceptance', () => {
+  it('opens the strategy selected by a Strategy Discovery link after the list loads', async () => {
+    window.history.replaceState(null, '', '/playbook?strategy=2');
+    renderPage();
+    await waitFor(() => expect(mockedGet).toHaveBeenCalledWith(2));
+    expect(mockedGet).not.toHaveBeenCalledWith(1);
+    expect(await screen.findByRole('heading', { name: 'Mean Reversion' })).toBeTruthy();
+  });
   it('1. renders the /playbook route and navigation item', async () => {
     mockedList.mockResolvedValue([]);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

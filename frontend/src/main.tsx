@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { loadWorkspace, prepareSample } from './features/onboarding/workspaceSession'
 import AppErrorBoundary from './components/AppErrorBoundary'
+import DesktopLifecycle from './features/desktop/DesktopLifecycle'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -30,6 +31,7 @@ async function start() {
   <React.StrictMode>
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <DesktopLifecycle />
         <App />
       </QueryClientProvider>
     </AppErrorBoundary>

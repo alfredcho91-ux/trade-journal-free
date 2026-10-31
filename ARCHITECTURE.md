@@ -2,11 +2,12 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 릴리스 후보: `v1.0.28` (Windows x64 limited-beta prerelease). [릴리스 범위](docs/releases/v1.0.28.md)
+현재 릴리스 후보: `v1.0.29` (Windows x64 limited-beta prerelease). [릴리스 범위](docs/releases/v1.0.29.md)
 
 ```text
-Browser (desktop launcher opens the default browser)
-  -> React: /journal, /trade-analysis, /risk-lab, /plan-lab, /hold-reentry, /trade-explorer, /playbook
+Windows: pywebview / Edge WebView2 native window
+macOS / server / browser mode: default browser
+  -> React: /journal, /trade-analysis, /strategy-discovery, /risk-lab, /plan-lab, /hold-reentry, /trade-explorer, /playbook
   -> same-origin /api
 FastAPI
   -> journal: 저장·기간 성과·MFE/MAE·품질·손절·SL/TP 분석
@@ -16,6 +17,7 @@ FastAPI
   -> strategies / strategy_assignments: 재사용 전략·버전과 거래별 정확한 버전 할당
   -> rule_engine: 기록된 근거에 대한 결정론적 규칙 평가
   -> analytics -> review: 검증된 질의·동일 snapshot 집계·패턴/전략/실행 진단
+  -> strategy_discovery: 제한된 조건 탐색·시간 분리 평가·불변 근거·명시적 Playbook 등록
   -> experiments: 사용자 정의·상태 관리, Analytics를 통한 기간별 측정
   -> workspace: 첫 실행 상태와 별도 offline sample child 관리
   -> exchanges: 공통 거래소 목록·연결 검증·읽기 전용 동기화
@@ -42,9 +44,11 @@ FastAPI
      -> experiments: 사용자 실험 정의와 lifecycle (측정 결과는 저장하지 않음)
 ```
 
+Windows `backend.desktop`는 메인 스레드에서 WebView2 창을, worker에서 loopback Uvicorn을 실행합니다. `desktop_window`는 현재 normal/sample origin만 허용하며 외부 링크는 기본 브라우저로 보냅니다. JS bridge는 종료 요청 한 가지만 노출합니다. 창 닫기는 프론트엔드의 진행 중 mutation 및 beforeunload dirty guard를 확인한 후 서버 lifespan을 종료하여 sample child도 정리합니다. `desktop_instance`의 기존 프로필별 OS lock은 유지하며, 중복 실행은 메타데이터의 일회성 실행 token으로 기존 창을 활성화합니다. 거래 DB·vault 경로와 API 인증/Origin 정책은 유지됩니다. `TRADE_JOURNAL_NO_BROWSER=1`인 sample child는 GUI를 생성하지 않습니다. WebView2 Runtime은 Windows에 별도 설치되어 있어야 하며 MSHTML fallback은 사용하지 않습니다.
+
 ## 프런트엔드
 
-`App.tsx`가 위 7개 경로를 등록합니다. `/`와 알 수 없는 경로는 `/journal`로 이동합니다. Daily Journal은 Journal 내부 보기이고, Guided/Advanced Analytics·Review·Experiments는 `/trade-analysis` 내부 영역으로 독립 페이지 경로가 아닙니다. Rule Engine 결과는 거래의 전략 평가와 Analytics/Review에서 사용합니다.
+`App.tsx`가 위 8개 경로를 등록합니다. `/`와 알 수 없는 경로는 `/journal`로 이동합니다. Daily Journal은 Journal 내부 보기이고, Guided/Advanced Analytics·Review·Experiments는 `/trade-analysis` 내부 영역으로 독립 페이지 경로가 아닙니다. Rule Engine 결과는 거래의 전략 평가와 Analytics/Review에서 사용합니다. `/strategy-discovery`는 v1.0.29부터 제공하는 전용 페이지입니다(v1.0.28 배포 ZIP에는 미포함).
 
 - `frontend/src/App.tsx`: 데스크톱 왼쪽 메뉴, 코인 선택, 언어 전환 제공
 - `frontend/src/pages/JournalPage.tsx`: 저널 쿼리·기간·모달 상태 조립. 거래소 동기화 성공 뒤 거래 목록·기간 성과·품질 분석을 즉시 다시 조회하며, 종료 포지션이 없으면 체결 동기화 성공과 분석 가능 여부를 구분해 안내
@@ -58,6 +62,7 @@ FastAPI
 - `frontend/src/pages/RiskLabPage.tsx`: 손절·Stop 최적화·N% Stop·SL/TP 분석
 - `frontend/src/pages/PlanLabPage.tsx`: 과거 계획 순차 입력, 검증된 사전 계획, Actual/Plan KPI, 행동별 Delta, Setup·방향·시장상황, 70/30 Optimizer와 근거 거래 drill-down
 - `frontend/src/pages/PlaybookPage.tsx`: Strategy와 버전별 규칙·활성/과거 버전 관리
+- `frontend/src/pages/StrategyDiscoveryPage.tsx`, `features/strategyDiscovery/`: 명시적 분석 실행, URL의 실행·후보 선택, 발견/검증 결과·보존된 근거, 기존 전략 Drawer를 사용한 검토·등록. 서버 계산을 프론트엔드에서 재구현하지 않습니다.
 - `frontend/src/features/analytics/`: 안내형 질문과 고급 질의 구성이 같은 Analytics API 사용
 - `frontend/src/features/review/`: 요약 우선 Review, 전체 근거, 사용자 Experiment 초안과 측정
 - `frontend/src/features/planLab/PlanningContextPanel.tsx`: Journal과 Plan Lab에서 원본을 구분하는 공통 계획 보기
@@ -77,6 +82,10 @@ FastAPI
 - 설계·검증 기록: [P0 토큰과 감사](docs/design/ui-audit-p0.md), [P1 shell](docs/design/ui-shell-p1.md), [P2 control/focus](docs/design/ui-controls-p2.md), [P3 화면 계층](docs/design/ui-screens-p3.md), [P4 robustness](docs/design/ui-robustness-p4.md), [최종 regression 감사](docs/design/ui-regression-final.md). 실제 200% browser zoom과 실시간 시장 데이터의 수락 검증은 미완료입니다.
 
 ## 백엔드
+
+`backend/modules/strategy_discovery/`는 기존 Analytics의 단일 읽기 snapshot과 공식 집계, Rule Engine 종목 정규화·관측값을 재사용합니다. `engine.py`는 I/O 없이 앞 70% 기간에서 종목·방향 조건을 탐색·정렬하고 고정한 조건을 뒤 30% 기간에 적용합니다. 겹친 포지션을 제외하며 검증 성과로 재탐색·재정렬하지 않습니다. `service.py`는 프로세스별 동시 분석 1개·선택 거래 2000개·발견 종목 32개·후보 64개의 한도를 적용합니다.
+
+실행·후보·채택 이력은 같은 프로필 DB의 `strategy_discovery_runs`, `strategy_discovery_candidates`, `strategy_discovery_adoptions`에 보존합니다. 입력 hash뿐 아니라 최소 계산 입력과 관측값을 고정해 원본 수정·삭제 뒤에도 당시 근거를 유지합니다. GET은 schema bootstrap이나 원본 재계산을 하지 않습니다. 등록은 기존 Strategy 삽입 함수를 호출자 transaction 안에서 재사용해 Strategy·활성 초기 Version·채택 출처를 원자적으로 생성합니다. Idempotency key 충돌은 409이며, 수정한 규칙은 원래 후보의 검증을 상속하지 않습니다. [상세 계약](docs/strategy-discovery.md)
 
 - `backend/modules/exchanges/registry.py`: 지원 거래소와 기능 메타데이터
 - `backend/modules/exchanges/ccxt_adapter.py`: CCXT 클라이언트·페이지 조회·체결 정규화

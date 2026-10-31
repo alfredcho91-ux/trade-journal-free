@@ -21,8 +21,12 @@ How to start
 2. Extract the ZIP completely.
 3. Run "Trade Journal.exe" from the extracted folder.
 4. On the SmartScreen screen, click "More info" and then "Run anyway".
-5. The app opens a local browser page. Use that page to connect and sync a
+5. The app opens a dedicated Trade Journal window. Use it to connect and sync a
    read-only exchange API.
+
+Microsoft Edge WebView2 Runtime is required. If it is missing, install the
+Evergreen Runtime from https://developer.microsoft.com/microsoft-edge/webview2/
+and retry. Close the window or use the power icon to stop the local server.
 
 Do not disable SmartScreen or Windows real-time protection. If the file did not
 come from the official repository, or appears modified, do not run it.
@@ -33,7 +37,11 @@ come from the official repository, or appears modified, do not run it.
    적용을 누릅니다.
 2. ZIP 압축을 완전히 풀고 "Trade Journal.exe"를 실행합니다.
 3. SmartScreen 화면에서 "추가 정보"를 누른 뒤 "실행"을 선택합니다.
-4. 앱 실행 후 열리는 로컬 브라우저 화면에서 사용합니다.
+4. 앱 실행 후 열리는 Trade Journal 전용 창에서 사용합니다.
+
+Microsoft Edge WebView2 Runtime이 필요합니다. 미설치 안내가 나오면 위의
+Microsoft 공식 페이지에서 Evergreen Runtime을 설치한 뒤 다시 실행하세요.
+창의 X 버튼 또는 전원 아이콘으로 종료하면 로컬 서버도 함께 종료됩니다.
 
 SmartScreen 또는 Windows 실시간 보호를 끄지 마세요. 공식 저장소에서 받은
 파일이 아니거나 변조된 것으로 보이면 실행하지 마세요.

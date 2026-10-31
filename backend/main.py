@@ -21,6 +21,8 @@ from backend.modules.analytics.router import router as analytics_router
 from backend.modules.review.router import router as review_router
 from backend.modules.experiments.router import router as experiments_router
 from backend.modules.experiments.repository import initialize_schema as initialize_experiment_schema
+from backend.modules.strategy_discovery.repository import initialize_schema as initialize_discovery_schema
+from backend.modules.strategy_discovery.router import router as strategy_discovery_router
 from backend.modules.deepcoin.router import router as deepcoin_router
 from backend.modules.exchanges.router import router as exchanges_router
 from backend.modules.indicators.router import router as indicators_router
@@ -53,6 +55,7 @@ async def lifespan(_app: FastAPI):
         build_fixture()
     initialize_assignment_schema()
     initialize_experiment_schema()
+    initialize_discovery_schema()
     try:
         yield
     finally:
@@ -95,7 +98,7 @@ def verify_credentials(
 app = FastAPI(
     title="Trade Journal API",
     description="Read-only multi-exchange journal and personal trade analytics",
-    version="1.0.28",
+    version="1.0.29",
     default_response_class=ORJSONResponse,
     dependencies=[Depends(verify_credentials)],
     lifespan=lifespan,
@@ -155,8 +158,26 @@ def desktop_shutdown(request: Request):
     server = getattr(request.app.state, "desktop_server", None)
     if server is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Desktop shutdown is unavailable")
-    server.should_exit = True
+    window = getattr(request.app.state, "desktop_window", None)
+    if window is not None:
+        window.request_close()
+    else:
+        server.should_exit = True
     return {"success": True, "data": {"shutting_down": True}}
+
+
+@app.post("/api/desktop/activate", dependencies=[])
+def desktop_activate(request: Request):
+    window = getattr(request.app.state, "desktop_window", None)
+    token = getattr(request.app.state, "desktop_activation_token", None)
+    supplied = request.headers.get("X-Desktop-Token", "")
+    if (request.client is None or request.client.host not in {"127.0.0.1", "::1", "testclient"}
+            or not token or not secrets.compare_digest(supplied, token)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Desktop activation denied")
+    if window is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Desktop window is unavailable")
+    window.activate()
+    return {"success": True}
 
 app.include_router(journal_router)
 app.include_router(workspace_router)
@@ -167,6 +188,7 @@ app.include_router(rule_engine_router)
 app.include_router(analytics_router)
 app.include_router(review_router)
 app.include_router(experiments_router)
+app.include_router(strategy_discovery_router)
 app.include_router(exchanges_router)
 app.include_router(deepcoin_router)
 app.include_router(indicators_router)

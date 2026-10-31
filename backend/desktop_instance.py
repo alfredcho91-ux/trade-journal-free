@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import IO, Optional
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 
@@ -50,8 +51,10 @@ class DesktopInstance:
         self.acquired = True
         return True
 
-    def publish(self, url: str) -> None:
-        payload = {"pid": os.getpid(), "url": url, "started_at": int(time.time())}
+    def publish(self, url: str, *, mode: str = "browser", activation_token: str | None = None) -> None:
+        payload = {"pid": os.getpid(), "url": url, "started_at": int(time.time()), "mode": mode}
+        if activation_token:
+            payload["activation_token"] = activation_token
         descriptor, temp_path = tempfile.mkstemp(
             prefix="desktop-instance.", suffix=".tmp", dir=str(self.data_dir), text=True
         )
@@ -70,14 +73,25 @@ class DesktopInstance:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
             try:
-                payload = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+                payload = self.existing_metadata()
                 url = str(payload.get("url", "")).rstrip("/")
-                if url and _server_is_ready(url):
+                parsed = urlsplit(url)
+                if (parsed.scheme == "http" and parsed.hostname == "127.0.0.1"
+                        and parsed.port and not parsed.username and not parsed.password
+                        and not parsed.path and not parsed.query and not parsed.fragment
+                        and _server_is_ready(url)):
                     return url
             except (OSError, ValueError, TypeError):
                 pass
             time.sleep(0.1)
         return None
+
+    def existing_metadata(self) -> dict:
+        try:
+            payload = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, ValueError):
+            return {}
 
     def release(self) -> None:
         if not self.acquired or self._handle is None:
