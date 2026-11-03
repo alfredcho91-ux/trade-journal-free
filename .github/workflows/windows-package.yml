@@ -88,6 +88,9 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Verify Windows WebView2 renderer initialization
+        run: python -c "from webview.guilib import initialize; assert initialize('edgechromium').renderer == 'edgechromium', 'WebView2 Runtime is required'"
+
       - name: Build Windows distribution
         shell: pwsh
         env:

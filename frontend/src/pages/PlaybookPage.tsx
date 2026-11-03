@@ -133,11 +133,12 @@ export default function PlaybookPage() {
   const isKo = useLanguage() === 'ko';
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [showArchived, setShowArchived] = useState(false);
-  const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(() => {
+  const [linkedStrategyId] = useState<number | null>(() => {
     const value = Number(new URLSearchParams(window.location.search).get('strategy'));
     return Number.isSafeInteger(value) && value > 0 ? value : null;
   });
+  const [showArchived, setShowArchived] = useState(linkedStrategyId !== null);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<number | null>(linkedStrategyId);
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
   const selectionIntent = useRef(0);
   const selectedStrategyRef = useRef<number | null>(null);
@@ -159,10 +160,10 @@ export default function PlaybookPage() {
   }, [search, strategies]);
 
   useEffect(() => {
-    if (listQuery.isPending) return;
+    if (!listQuery.isSuccess || (linkedStrategyId !== null && selectedStrategyId === linkedStrategyId)) return;
     if (!strategies.length) { setSelectedStrategyId(null); return; }
     if (selectedStrategyId === null || !strategies.some((strategy) => strategy.id === selectedStrategyId)) setSelectedStrategyId(strategies[0].id);
-  }, [selectedStrategyId, strategies, listQuery.isPending]);
+  }, [selectedStrategyId, strategies, listQuery.isSuccess, linkedStrategyId]);
 
   const detailQuery = useQuery({
     queryKey: strategyQueryKeys.detail(selectedStrategyId ?? -1),

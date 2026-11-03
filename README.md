@@ -2,7 +2,7 @@
 
 여러 거래소의 읽기 전용 거래 기록을 동기화하고 실제 종료 거래를 분석하는 Trade Journal입니다. 화면은 `매매일지`, `매매분석`, `전략 발견`, `Risk Lab`, `계획 분석`, `홀딩 / 재진입`, `거래 탐색`, `플레이북`으로 나뉘며, 주문·출금·자산이동 기능은 포함하지 않습니다.
 
-현재 릴리스 후보: `v1.0.29` (Windows x64 limited-beta prerelease). [변경 내용과 검증 한계](docs/releases/v1.0.29.md)
+현재 릴리스 후보: `v1.0.30` (Windows x64 limited-beta prerelease). [변경 내용과 검증 한계](docs/releases/v1.0.30.md)
 
 ## 무료 배포판 범위
 

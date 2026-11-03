@@ -2,7 +2,7 @@
 
 Trade Journal은 저널, 거래 분석, 위험 관리 분석에 필요한 경로만 남긴 React/FastAPI 애플리케이션입니다.
 
-현재 릴리스 후보: `v1.0.29` (Windows x64 limited-beta prerelease). [릴리스 범위](docs/releases/v1.0.29.md)
+현재 릴리스 후보: `v1.0.30` (Windows x64 limited-beta prerelease). [릴리스 범위](docs/releases/v1.0.30.md)
 
 ```text
 Windows: pywebview / Edge WebView2 native window

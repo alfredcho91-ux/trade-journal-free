@@ -84,6 +84,14 @@ class DesktopWindow:
 
     def run(self, storage_path: Path):
         import webview
+        from webview.guilib import initialize
+
+        # The pinned winforms adapter can select MSHTML even when edgechromium
+        # is requested. Check before creating any window; callback exceptions
+        # are logged by pywebview and do not propagate to the launcher.
+        renderer = initialize("edgechromium")
+        if renderer.renderer != "edgechromium":
+            raise RuntimeError("Microsoft Edge WebView2 Runtime is required.")
 
         controller = self
 
@@ -102,5 +110,4 @@ class DesktopWindow:
         self.window.events.loaded += self._on_loaded
         self.window.events.closing += self._on_closing
         storage_path.mkdir(parents=True, exist_ok=True)
-        # Never fall back to the legacy MSHTML renderer.
         webview.start(gui="edgechromium", private_mode=False, storage_path=str(storage_path))

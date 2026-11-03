@@ -118,6 +118,31 @@ afterEach(() => {
 });
 
 describe('Playbook frontend acceptance', () => {
+  it('opens an archived discovery target instead of replacing it with the first strategy', async () => {
+    window.history.replaceState(null, '', '/playbook?strategy=2');
+    const archived = strategy(2, { archived_at: '2026-11-03T00:00:00Z' });
+    mockedList.mockImplementation(async includeArchived => includeArchived ? [strategy(1), archived] : [strategy(1)]);
+    mockedGet.mockResolvedValue(archived);
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Mean Reversion' })).toBeTruthy();
+    expect(mockedList).toHaveBeenCalledWith(true);
+    expect(mockedGet).not.toHaveBeenCalledWith(1);
+    expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy();
+  });
+  it.each(['empty', 'failed', 'missing'] as const)('does not replace an explicit target when the list or target is %s', async state => {
+    window.history.replaceState(null, '', '/playbook?strategy=2');
+    if (state === 'empty') mockedList.mockResolvedValue([]);
+    if (state === 'failed') mockedList.mockRejectedValue(new Error('List unavailable'));
+    if (state === 'missing') {
+      mockedList.mockResolvedValue([strategy(1)]);
+      mockedGet.mockRejectedValue(new Error('Strategy not found'));
+    }
+    renderPage();
+    await waitFor(() => expect(mockedGet).toHaveBeenCalledWith(2));
+    if (state !== 'empty') await screen.findByRole('alert');
+    expect(mockedGet).not.toHaveBeenCalledWith(1);
+    expect(screen.queryByRole('heading', { name: 'Breakout Momentum' })).toBeNull();
+  });
   it('opens the strategy selected by a Strategy Discovery link after the list loads', async () => {
     window.history.replaceState(null, '', '/playbook?strategy=2');
     renderPage();

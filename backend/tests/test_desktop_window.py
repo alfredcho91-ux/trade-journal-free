@@ -1,5 +1,6 @@
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
+import sys
 
 import pytest
 from fastapi import FastAPI
@@ -8,6 +9,35 @@ from fastapi.testclient import TestClient
 from backend.desktop_window import DesktopWindow
 from backend.main import desktop_activate, desktop_shutdown
 from backend.utils.local_request_security import LocalRequestSecurityMiddleware
+
+
+@pytest.mark.parametrize("renderer", ["edgechromium", "mshtml"])
+def test_runtime_is_checked_before_creating_a_window(window, monkeypatch, tmp_path, renderer):
+    webview = MagicMock()
+    initialize = Mock(return_value=SimpleNamespace(renderer=renderer))
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    monkeypatch.setitem(sys.modules, "webview.guilib", SimpleNamespace(initialize=initialize))
+    if renderer == "mshtml":
+        with pytest.raises(RuntimeError, match="WebView2 Runtime is required"):
+            window.run(tmp_path)
+        webview.create_window.assert_not_called()
+        webview.start.assert_not_called()
+    else:
+        window.run(tmp_path)
+        webview.create_window.assert_called_once()
+        webview.start.assert_called_once_with(gui="edgechromium", private_mode=False, storage_path=str(tmp_path))
+    initialize.assert_called_once_with("edgechromium")
+
+
+def test_runtime_initialization_failure_reaches_launcher(window, monkeypatch, tmp_path):
+    webview = Mock()
+    monkeypatch.setitem(sys.modules, "webview", webview)
+    def fail(_gui):
+        raise RuntimeError("Runtime initialization failed")
+    monkeypatch.setitem(sys.modules, "webview.guilib", SimpleNamespace(initialize=fail))
+    with pytest.raises(RuntimeError, match="initialization failed"):
+        window.run(tmp_path)
+    webview.create_window.assert_not_called()
 
 
 @pytest.fixture
